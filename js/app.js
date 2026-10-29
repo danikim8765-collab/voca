@@ -35,7 +35,7 @@ let days = [];
 let stats = load(KEY.stats, {});
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', size: 20,
-  accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false,
+  accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
 }, load(KEY.settings, {}));
 let session = null;
 let dataInfo = '';
@@ -302,6 +302,9 @@ function renderQuestion() {
 
   const actions = $('#q-actions');
   actions.innerHTML = '';
+  kb = null;
+  $('#quiz').classList.remove('kb-mode');
+  $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderTyping(actions);
   else renderChoices(actions);
 }
@@ -373,28 +376,109 @@ function renderChoices(actions) {
 
 function renderTyping(actions) {
   const parts = answerParts(q.w.blank).length;
+  const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
+  const helpText = parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요';
+  const check = value => {
+    if (q.answered) return;
+    const correct = isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
+    answer(correct, correct ? null : value.trim());
+  };
+  const giveUp = () => { if (!q.answered) answer(false, null); };
+  if (settings.appKeyboard) return renderAppKeyboard(actions, placeholder, helpText, check, giveUp);
+
   const input = el('input', 'type-input');
   Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, enterKeyHint: 'done' });
   input.setAttribute('autocapitalize', 'off');
   input.setAttribute('autocorrect', 'off');
-  input.placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
-  const help = el('div', 'type-help', parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요');
+  input.placeholder = placeholder;
   const row = el('div', 'row two');
   const dk = el('button', 'btn secondary', '모르겠어요');
   const ok = el('button', 'btn primary', '확인');
   row.append(dk, ok);
-  actions.append(input, help, row);
+  actions.append(input, el('div', 'type-help', helpText), row);
   const submit = () => {
-    if (q.answered) return;
     if (!input.value.trim()) { input.focus(); return; }
-    const correct = isTypedCorrect(input.value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
     input.blur();
-    answer(correct, correct ? null : input.value.trim());
+    check(input.value);
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-  dk.addEventListener('click', () => { if (!q.answered) { input.blur(); answer(false, null); } });
+  dk.addEventListener('click', () => { input.blur(); giveUp(); });
   setTimeout(() => input.focus(), 50);
+}
+
+// ---------- 앱 자체 영어 키보드 (폰 키보드 대신) ----------
+const KB_ROWS = ['qwertyuiop', 'asdfghjkl', "'zxcvbnm⌫"];
+let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
+
+function renderAppKeyboard(actions, placeholder, helpText, check, giveUp) {
+  $('#quiz').classList.add('kb-mode');
+  const display = el('div', 'type-input kb-display');
+  const text = el('span', 'kb-text');
+  const caret = el('span', 'kb-caret');
+  const ph = el('span', 'kb-ph', placeholder);
+  display.append(text, caret, ph);
+  const top = el('div', 'kb-top');
+  const dk = el('button', 'btn ghost small', '모르겠어요');
+  dk.addEventListener('click', giveUp);
+  top.append(el('div', 'type-help', helpText), dk);
+
+  const board = el('div', 'kb');
+  const render = () => { text.textContent = kb.value; ph.hidden = !!kb.value; };
+  kb = {
+    value: '',
+    type(key) {
+      if (q.answered) return;
+      if (key === 'back') kb.value = kb.value.slice(0, -1);
+      else if (key === ' ') { if (kb.value && !kb.value.endsWith(' ')) kb.value += ' '; }
+      else if (kb.value.length < 60) kb.value += key;
+      render();
+    },
+    submit() {
+      if (q.answered) return;
+      if (!kb.value.trim()) { display.classList.remove('shake'); void display.offsetWidth; display.classList.add('shake'); return; }
+      check(kb.value);
+    },
+  };
+  const key = (label, cls, fn) => {
+    const b = el('button', 'key' + (cls ? ' ' + cls : ''), label);
+    b.type = 'button';
+    // pointerdown으로 바로 반응 (터치 지연 없음), 지우기는 길게 누르면 연속 삭제
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      fn();
+      if (label === '⌫') {
+        clearInterval(kb.repeat);
+        kb.hold = setTimeout(() => { kb.repeat = setInterval(fn, 70); }, 400);
+      }
+      if (navigator.vibrate) navigator.vibrate(8);
+    });
+    return b;
+  };
+  for (const row of KB_ROWS) {
+    const r = el('div', 'kb-row');
+    for (const ch of row) {
+      if (ch === '⌫') r.appendChild(key('⌫', 'wide fn', () => kb.type('back')));
+      else if (ch === "'") r.appendChild(key("'", 'fn', () => kb.type("'")));
+      else r.appendChild(key(ch, '', () => kb.type(ch)));
+    }
+    board.appendChild(r);
+  }
+  const last = el('div', 'kb-row');
+  last.append(
+    key('-', 'fn', () => kb.type('-')),
+    key('띄어쓰기', 'space', () => kb.type(' ')),
+    key('확인', 'enter', () => kb.submit()),
+  );
+  board.appendChild(last);
+  const stopRepeat = () => { clearTimeout(kb && kb.hold); clearInterval(kb && kb.repeat); };
+  board.addEventListener('pointerup', stopRepeat);
+  board.addEventListener('pointercancel', stopRepeat);
+  board.addEventListener('pointerleave', stopRepeat);
+  actions.append(top, display, board);
+  render();
+  // 고정된 키보드에 문장이 가리지 않게 아래 여백 확보
+  requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`; });
 }
 
 function useHint() {
@@ -563,6 +647,7 @@ function renderSettings() {
   $('#opt-autospeak').checked = settings.autoSpeak;
   $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
+  $('#opt-appkb').checked = settings.appKeyboard;
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days[0] ?? '-'}~${days[days.length - 1] ?? '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
 }
@@ -665,6 +750,7 @@ function bind() {
   $('#opt-autospeak').addEventListener('change', e => { settings.autoSpeak = e.target.checked; saveSettings(); });
   $('#opt-ko').addEventListener('change', e => { settings.showKo = e.target.checked; saveSettings(); });
   $('#opt-meaning').addEventListener('change', e => { settings.showMeaning = e.target.checked; saveSettings(); });
+  $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#btn-test-voice').addEventListener('click', () => speak('I tried to convince him of the danger.'));
   $('#btn-export').addEventListener('click', exportProgress);
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
@@ -689,6 +775,14 @@ function bind() {
   document.addEventListener('keydown', e => {
     if (current !== 'quiz') return;
     if (!$('#feedback').hidden && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); return; }
+    if (kb && !q?.answered && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key === 'Enter') kb.submit();
+      else if (e.key === 'Backspace') kb.type('back');
+      else if (/^[a-zA-Z' -]$/.test(e.key)) kb.type(e.key.toLowerCase());
+      else return;
+      e.preventDefault();
+      return;
+    }
     if (settings.kind === 'choice' && /^[1-4]$/.test(e.key) && !q?.answered) {
       $('#q-actions').querySelectorAll('.choice')[+e.key - 1]?.click();
     }
