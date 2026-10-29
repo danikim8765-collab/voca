@@ -5,7 +5,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610291001';
+const APP_VERSION = '202610291043';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -149,9 +149,20 @@ async function loadData() {
   save(KEY.csv, cached);
   texts.sort((a, b) => a.name.localeCompare(b.name));
   setWords(rowsToWords(texts));
+  await applyHighlights();
   dataInfo = `${texts.map(t => t.name.replace('local:', '폰: ')).join(', ') || '없음'}`
     + (fromCache ? ` (오프라인: 저장된 데이터 ${fromCache}개 사용)` : '')
     + (missing.length ? `\n못 찾은 파일: ${missing.join(', ')}` : '');
+}
+
+// 해석에서 뜻 부분이 자동으로 안 찾아지는 단어용 강조어 목록 (없어도 됨)
+async function applyHighlights() {
+  let map = load('voca.highlights.v1', {});
+  try {
+    const res = await fetch('highlights.json?t=' + Date.now(), { cache: 'no-store' });
+    if (res.ok) { map = await res.json(); save('voca.highlights.v1', map); }
+  } catch {}
+  for (const w of words) if (!w.koMark && map[w.word]) w.koMark = map[w.word];
 }
 
 function setWords(list) {
@@ -312,7 +323,7 @@ function renderQuestion() {
   const noBlank = !(b1 && b1.ok) && !(b2 && b2.ok);
   [[b1, w.ex1ko], [b2, w.ex2ko]].forEach(([b, ko], i) => {
     if (!b || !b.segs.length) return;
-    box.appendChild(sentenceCard(b, ko, i + 1, false, false, w.meaning, i ? w.ex2src : w.ex1src));
+    box.appendChild(sentenceCard(b, ko, i + 1, false, false, w, i ? w.ex2src : w.ex1src));
   });
   document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요' : '빈칸에 공통으로 들어갈 말은?';
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
@@ -339,7 +350,7 @@ function meaningText(w) {
   return [w.pos, formatMeaning(w.meaning)].filter(Boolean).join(' ');
 }
 
-function sentenceCard(b, ko, n, filled, wrongAnswer, meaning, src) {
+function sentenceCard(b, ko, n, filled, wrongAnswer, w, src) {
   const card = el('div', 'sent');
   const head = el('div', 'sent-head');
   head.appendChild(el('span', 'num', `예문 ${n}` + (src ? ` · ${src}` : '')));
@@ -361,7 +372,7 @@ function sentenceCard(b, ko, n, filled, wrongAnswer, meaning, src) {
   card.appendChild(en);
   if (ko) {
     const k = el('div', 'ko' + (!filled && !settings.showKo ? ' hide' : ''));
-    for (const s of highlightMeaning(ko, meaning)) k.appendChild(s.t === 'mark' ? el('b', 'ko-mark', s.v) : document.createTextNode(s.v));
+    for (const s of highlightMeaning(ko, w && w.meaning, w && w.koMark)) k.appendChild(s.t === 'mark' ? el('b', 'ko-mark', s.v) : document.createTextNode(s.v));
     if (!filled && !settings.showKo) k.addEventListener('click', () => k.classList.remove('hide'));
     card.appendChild(k);
   }
@@ -653,7 +664,7 @@ function showFeedback(correct, given, kind) {
   box.innerHTML = '';
   box.className = 'answered ' + state;
   [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
-    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, state === 'bad', w.meaning, i ? w.ex2src : w.ex1src));
+    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, state === 'bad', w, i ? w.ex2src : w.ex1src));
   });
   $('#btn-hint').hidden = true;
   if (settings.kind === 'type') {
@@ -689,7 +700,7 @@ function showFeedback(correct, given, kind) {
   const exPane = $('#fb-ex');
   exPane.innerHTML = '';
   [[w.ex1, w.ex1ko, w.ex1src], [w.ex2, w.ex2ko, w.ex2src]].forEach(([en, ko, src], i) => {
-    if (en) exPane.appendChild(sentenceCard(makeBlanks(en, w.blank, w.word), ko, i + 1, true, false, w.meaning, src));
+    if (en) exPane.appendChild(sentenceCard(makeBlanks(en, w.blank, w.word), ko, i + 1, true, false, w, src));
   });
   setFbTab('mean');
 
@@ -756,7 +767,7 @@ function wordItem(w) {
       [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].forEach(([en, ko], i) => {
         if (!en) return;
         const b = makeBlanks(en, w.blank, w.word);
-        det.appendChild(sentenceCard(b, ko, i + 1, true, false, w.meaning, i ? w.ex2src : w.ex1src));
+        det.appendChild(sentenceCard(b, ko, i + 1, true, false, w, i ? w.ex2src : w.ex1src));
       });
       for (const [k, v] of w.extras) {
         const d = el('div', 'muted');
@@ -849,6 +860,7 @@ async function importLocalCSV(files) {
   if (!save(KEY.csv, cached)) toast('저장 공간이 부족해서 이번에만 사용돼요');
   const texts = Object.entries(cached).map(([name, text]) => ({ name, text }));
   setWords(rowsToWords(texts));
+  await applyHighlights();
   dataInfo = texts.map(t => t.name.replace('local:', '폰: ')).join(', ');
   boot(true);
   toast(`단어 ${words.length}개를 불러왔어요`);

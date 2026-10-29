@@ -149,3 +149,10 @@ test('version.txt와 앱 버전이 같아야 함 (다르면 앱이 계속 새로
   const app = fs.readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
   assert.equal(app.match(/const APP_VERSION = '([^']+)'/)[1], ver);
 });
+
+test('직접 지정한 해석 강조어', async () => {
+  const { highlightMeaning } = await import('../js/core.js');
+  const hl = (ko, m, mark) => highlightMeaning(ko, m, mark).map(s => (s.t === 'mark' ? `[${s.v}]` : s.v)).join('');
+  assert.equal(hl('모닥불에서 열기가 발산되어 주위에', '내뿜다, 방출하다', '발산되어'), '모닥불에서 열기가 [발산되어] 주위에');
+  assert.equal(hl('절대 꿈을 포기하지 마.', '포기하다', '없는말'), '절대 꿈을 [포기하지] 마.'); // 없으면 자동 찾기
+});

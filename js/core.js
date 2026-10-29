@@ -38,6 +38,7 @@ const COLUMN_RULES = {
   pos: { names: ['품사', 'pos'] },
   pron: { names: ['발음기호', '발음', 'pronunciation', 'ipa'] },
   star: { names: ['형광', '중요', '별표', 'star', '중요표시'] },
+  koMark: { names: ['해석강조', '강조', '해석강조어', '뜻강조'] },
 };
 
 export function mapColumns(headers) {
@@ -120,6 +121,7 @@ export function rowsToWords(csvTexts) {
         ex2: e2.en, ex2ko: get('ex2ko') || e2.ko,
         ex1src: src1, ex2src: src2,
         star: /^(o|y|yes|1|true|★|v|✓|○)$/i.test(get('star')),
+        koMark: get('koMark'),
         pos: get('pos'), pron: get('pron'),
         extras: extras.map(i => [headers[i], (row[i] || '').trim()]).filter(([, v]) => v && !/^[-–—x]$/i.test(v)),
         source: name,
@@ -438,8 +440,13 @@ const KO_SKIP = new Set([
 ]);
 const KO_WORD_END = /[\s.,!?;:"'“”‘’()\[\]…·~]/;
 
-export function highlightMeaning(ko, meaning) {
+export function highlightMeaning(ko, meaning, mark) {
   const text = String(ko || '');
+  // 직접 지정한 강조어(CSV '해석강조' 컬럼 또는 highlights.json)가 해석에 있으면 그걸 씀
+  for (const m of String(mark || '').split('|').map(x => x.trim()).filter(Boolean)) {
+    const i = text.indexOf(m);
+    if (i >= 0) return [{ t: 'text', v: text.slice(0, i) }, { t: 'mark', v: m }, { t: 'text', v: text.slice(i + m.length) }].filter(x => x.v);
+  }
   if (!text || !meaning) return [{ t: 'text', v: text }];
   const cleaned = String(meaning)
     .replace(/\([^)]*\)+/g, ' ') // ((주로 수동태로)), (농작물을) 같은 보충 설명은 제외
