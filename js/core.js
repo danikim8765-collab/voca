@@ -511,3 +511,25 @@ export function sameStats(x, y) {
     return b && a.s === b.s && a.b === b.b && a.c === b.c && a.w === b.w && a.d === b.d;
   });
 }
+
+// ---------- 직접 입력 글자 힌트 ----------
+// 입력이 정답 앞부분과 맞는 데까지는 살리고, 거기서부터 2글자(남은 게 2글자 이하면 1글자)를 더 채운다.
+// 마지막 글자는 알려주지 않는다. 더 줄 힌트가 없으면 null.
+export function typingHintTarget(word, blanks1, blanks2) {
+  const pick = [blanks1, blanks2].find(b => b && b.length) || answerParts(word.blank);
+  const uniq = pick.every(x => x.toLowerCase() === pick[0].toLowerCase()) ? [pick[0]] : pick;
+  return uniq.join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+}
+
+export function nextLetterHint(input, target) {
+  const cur = String(input || '').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').replace(/^ /, '');
+  let k = 0;
+  while (k < cur.length && k < target.length && cur[k] === target[k]) k++;
+  const restLetters = target.slice(k).replace(/ /g, '').length;
+  const give = Math.min(2, restLetters - 1);
+  if (give <= 0) return cur.length > k ? target.slice(0, k) : null; // 틀린 부분만 지워줌
+  let i = k, got = 0;
+  while (i < target.length && got < give) { if (target[i] !== ' ') got++; i++; }
+  if (target[i] === ' ') i++; // 다음 단어로 넘어가는 띄어쓰기는 같이 채움
+  return target.slice(0, i);
+}

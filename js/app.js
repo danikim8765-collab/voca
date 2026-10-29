@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, isTypedCorrect, displayAnswer, answerParts,
-  applyResult, pickWords, pickDistractors, shuffle, MAX_BOX, highlightMeaning,
+  applyResult, pickWords, pickDistractors, shuffle, MAX_BOX, highlightMeaning, nextLetterHint, typingHintTarget,
 } from './core.js';
 import { createSync } from './sync.js';
 
@@ -412,6 +412,7 @@ function renderTyping(actions) {
   const ok = el('button', 'btn primary', '확인');
   row.append(dk, ok);
   actions.append(input, el('div', 'type-help', helpText), row);
+  q.typing = { get: () => input.value, set: v => { input.value = v; input.focus(); } };
   const submit = () => {
     if (!input.value.trim()) { input.focus(); return; }
     input.blur();
@@ -437,7 +438,11 @@ function renderAppKeyboard(actions, placeholder, helpText, check, giveUp) {
   const top = el('div', 'kb-top');
   const dk = el('button', 'btn ghost small', '모르겠어요');
   dk.addEventListener('click', giveUp);
-  top.append(el('div', 'type-help', helpText), dk);
+  const hintBtn = el('button', 'btn ghost small', '💡 힌트');
+  hintBtn.addEventListener('click', useHint);
+  const btns = el('div', 'row');
+  btns.append(hintBtn, dk);
+  top.append(el('div', 'type-help', helpText), btns);
 
   const board = el('div', 'kb');
   const render = () => { text.textContent = kb.value; ph.hidden = !!kb.value; };
@@ -493,6 +498,7 @@ function renderAppKeyboard(actions, placeholder, helpText, check, giveUp) {
   board.addEventListener('pointerleave', stopRepeat);
   actions.append(top, display, board);
   render();
+  q.typing = { get: () => kb.value, set: v => { kb.value = v; render(); } };
   // 고정된 키보드에 문장이 가리지 않게 아래 여백 확보
   requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`; });
 }
@@ -505,7 +511,16 @@ function useHint() {
     q.hint = 1;
     return;
   }
-  // 두 번째 힌트: 빈칸마다 첫 글자
+  // 직접 입력: 맞게 쓴 데까지 살리고 2글자씩 채워줌 (누를 때마다)
+  if (q.typing) {
+    const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
+    const next = nextLetterHint(q.typing.get(), target);
+    if (next == null) { toast('마지막 글자는 직접 써보세요!'); return; }
+    q.typing.set(next);
+    q.hint = Math.max(q.hint, 2);
+    return;
+  }
+  // 객관식 두 번째 힌트: 빈칸마다 첫 글자
   q.hint = 2;
   document.querySelectorAll('#q-sentences .blank').forEach(s => {
     const v = s.textContent.trim();

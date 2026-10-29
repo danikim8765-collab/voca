@@ -125,3 +125,20 @@ test('진도 합치기: 단어별 최신 기록, 초기화 반영', async () => 
   assert.deepEqual(Object.keys(reset.stats), ['b']);
   assert.ok(!sameStats(m.stats, reset.stats));
 });
+
+test('직접 입력 글자 힌트', async () => {
+  const { nextLetterHint: h, typingHintTarget } = await import('../js/core.js');
+  const t = 'convinced of';
+  assert.equal(h('', t), 'co');                 // 비어 있으면 처음 두 글자
+  assert.equal(h('co', t), 'conv');             // 맞게 쓴 데서 두 글자 더
+  assert.equal(h('Conv', t), 'convin');         // 대소문자 무시
+  assert.equal(h('convxyz', t), 'convin');      // 틀린 부분은 버리고 맞는 데서부터
+  assert.equal(h('abc', t), 'co');              // 처음부터 틀리면 처음 두 글자
+  assert.equal(h('convinc', t), 'convinced ');  // 단어 끝나면 띄어쓰기까지
+  assert.equal(h('convinced ', t), 'convinced o'); // 두 글자 남으면 한 글자만
+  assert.equal(h('convinced o', t), null);      // 마지막 글자는 직접
+  assert.equal(h('convinced ox', t), 'convinced o'); // 그래도 틀린 부분은 지워줌
+  assert.equal(h('', 'of'), 'o');
+  assert.equal(typingHintTarget({ blank: 'cue' }, ['cues', 'cues'], []), 'cues');
+  assert.equal(typingHintTarget({ blank: 'convince A of B' }, ['Convince', 'of'], []), 'convince of');
+});
