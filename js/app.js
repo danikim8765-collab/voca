@@ -5,7 +5,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610290933';
+const APP_VERSION = '202610290936';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -295,7 +295,7 @@ function renderQuestion() {
   if (!w) { session.pos++; return session.pos < session.queue.length ? renderQuestion() : finishSession(); }
   const b1 = w.ex1 ? makeBlanks(w.ex1, w.blank, w.word) : null;
   const b2 = w.ex2 ? makeBlanks(w.ex2, w.blank, w.word) : null;
-  q = { w, b1, b2, answered: false, hint: 0 };
+  q = { w, b1, b2, answered: false, letterHint: false, revealed: false };
 
   $('#feedback').hidden = true;
   $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
@@ -317,8 +317,8 @@ function renderQuestion() {
   const mEl = $('#q-meaning');
   mEl.textContent = meaningText(w);
   mEl.hidden = !(settings.showMeaning || noBlank) || !mEl.textContent;
-  q.hint = mEl.hidden ? 0 : 1;
   $('#btn-hint').hidden = false;
+  $('#btn-hint').textContent = '💡 힌트';
 
   const actions = $('#q-actions');
   actions.innerHTML = '';
@@ -385,33 +385,29 @@ function renderChoices(actions) {
     });
     actions.appendChild(b);
   });
-  const dk = el('button', 'btn ghost small', '모르겠어요');
-  dk.addEventListener('click', () => {
-    if (q.answered) return;
-    actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
-    answer(false, null);
-  });
-  actions.appendChild(dk);
 }
 
 function renderTyping(actions) {
   const parts = answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
   const helpText = parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요';
+  const isRight = value => isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
+  // 확인을 눌렀을 때. 정답을 보고 쓰는 중이면 다 따라 쓸 때까지 제출하지 않음
   const check = value => {
-    if (q.answered) return;
-    const correct = isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
+    if (q.answered) return false;
+    const correct = isRight(value);
+    if (q.revealed) { if (correct) answer(false, null, true); return correct; }
     answer(correct, correct ? null : value.trim());
+    return true;
   };
-  // 정답을 다 쓰는 순간 확인 없이 바로 정답 처리 (틀린 답은 확인을 눌러야 제출)
+  // 정답을 다 쓰는 순간 확인 없이 바로 처리 (틀린 답은 확인을 눌러야 제출)
   const autoCheck = value => {
-    if (!q.answered && isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks)) { check(value); return true; }
+    if (!q.answered && isRight(value)) { check(value); return true; }
     return false;
   };
-  const giveUp = () => { if (!q.answered) answer(false, null); };
   if (settings.appKeyboard) {
     const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 띄어쓰기로 다음 빈칸` : '키보드로 바로 입력하세요';
-    return renderAppKeyboard(actions, kbHelp, check, giveUp, autoCheck);
+    return renderAppKeyboard(actions, kbHelp, check, autoCheck);
   }
 
   const input = el('input', 'type-input');
@@ -419,21 +415,27 @@ function renderTyping(actions) {
   input.setAttribute('autocapitalize', 'off');
   input.setAttribute('autocorrect', 'off');
   input.placeholder = placeholder;
-  const row = el('div', 'row two');
-  const dk = el('button', 'btn secondary', '모르겠어요');
   const ok = el('button', 'btn primary', '확인');
-  row.append(dk, ok);
-  actions.append(input, el('div', 'type-help', helpText), row);
-  q.typing = { get: () => input.value, set: v => { input.value = v; input.focus(); } };
+  actions.append(input, el('div', 'type-help', helpText), ok);
+  q.typing = {
+    get: () => input.value,
+    set: v => { input.value = v; input.focus(); },
+    reveal: (target, keep) => {
+      // 문장 빈칸에 정답을 회색으로 보여주고, 입력칸에 따라 쓰게 함
+      document.querySelectorAll('#q-sentences .blank').forEach(sp => sp.classList.add('ghost-full'));
+      input.value = keep;
+      input.placeholder = target;
+      input.focus();
+    },
+  };
   const submit = () => {
     if (!input.value.trim()) { input.focus(); return; }
+    if (!check(input.value)) { input.focus(); return; }
     input.blur();
-    check(input.value);
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
   input.addEventListener('input', () => { if (isTypedCorrect(input.value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks)) input.blur(); autoCheck(input.value); });
-  dk.addEventListener('click', () => { input.blur(); giveUp(); });
   setTimeout(() => input.focus(), 50);
 }
 
@@ -458,16 +460,13 @@ function fillBlanks(value, targets) {
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', "'zxcvbnm⌫"];
 let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
 
-function renderAppKeyboard(actions, helpText, check, giveUp, autoCheck) {
+function renderAppKeyboard(actions, helpText, check, autoCheck) {
   $('#quiz').classList.add('kb-mode');
   const top = el('div', 'kb-top');
-  const dk = el('button', 'btn ghost small', '모르겠어요');
-  dk.addEventListener('click', giveUp);
-  const hintBtn = el('button', 'btn ghost small', '💡 힌트');
+  const hintBtn = el('button', 'btn ghost small kb-hint', '💡 힌트');
   hintBtn.addEventListener('click', useHint);
-  const btns = el('div', 'row');
-  btns.append(hintBtn, dk);
-  top.append(el('div', 'type-help', helpText), btns);
+  const help = el('div', 'type-help', helpText);
+  top.append(help, hintBtn);
 
   // 입력한 글자는 문장 속 빈칸에 바로 써짐. 갈라진 숙어는 띄어쓰기 기준으로 다음 빈칸으로 넘어감
   const cards = [...document.querySelectorAll('#q-sentences .sent')];
@@ -480,9 +479,16 @@ function renderAppKeyboard(actions, helpText, check, giveUp, autoCheck) {
       spans.forEach((sp, i) => {
         sp.classList.add('typing');
         sp.classList.toggle('active', i === active);
-        sp.textContent = fill[i] || '';
-        if (!fill[i]) sp.appendChild(document.createTextNode('\u00a0'));
+        const typed = fill[i] || '';
+        const want = (targets[ci] || [])[i] || '';
+        const onTrack = want.toLowerCase().startsWith(typed.toLowerCase());
+        sp.textContent = '';
+        // 정답 보고 쓰기: 아직 안 쓴 부분은 회색으로, 다르게 쓴 글자는 빨갛게(첫 문장 기준)
+        if (q.revealed && !onTrack && ci === 0) sp.appendChild(el('span', 'typo', typed));
+        else sp.appendChild(document.createTextNode(typed));
         if (ci === 0 && i === active) sp.appendChild(caret);
+        if (q.revealed && onTrack) sp.appendChild(el('span', 'ghost', want.slice(typed.length)));
+        else if (!typed) sp.appendChild(document.createTextNode('\u00a0'));
       });
     });
   };
@@ -499,12 +505,9 @@ function renderAppKeyboard(actions, helpText, check, giveUp, autoCheck) {
     },
     submit() {
       if (q.answered) return;
-      if (!kb.value.trim()) {
-        const c = cards[0] || top;
-        c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
-        return;
-      }
-      check(kb.value);
+      const shake = () => { const c = cards[0] || top; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); };
+      if (!kb.value.trim()) { shake(); return; }
+      if (!check(kb.value)) shake();
     },
   };
   const key = (label, cls, fn) => {
@@ -544,32 +547,61 @@ function renderAppKeyboard(actions, helpText, check, giveUp, autoCheck) {
   board.addEventListener('pointerleave', stopRepeat);
   actions.append(top, board);
   render();
-  q.typing = { get: () => kb.value, set: v => { kb.value = v; render(); } };
+  q.typing = {
+    get: () => kb.value,
+    set: v => { kb.value = v; render(); },
+    reveal: (target, keep) => {
+      kb.value = keep;
+      help.textContent = '회색 글자를 따라 써보세요';
+      render();
+    },
+  };
   // 고정된 키보드에 문장이 가리지 않게 아래 여백 확보
   requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`; });
 }
 
 function useHint() {
   if (!q || q.answered) return;
-  // 직접 입력: 맞게 쓴 데까지 살리고 2글자씩 채워줌 (누를 때마다)
   if (q.typing) {
+    if (q.revealed) return;
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
-    const next = nextLetterHint(q.typing.get(), target);
-    if (next == null) { toast('마지막 글자는 직접 써보세요!'); return; }
-    q.typing.set(next);
-    q.hint = Math.max(q.hint, 2);
+    const cur = q.typing.get();
+    // 첫 번째: 맞게 쓴 데까지 살리고 2글자 더
+    if (!q.letterHint) {
+      const next = nextLetterHint(cur, target);
+      q.letterHint = true;
+      if (next != null) {
+        q.typing.set(next);
+        setHintButtons('💡 정답 보고 쓰기');
+        return;
+      }
+    }
+    // 두 번째: 전체 정답을 회색으로 보여주고 따라 쓰게 함 (틀린 것으로 기록, 곧 다시 나옴)
+    q.revealed = true;
+    let k = 0;
+    const low = cur.toLowerCase();
+    while (k < low.length && low[k] === target[k]) k++;
+    q.typing.reveal(target, target.slice(0, k));
+    setHintButtons(null);
     return;
   }
   // 객관식: 빈칸마다 첫 글자
-  q.hint = 2;
   document.querySelectorAll('#q-sentences .blank').forEach(s => {
     const v = s.textContent.trim();
     if (v) { s.textContent = v[0] + '·'.repeat(Math.max(0, Math.min(v.length - 1, 8))); s.classList.add('hint'); }
   });
-  $('#btn-hint').hidden = true;
+  setHintButtons(null);
 }
 
-function answer(correct, given) {
+function setHintButtons(label) {
+  for (const b of [$('#btn-hint'), document.querySelector('.kb-hint')]) {
+    if (!b) continue;
+    b.hidden = label == null;
+    if (label) b.textContent = label;
+  }
+}
+
+function answer(correct, given, copied) {
   q.answered = true;
   const w = q.w;
   const id = w.id;
@@ -594,14 +626,14 @@ function answer(correct, given) {
   saveStats();
   sync.soon();
   saveSession();
-  showFeedback(correct, given);
+  showFeedback(correct, given, copied);
 }
 
-function showFeedback(correct, given) {
+function showFeedback(correct, given, copied) {
   const w = q.w;
   const head = $('#fb-head');
-  head.className = 'fb-head ' + (correct ? 'ok' : 'bad');
-  head.textContent = correct ? '정답이에요! 👏' : given ? `아쉬워요 · 내 답: ${given}` : '정답을 확인하세요';
+  head.className = 'fb-head ' + (correct ? 'ok' : copied ? 'copied' : 'bad');
+  head.textContent = correct ? '정답이에요! 👏' : copied ? '잘 따라 썼어요 · 조금 뒤에 다시 나와요' : given ? `아쉬워요 · 내 답: ${given}` : '정답을 확인하세요';
   $('#fb-word').textContent = w.word;
   $('#fb-pron').textContent = w.pron || (w.blank !== w.word ? `빈칸: ${displayAnswer(w)}` : '');
   const sp = $('#fb-speak');
@@ -614,7 +646,7 @@ function showFeedback(correct, given) {
   const box = $('#fb-sentences');
   box.innerHTML = '';
   [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
-    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, !correct, w.meaning, i ? w.ex2src : w.ex1src));
+    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, !correct && !copied, w.meaning, i ? w.ex2src : w.ex1src));
   });
   const ex = $('#fb-extras');
   ex.innerHTML = '';

@@ -300,3 +300,9 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 }
 .blank.typing.active { background: var(--primary-soft); border-bottom-color: var(--primary); }
 .blank .kb-caret { vertical-align: -0.12em; height: 1.05em; }
+
+/* 정답 보고 따라 쓰기 */
+.blank .ghost { color: var(--muted); opacity: .55; }
+.blank .typo { color: var(--bad); }
+.blank.ghost-full { color: var(--muted); }
+.fb-head.copied { color: var(--warn); }
