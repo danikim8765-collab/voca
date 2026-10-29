@@ -289,3 +289,8 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
 code { background: var(--primary-soft); padding: 1px 5px; border-radius: 5px; font-size: .9em; }
 /* 앱 키보드가 떠 있을 땐 알림을 위쪽에 */
 body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-inset-top) + 64px); }
+
+/* 문장 빈칸에 직접 입력 */
+.blank.typing { color: var(--text); font-weight: 700; text-align: left; white-space: pre; }
+.blank.typing.active { background: var(--primary-soft); border-bottom-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
+.blank .kb-caret { vertical-align: -0.15em; height: 1.1em; }

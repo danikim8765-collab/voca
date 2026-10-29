@@ -4,6 +4,9 @@ import {
 } from './core.js';
 import { createSync } from './sync.js';
 
+// 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
+const APP_VERSION = '202610290801';
+
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
 
@@ -82,6 +85,7 @@ window.addEventListener('popstate', () => {
 });
 function goHome(viaHistory = true) {
   if (viaHistory && current !== 'home' && history.state && history.state.s) { history.back(); return; }
+  if (updateReady) { location.reload(); return; }
   show('home', false);
   renderHome();
 }
@@ -405,7 +409,10 @@ function renderTyping(actions) {
     return false;
   };
   const giveUp = () => { if (!q.answered) answer(false, null); };
-  if (settings.appKeyboard) return renderAppKeyboard(actions, placeholder, helpText, check, giveUp, autoCheck);
+  if (settings.appKeyboard) {
+    const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 띄어쓰기로 다음 빈칸` : '키보드로 바로 입력하세요';
+    return renderAppKeyboard(actions, kbHelp, check, giveUp, autoCheck);
+  }
 
   const input = el('input', 'type-input');
   Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, enterKeyHint: 'done' });
@@ -431,16 +438,28 @@ function renderTyping(actions) {
 }
 
 // ---------- 앱 자체 영어 키보드 (폰 키보드 대신) ----------
+// 입력값을 문장의 빈칸들에 나눠 넣기. 같은 단어가 반복된 빈칸(cues … cues)은 모두 같은 값
+function fillBlanks(value, targets) {
+  if (targets.length <= 1 || targets.every(t => t.toLowerCase() === targets[0].toLowerCase())) {
+    return { fill: targets.map(() => value), active: 0 };
+  }
+  const words = value.split(' ');
+  const fill = [];
+  let wi = 0, active = 0;
+  targets.forEach((t, i) => {
+    const n = i === targets.length - 1 ? Infinity : t.trim().split(/\s+/).length;
+    const take = words.slice(wi, wi + n);
+    if (take.length) active = i;
+    wi += take.length;
+    fill.push(take.join(' '));
+  });
+  return { fill, active };
+}
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', "'zxcvbnm⌫"];
 let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
 
-function renderAppKeyboard(actions, placeholder, helpText, check, giveUp, autoCheck) {
+function renderAppKeyboard(actions, helpText, check, giveUp, autoCheck) {
   $('#quiz').classList.add('kb-mode');
-  const display = el('div', 'type-input kb-display');
-  const text = el('span', 'kb-text');
-  const caret = el('span', 'kb-caret');
-  const ph = el('span', 'kb-ph', placeholder);
-  display.append(text, caret, ph);
   const top = el('div', 'kb-top');
   const dk = el('button', 'btn ghost small', '모르겠어요');
   dk.addEventListener('click', giveUp);
@@ -450,8 +469,24 @@ function renderAppKeyboard(actions, placeholder, helpText, check, giveUp, autoCh
   btns.append(hintBtn, dk);
   top.append(el('div', 'type-help', helpText), btns);
 
+  // 입력한 글자는 문장 속 빈칸에 바로 써짐. 갈라진 숙어는 띄어쓰기 기준으로 다음 빈칸으로 넘어감
+  const cards = [...document.querySelectorAll('#q-sentences .sent')];
+  const targets = [q.b1, q.b2].filter(b => b && b.segs.length).map(b => b.blanks);
+  const caret = el('span', 'kb-caret');
+  const render = () => {
+    cards.forEach((card, ci) => {
+      const spans = [...card.querySelectorAll('.blank')];
+      const { fill, active } = fillBlanks(kb.value, targets[ci] || []);
+      spans.forEach((sp, i) => {
+        sp.classList.add('typing');
+        sp.classList.toggle('active', i === active);
+        sp.textContent = fill[i] || '';
+        if (!fill[i]) sp.appendChild(document.createTextNode('\u00a0'));
+        if (ci === 0 && i === active) sp.appendChild(caret);
+      });
+    });
+  };
   const board = el('div', 'kb');
-  const render = () => { text.textContent = kb.value; ph.hidden = !!kb.value; };
   kb = {
     value: '',
     type(key) {
@@ -464,7 +499,11 @@ function renderAppKeyboard(actions, placeholder, helpText, check, giveUp, autoCh
     },
     submit() {
       if (q.answered) return;
-      if (!kb.value.trim()) { display.classList.remove('shake'); void display.offsetWidth; display.classList.add('shake'); return; }
+      if (!kb.value.trim()) {
+        const c = cards[0] || top;
+        c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+        return;
+      }
       check(kb.value);
     },
   };
@@ -503,7 +542,7 @@ function renderAppKeyboard(actions, placeholder, helpText, check, giveUp, autoCh
   board.addEventListener('pointerup', stopRepeat);
   board.addEventListener('pointercancel', stopRepeat);
   board.addEventListener('pointerleave', stopRepeat);
-  actions.append(top, display, board);
+  actions.append(top, board);
   render();
   q.typing = { get: () => kb.value, set: v => { kb.value = v; render(); } };
   // 고정된 키보드에 문장이 가리지 않게 아래 여백 확보
@@ -878,7 +917,25 @@ loadData().then(() => { boot(); renderSyncStatus(); sync.now(); }).catch(err => 
   $('#load-status').textContent = '단어를 불러오지 못했어요: ' + err.message;
 });
 
-document.addEventListener('visibilitychange', () => { if (words.length) sync.now(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') { if (words.length) sync.now(); return; }
+  checkUpdate();
+  if (words.length) sync.now();
+});
+
+// 홈 화면 앱은 계속 켜져 있어서 새 버전이 안 보일 수 있음 → 앱으로 돌아올 때 확인
+let updateReady = false;
+async function checkUpdate() {
+  try {
+    const res = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const v = (await res.text()).trim();
+    if (v && v !== APP_VERSION) {
+      updateReady = true;
+      if (current !== 'quiz') location.reload(); // 퀴즈 중이면 끝나고 홈으로 갈 때 새로고침
+    }
+  } catch {}
+}
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

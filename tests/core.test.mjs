@@ -142,3 +142,10 @@ test('직접 입력 글자 힌트', async () => {
   assert.equal(typingHintTarget({ blank: 'cue' }, ['cues', 'cues'], []), 'cues');
   assert.equal(typingHintTarget({ blank: 'convince A of B' }, ['Convince', 'of'], []), 'convince of');
 });
+
+test('version.txt와 앱 버전이 같아야 함 (다르면 앱이 계속 새로고침)', async () => {
+  const fs = await import('node:fs');
+  const ver = fs.readFileSync(new URL('../version.txt', import.meta.url), 'utf8').trim();
+  const app = fs.readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.equal(app.match(/const APP_VERSION = '([^']+)'/)[1], ver);
+});

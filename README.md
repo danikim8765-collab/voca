@@ -54,3 +54,7 @@ Settings → Pages → Build and deployment → Source: **Deploy from a branch**
 ```sh
 node --test tests/core.test.mjs
 ```
+
+## 앱 수정 후 배포
+
+`js/app.js`의 `APP_VERSION`과 `version.txt`를 같은 새 값으로 바꿔서 올리면, 열려 있는 홈 화면 앱도 다음에 앱으로 돌아올 때 새 버전으로 새로고침돼요. (`node --test tests/core.test.mjs`가 두 값이 같은지 확인)
