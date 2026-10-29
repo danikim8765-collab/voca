@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, pickWords } from '../js/core.js';
+import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, buildPlan, normalizeStat, addDays, daysBetween } from '../js/core.js';
 
 const show = r => r.segs.map(s => (s.t === 'blank' ? `[${s.v}]` : s.v)).join('');
 
@@ -70,14 +70,71 @@ test('rowsToWords: 빈 DAY 이어받기, 중복 제거', () => {
   assert.equal(ws[1].day, 26);
 });
 
-test('틀린 단어 우선 출제', () => {
-  const now = 1e12;
-  const words = Array.from({ length: 20 }, (_, i) => ({ id: 'w' + i, day: 1, blank: 'x' + i }));
-  const stats = {};
-  for (const w of words) stats[w.id] = applyResult(undefined, true, now - 1000);
-  stats.w7 = applyResult(applyResult(stats.w7, false, now - 10), false, now - 5);
-  const picked = pickWords(words, stats, 3, 'smart', now, () => 0.5);
-  assert.equal(picked[0].id, 'w7');
+test('간격 반복: 단계와 다음 복습일', () => {
+  const T = '2026-11-02';
+  let s = applyResult(undefined, 'ok', { today: T });
+  assert.deepEqual([s.st, s.due, s.f], [1, '2026-11-03', T]);           // 1단계 → 1일
+  s = applyResult(s, 'ok', { today: '2026-11-03' });
+  assert.deepEqual([s.st, s.due], [2, '2026-11-06']);                   // 2단계 → 3일
+  s = applyResult(s, 'ok', { today: '2026-11-06' });
+  assert.deepEqual([s.st, s.due], [3, '2026-11-13']);                   // 3단계 → 7일
+  s = applyResult(s, 'ok', { today: '2026-11-13' });
+  assert.deepEqual([s.st, s.due], [4, '2026-11-27']);                   // 4단계 → 14일
+  s = applyResult(s, 'ok', { today: '2026-11-27' });
+  assert.deepEqual([s.st, s.due], [4, '2026-12-11']);                   // 최대 4단계
+  s = applyResult(s, 'hint', { today: '2026-12-11' });
+  assert.deepEqual([s.st, s.due], [4, '2026-12-12']);                   // 힌트: 단계 그대로, 내일
+  s = applyResult(s, 'wrong', { today: '2026-12-12' });
+  assert.deepEqual([s.st, s.due, s.w], [0, '2026-12-13', 1]);           // 틀림: 0단계, 내일
+  const before = { ...s };
+  s = applyResult(s, 'ok', { today: '2026-12-12', scheduled: false });  // 복습일 아닌 연습: 일정 그대로
+  assert.deepEqual([s.st, s.due, s.c], [before.st, before.due, before.c + 1]);
+});
+
+test('시험일: 다음 복습일이 시험 전날을 넘지 않음', () => {
+  const s = applyResult({ st: 3, due: '2026-11-10', c: 3, w: 0 }, 'ok', { today: '2026-11-10', exam: '2026-11-15' });
+  assert.deepEqual([s.st, s.due], [4, '2026-11-14']);
+});
+
+test('예전 기록 변환: 진도 유지', () => {
+  const old = { b: 6, c: 9, w: 2, d: new Date(2026, 10, 20, 15).getTime(), s: 123 };
+  const n = normalizeStat(old);
+  assert.deepEqual([n.c, n.w, n.s, n.st, n.due], [9, 2, 123, 4, '2026-11-20']);
+  assert.notEqual(applyResult(n, 'ok', { today: '2026-11-20' }).f, '2026-11-20'); // 예전 단어는 오늘의 새 단어로 안 셈
+  assert.equal(normalizeStat({ b: 0, c: 0, w: 1, d: new Date(2026, 10, 1).getTime(), s: 1 }).st, 0);
+});
+
+test('오늘의 학습: 복습 먼저, 새 단어는 하루 개수만큼', () => {
+  const T = '2026-11-02';
+  const words = Array.from({ length: 30 }, (_, i) => ({ id: 'w' + i, day: 1 + Math.floor(i / 10) }));
+  const stats = {
+    w0: { st: 2, due: '2026-11-01', c: 2, w: 0, s: 1, f: '2026-10-20' },
+    w1: { st: 0, due: T, c: 0, w: 1, s: 2, f: '2026-10-20' },
+    w2: { st: 3, due: '2026-11-09', c: 3, w: 0, s: 3, f: '2026-10-20' },
+    w3: { st: 1, due: '2026-11-03', c: 1, w: 0, s: 4, f: T }, // 오늘 배운 새 단어 1개
+  };
+  const plan = buildPlan(words, words.slice(0, 20), stats, { today: T, newPerDay: 5 });
+  assert.deepEqual(plan.review.map(w => w.id), ['w0', 'w1']);
+  assert.deepEqual(plan.fresh.map(w => w.id), ['w4', 'w5', 'w6', 'w7']); // 5 - 오늘 이미 1개
+  assert.deepEqual(plan.final, []);
+});
+
+test('시험 3일 전부터 범위 전체를 3일에 나눠 한 번씩', () => {
+  const exam = '2026-11-20';
+  const words = Array.from({ length: 9 }, (_, i) => ({ id: 'w' + i, day: 1 }));
+  const old = new Date(2026, 9, 1).getTime();
+  const stats = Object.fromEntries(words.map(w => [w.id, { st: 4, due: '2026-12-31', c: 4, w: 0, s: old, f: '2026-10-01' }]));
+  const d3 = buildPlan(words, words, stats, { today: addDays(exam, -3), exam, newPerDay: 0 });
+  assert.deepEqual(d3.final.map(w => w.id), ['w0', 'w1', 'w2']);
+  assert.equal(d3.examInfo.finalDay, 1);
+  // 첫날 몫을 안 했으면 둘째 날에 같이
+  const d2 = buildPlan(words, words, stats, { today: addDays(exam, -2), exam, newPerDay: 0 });
+  assert.deepEqual(d2.final.map(w => w.id), ['w0', 'w1', 'w2', 'w3', 'w4', 'w5']);
+  // 시험 기간에 이미 본 단어는 빼고
+  const seen = { ...stats, w0: { ...stats.w0, s: new Date(2026, 10, 17, 9).getTime() } };
+  const d2b = buildPlan(words, words, seen, { today: addDays(exam, -2), exam, newPerDay: 0 });
+  assert.ok(!d2b.final.some(w => w.id === 'w0'));
+  assert.equal(daysBetween('2026-11-17', exam), 3);
 });
 
 test('해석에서 뜻 부분 강조', async () => {

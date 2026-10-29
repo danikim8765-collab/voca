@@ -1,5 +1,5 @@
 // 기기 간 진도 동기화: 내 GitHub 계정의 비밀 Gist 하나(voca-progress.json)에 진도를 저장하고 합친다.
-import { mergeProgress, sameStats } from './core.js';
+import { mergeProgress, sameStats, samePrefs } from './core.js';
 
 const API = 'https://api.github.com';
 const FILE = 'voca-progress.json';
@@ -56,8 +56,9 @@ export function createSync({ getLocal, applyMerged, onStatus }) {
       const remote = await readRemote();
       const local = getLocal();
       const merged = mergeProgress(local, remote);
-      if (!sameStats(merged.stats, local.stats) || merged.resetAt !== (local.resetAt || 0)) applyMerged(merged);
-      if (!sameStats(merged.stats, remote.stats || {}) || merged.resetAt !== (remote.resetAt || 0)) {
+      const differs = x => !sameStats(merged.stats, x.stats || {}) || merged.resetAt !== (x.resetAt || 0) || !samePrefs(merged.prefs, x.prefs);
+      if (differs(local)) applyMerged(merged);
+      if (differs(remote)) {
         await gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files: { [FILE]: { content: JSON.stringify(merged) } } }) });
       }
       conf.last = Date.now();

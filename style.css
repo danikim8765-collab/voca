@@ -353,3 +353,15 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .speak-btn { flex: none; width: 64px; border: 0; border-radius: 14px; background: var(--primary-soft); font-size: 24px; }
 .speak-btn:active { transform: scale(.95); }
 .fb-actions { margin-bottom: 4px; }
+
+/* 오늘의 학습 */
+.today { border: 2px solid var(--primary-soft); }
+.today-head { display: flex; justify-content: space-between; align-items: center; }
+.plan { display: flex; gap: 8px; margin: 6px 0 12px; }
+.plan > div { flex: 1; background: var(--bg); border-radius: 12px; padding: 10px 8px; text-align: center; font-size: 13px; color: var(--muted); }
+.plan b { display: block; font-size: 22px; color: var(--text); }
+.today .btn { margin-bottom: 6px; }
+#plan-note { text-align: center; }
+.exam-row { gap: 8px; }
+.date-input { flex: 1; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); font-size: 16px; min-width: 0; }
+.tag.dday { color: #fff; background: var(--bad); }

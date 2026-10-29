@@ -36,8 +36,18 @@
         </div>
       </div>
 
+      <div class="card today">
+        <div class="today-head">
+          <div class="label">오늘의 학습</div>
+          <span class="tag" id="exam-dday" hidden></span>
+        </div>
+        <div class="plan" id="plan-info"></div>
+        <button class="btn primary big" id="btn-start">오늘 학습 시작</button>
+        <div class="muted" id="plan-note"></div>
+      </div>
+
       <div class="card">
-        <div class="label">학습 범위</div>
+        <div class="label">학습 범위 <span class="muted">(새 단어와 시험 범위)</span></div>
         <div class="range">
           <select id="day-from" aria-label="시작 DAY"></select>
           <span>~</span>
@@ -58,19 +68,23 @@
           <button data-v="choice">4지선다</button>
           <button data-v="type">직접 입력</button>
         </div>
-        <div class="label">한 번에 공부할 단어 수</div>
-        <div class="seg" id="seg-size">
+        <div class="label">하루 새 단어 수</div>
+        <div class="seg" id="seg-new">
           <button data-v="10">10</button>
           <button data-v="20">20</button>
           <button data-v="30">30</button>
-          <button data-v="0">전체</button>
+          <button data-v="50">50</button>
+        </div>
+        <div class="label">시험일 <span class="muted">(정하면 시험 전날까지 복습이 맞춰지고, 3일 전부터 범위 전체를 한 번씩)</span></div>
+        <div class="row exam-row">
+          <input type="date" id="exam-date" class="date-input">
+          <button class="btn ghost small" id="btn-exam-clear">지우기</button>
         </div>
       </div>
 
-      <button class="btn primary big" id="btn-start">학습 시작</button>
       <div class="row two">
         <button class="btn secondary" id="btn-wrong">다시 볼 단어 <span id="wrong-count" class="pill"></span></button>
-        <button class="btn secondary" id="btn-order">순서대로</button>
+        <button class="btn secondary" id="btn-order">범위 순서대로 연습</button>
       </div>
       <button class="btn ghost" id="btn-list">단어장 보기</button>
 

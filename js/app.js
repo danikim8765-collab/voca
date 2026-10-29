@@ -1,11 +1,12 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, pickWords, pickDistractors, shuffle, MAX_BOX, highlightMeaning, nextLetterHint, typingHintTarget,
+  applyResult, buildPlan, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
+  highlightMeaning, nextLetterHint, typingHintTarget,
 } from './core.js';
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610291051';
+const APP_VERSION = '202610291100';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -17,7 +18,6 @@ const KEY = {
   csv: 'voca.csvcache.v1',
   resetAt: 'voca.resetAt.v1',
 };
-const REQUEUE_GAP = 4; // 틀린 단어는 4문제 뒤에 다시
 const ANSWER_PAUSE = 100; // 맞힌 순간을 보여주고 정답 화면을 띄우기까지(ms)
 
 const $ = s => document.querySelector(s);
@@ -39,8 +39,14 @@ let words = [];
 let byId = new Map();
 let days = [];
 let stats = load(KEY.stats, {});
+// 예전 형식(단계 0~6, 복습 시각)을 새 형식(단계 0~4, 복습일)으로. 원본은 따로 보관
+if (Object.values(stats).some(v => v && v.st == null)) {
+  save('voca.stats.backup-before-v2', stats);
+  stats = Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, normalizeStat(v)]));
+  save(KEY.stats, stats);
+}
 const settings = Object.assign({
-  from: null, to: null, kind: 'choice', size: 20,
+  from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
 }, load(KEY.settings, {}));
 let session = null;
@@ -51,12 +57,16 @@ let resetAt = load(KEY.resetAt, 0);
 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
-  getLocal: () => ({ v: 1, resetAt, stats }),
+  getLocal: () => ({ v: 2, resetAt, stats, prefs: { exam: settings.exam, newPerDay: settings.newPerDay, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     stats = m.stats;
     resetAt = m.resetAt;
     saveStats();
     save(KEY.resetAt, resetAt);
+    if (m.prefs && (m.prefs.at || 0) > (settings.prefsAt || 0)) {
+      Object.assign(settings, { exam: m.prefs.exam || '', newPerDay: m.prefs.newPerDay || 20, prefsAt: m.prefs.at });
+      saveSettings();
+    }
     if (current === 'home') renderHome();
   },
   onStatus: () => renderSyncStatus(),
@@ -177,8 +187,9 @@ function rangeWords() {
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   return words.filter(w => w.day >= from && w.day <= to);
 }
-const isMastered = s => s && s.b >= 3;
-const isWrongNote = s => s && s.w > 0 && s.b < 3;
+const isMastered = s => s && s.st >= MAX_STAGE; // 4단계(14일 간격)까지 올라간 단어
+const isWrongNote = s => s && s.st === 0;          // 마지막에 틀린 단어 (0단계)
+const todayPlan = () => buildPlan(words, rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam });
 
 function fillDaySelects() {
   for (const sel of [$('#day-from'), $('#day-to')]) {
@@ -211,21 +222,21 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
-  setSeg('#seg-size', String(settings.size));
+  setSeg('#seg-new', String(settings.newPerDay));
+  $('#exam-date').value = settings.exam || '';
+  renderPlan();
 
   const rw = rangeWords();
-  const now = Date.now();
-  let seen = 0, mastered = 0, due = 0, wrong = 0;
+  let seen = 0, mastered = 0, wrong = 0;
   for (const w of rw) {
     const s = stats[w.id];
     if (s) seen++;
     if (isMastered(s)) mastered++;
-    if (s && s.d <= now) due++;
     if (isWrongNote(s)) wrong++;
   }
   const st = $('#range-stats');
   st.innerHTML = '';
-  for (const [n, l] of [[rw.length, '단어'], [seen, '학습'], [mastered, '암기'], [due, '복습할 것']]) {
+  for (const [n, l] of [[rw.length, '단어'], [seen, '학습'], [mastered, '암기 완료'], [wrong, '다시 볼 것']]) {
     const d = el('div');
     d.append(el('b', null, n), l);
     st.appendChild(d);
@@ -242,7 +253,7 @@ function renderHome() {
     const m = dw.filter(w => isMastered(stats[w.id])).length;
     const wr = dw.filter(w => isWrongNote(stats[w.id])).length;
     const b = el('button', 'day' + (d >= from && d <= to ? ' sel' : ''));
-    b.append(el('b', null, `DAY ${d}`), el('span', 'muted', `${m}/${dw.length}` + (wr ? ` · 오답 ${wr}` : '')));
+    b.append(el('b', null, `DAY ${d}`), el('span', 'muted', `${m}/${dw.length}` + (wr ? ` · 다시 ${wr}` : '')));
     const bar = el('div', 'bar');
     const f = el('div', 'bar-fill');
     f.style.width = `${(m / dw.length) * 100}%`;
@@ -254,10 +265,33 @@ function renderHome() {
 
   const saved = load(KEY.session, null);
   const rc = $('#resume-card');
-  if (saved && saved.queue && saved.pos < saved.queue.length) {
+  if (saved && saved.queue && saved.pos < saved.queue.length && saved.date === dateStr()) {
     rc.hidden = false;
     $('#resume-info').textContent = `${saved.label} · ${saved.done.length}/${saved.total} 완료`;
   } else rc.hidden = true;
+}
+
+// 오늘의 학습: 복습할 단어 → 시험 대비 → 새 단어
+function renderPlan() {
+  const plan = todayPlan();
+  const box = $('#plan-info');
+  box.innerHTML = '';
+  const items = [[plan.review.length, '복습'], [plan.fresh.length, '새 단어']];
+  if (plan.examInfo && plan.examInfo.finalDay) items.splice(1, 0, [plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
+  for (const [n, l] of items) {
+    const d = el('div');
+    d.append(el('b', null, n), l);
+    box.appendChild(d);
+  }
+  const total = plan.review.length + plan.final.length + plan.fresh.length;
+  const btn = $('#btn-start');
+  btn.textContent = total ? `오늘 학습 시작 (${total})` : '오늘 학습 완료 🎉';
+  btn.classList.toggle('done', !total);
+  const dd = $('#exam-dday');
+  const left = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
+  dd.hidden = left == null || left < 0;
+  if (!dd.hidden) { dd.textContent = left === 0 ? 'D-day' : `시험 D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
+  $('#plan-note').textContent = total ? '' : '내일 복습할 단어가 다시 나와요. 더 하고 싶으면 아래 연습을 이용하세요.';
 }
 
 function setSeg(sel, v) {
@@ -274,16 +308,28 @@ function onSeg(sel, fn) {
 
 // ---------- 학습 세션 ----------
 function startSession(mode, list) {
-  const rw = list || rangeWords();
-  const size = settings.size || rw.length;
-  const picked = list ? shuffle(list) : pickWords(rw, stats, size, mode === 'order' ? 'order' : mode);
-  if (!picked.length) { toast(mode === 'wrong' ? '이 범위에 다시 볼 단어가 없어요' : '학습할 단어가 없어요'); return; }
+  const rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
-  const label = (from === to ? `DAY ${from}` : `DAY ${from}~${to}`)
-    + (mode === 'wrong' ? ' 오답' : mode === 'order' ? ' 순서대로' : list ? ' 다시' : '');
-  // 순서대로 모드가 아니면 섞어서 출제
-  const ids = (mode === 'order' ? picked : shuffle(picked)).map(w => w.id);
-  session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], again: {} };
+  const range = from === to ? `DAY ${from}` : `DAY ${from}~${to}`;
+  let ids, label;
+  if (mode === 'today') {
+    const plan = todayPlan();
+    // 복습 → 시험 대비 → 새 단어(교재 순서) 순으로
+    ids = [...shuffle(plan.review), ...shuffle(plan.final), ...plan.fresh].map(w => w.id);
+    if (!ids.length) { toast('오늘 할 학습을 다 했어요! 내일 또 만나요'); return; }
+    label = '오늘의 학습';
+  } else if (list) {
+    ids = shuffle(list).map(w => w.id);
+    label = '다시 볼 단어';
+  } else if (mode === 'wrong') {
+    ids = shuffle(rw.filter(w => isWrongNote(stats[w.id]))).map(w => w.id);
+    if (!ids.length) { toast('이 범위에 다시 볼 단어가 없어요'); return; }
+    label = `${range} 다시 볼 단어`;
+  } else {
+    ids = rw.map(w => w.id);
+    label = `${range} 순서대로`;
+  }
+  session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
   saveSession();
   show('quiz');
   renderQuestion();
@@ -292,7 +338,9 @@ function startSession(mode, list) {
 function resumeSession() {
   const saved = load(KEY.session, null);
   if (!saved) return;
+  if (saved.date !== dateStr()) { localStorage.removeItem(KEY.session); renderHome(); toast('날짜가 바뀌어서 오늘의 학습을 새로 만들었어요'); return; }
   saved.queue = saved.queue.filter(id => byId.has(id));
+  saved.hinted = saved.hinted || [];
   session = saved;
   if (session.pos >= session.queue.length) { finishSession(); return; }
   show('quiz');
@@ -635,38 +683,46 @@ function answer(correct, given, kind) {
   q.answered = true;
   const w = q.w;
   const id = w.id;
-  const firstTime = !session.done.includes(id) && !session.wrong.includes(id);
+  const today = dateStr();
+  // 힌트 없이 맞힘 / 힌트 쓰고 맞힘 / 틀림(정답 보고 따라 쓴 것 포함)
+  const outcome = correct ? 'ok' : kind === 'hint' ? 'hint' : 'wrong';
+  const before = stats[id];
+  // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
+  const retry = session.wrong.includes(id);
+  const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
+  stats[id] = applyResult(before, outcome, { today, exam: settings.exam, scheduled });
 
-  if (correct) {
-    // 이번 세션에서 처음 맞힌 경우만 단계 상승, 틀렸다가 맞힌 건 그대로 0단계 유지
-    if (firstTime) stats[id] = applyResult(stats[id], true);
-    else stats[id] = { ...stats[id], c: (stats[id].c || 0) + 1, s: Date.now() };
-    session.done.push(id);
-  } else {
-    if (!session.wrong.includes(id)) {
-      session.wrong.push(id);
-      stats[id] = applyResult(stats[id], false);
-    } else stats[id] = { ...stats[id], w: stats[id].w + 1, s: Date.now() };
+  let label;
+  if (outcome === 'wrong') {
+    if (!retry) session.wrong.push(id);
     session.again[id] = (session.again[id] || 0) + 1;
-    // 틀린 단어는 몇 문제 뒤에 다시 출제 (맞힐 때까지)
-    const at = Math.min(session.queue.length, session.pos + 1 + REQUEUE_GAP);
+    // 같은 학습 중 3~5문제 뒤에 다시
+    const at = Math.min(session.queue.length, session.pos + 1 + 3 + Math.floor(Math.random() * 3));
     session.queue.splice(at, 0, id);
+    label = kind === 'copied' ? '정답 보고 씀 · 잠시 후 다시' : '오답 · 잠시 후 다시';
+  } else {
+    session.done.push(id);
+    if (outcome === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
+    const n = stats[id].due ? daysBetween(today, stats[id].due) : 0;
+    label = outcome === 'hint' ? '힌트 사용 · 내일 다시'
+      : retry ? '정답! · 내일 다시'
+        : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습` : '정답!';
   }
   session.pos++;
   saveStats();
   sync.soon();
   saveSession();
-  showFeedback(correct, given, kind);
+  showFeedback(correct, given, kind, label);
 }
 
-function showFeedback(correct, given, kind) {
+function showFeedback(correct, given, kind, label) {
   const w = q.w;
   const state = correct ? 'ok' : kind || 'bad';
   // 카드 위 상태 표시
   const head = $('#fb-head');
   head.hidden = false;
   head.className = 'tag fb-head ' + state;
-  head.textContent = { ok: '정답!', hint: '정답! · 힌트 써서 한 번 더 복습', copied: '정답 보고 씀 · 한 번 더 복습', bad: '오답 · 잠시 후 복습' }[state];
+  head.textContent = label;
   const prompt = document.querySelector('.q-prompt');
   prompt.textContent = !correct && given ? `내 답: ${given}` : '\u00a0';
   prompt.classList.toggle('my-answer', !correct && !!given);
@@ -741,7 +797,7 @@ function finishSession() {
   saveSession();
   $('#feedback').hidden = true;
   const total = s.total;
-  const wrong = s.wrong.filter(id => byId.has(id));
+  const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
   const firstOk = total - wrong.length;
   $('#res-score').textContent = `${Math.round((firstOk / Math.max(1, total)) * 100)}%`;
   $('#res-detail').textContent = `${s.label} · ${total}단어 중 힌트 없이 바로 맞힌 단어 ${firstOk}개`;
@@ -750,8 +806,8 @@ function finishSession() {
   if (!wrong.length) list.appendChild(el('div', 'card center muted', '다시 볼 단어가 없어요. 완벽해요!'));
   for (const id of wrong) list.appendChild(wordItem(byId.get(id)));
   const again = $('#btn-res-again');
-  again.textContent = wrong.length ? '다시 볼 단어 복습' : '한 번 더';
-  again.onclick = () => (wrong.length ? startSession('retry', wrong.map(id => byId.get(id))) : startSession('smart'));
+  again.textContent = wrong.length ? '다시 볼 단어 연습' : '홈으로';
+  again.onclick = () => (wrong.length ? startSession('retry', wrong.map(id => byId.get(id))) : goHome());
   show('result', false);
 }
 
@@ -768,7 +824,7 @@ function wordItem(w) {
   if (s && s.w) top.append(' ', el('span', 'badge-wrong', `✕${s.w}`));
   main.append(top, el('div', 'm', [w.pos, w.meaning].filter(Boolean).join(' ')));
   const dots = el('div', 'dots');
-  for (let i = 1; i <= MAX_BOX; i++) dots.appendChild(el('i', s && s.b >= i ? 'on' : ''));
+  for (let i = 1; i <= MAX_STAGE; i++) dots.appendChild(el('i', s && s.st >= i ? 'on' : ''));
   main.appendChild(dots);
   head.append(main, speakBtn(w.word));
   item.appendChild(head);
@@ -855,7 +911,7 @@ async function importProgress(file) {
     const data = JSON.parse(await file.text());
     if (!data || typeof data.stats !== 'object') throw new Error();
     if (!confirm('백업 파일의 진도로 덮어쓸까요?')) return;
-    stats = data.stats;
+    stats = Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, normalizeStat(v)]));
     saveStats();
     sync.now();
     toast('진도를 불러왔어요');
@@ -912,8 +968,11 @@ function bind() {
     if (r === 'all') setRange(days[0], last);
   });
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
-  onSeg('#seg-size', v => { settings.size = +v; saveSettings(); });
-  $('#btn-start').addEventListener('click', () => startSession('smart'));
+  onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
+  const setExam = v => { settings.exam = v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); };
+  $('#exam-date').addEventListener('change', e => setExam(e.target.value));
+  $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });
+  $('#btn-start').addEventListener('click', () => startSession('today'));
   $('#btn-wrong').addEventListener('click', () => startSession('wrong'));
   $('#btn-order').addEventListener('click', () => startSession('order'));
   $('#btn-resume').addEventListener('click', resumeSession);

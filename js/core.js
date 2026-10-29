@@ -363,45 +363,101 @@ export function displayAnswer(word) {
   return parts.length ? parts.join(' … ') : word.blank;
 }
 
-// ---------- 복습 간격 (Leitner) ----------
-const DAY_MS = 24 * 3600 * 1000;
-export const BOX_INTERVAL_DAYS = [0, 1, 3, 7, 14, 30, 60];
-export const MAX_BOX = BOX_INTERVAL_DAYS.length - 1;
+// ---------- 간격 반복 (단계 0~4) ----------
+// 힌트 없이 맞히면 단계 +1 → 올라간 단계에 따라 1·3·7·14일 뒤 복습.
+// 힌트 쓰고 맞히면 단계 그대로 내일, 틀리면 단계 0으로 내일. 날짜는 기기 현지 날짜 'YYYY-MM-DD'.
+export const STAGE_DAYS = [1, 1, 3, 7, 14]; // 단계 st가 된 뒤 다음 복습까지 일수
+export const MAX_STAGE = 4;
 
-export function applyResult(stat, correctFirstTry, now = Date.now()) {
-  const s = { b: 0, c: 0, w: 0, d: 0, s: 0, ...(stat || {}) };
+const pad2 = n => String(n).padStart(2, '0');
+export function dateStr(t = Date.now()) {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+export function addDays(day, n) {
+  const [y, m, d] = day.split('-').map(Number);
+  return dateStr(new Date(y, m - 1, d + n).getTime());
+}
+export function daysBetween(from, to) {
+  const u = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((u(to) - u(from)) / 86400000);
+}
+
+// 예전 기록({b: 0~6단계, d: 복습 시각})을 새 형식({st, due})으로. 맞힌/틀린 횟수 등은 그대로
+export function normalizeStat(s) {
+  if (!s || s.st != null) return s;
+  const { b = 0, d = 0, ...rest } = s;
+  // f(처음 배운 날)가 없으면 마지막 학습일로: 오늘 복습해도 '오늘의 새 단어'로 세지 않게
+  return { ...rest, st: Math.min(b, MAX_STAGE), due: d ? dateStr(d) : '', f: rest.f || dateStr(rest.s || 0) };
+}
+
+// 시험일이 있으면 다음 복습일이 시험 전날을 넘지 않게
+function capDue(due, today, exam) {
+  if (!exam) return due;
+  const eve = addDays(exam, -1);
+  return eve > today && due > eve ? eve : due;
+}
+
+/**
+ * outcome: 'ok'(힌트 없이 맞힘) | 'hint'(힌트 쓰고 맞힘) | 'wrong'
+ * scheduled: 오늘 복습할 단어(새 단어·복습일·시험 대비)인지. 아닌 단어를 연습으로 맞힌 건 일정에 반영하지 않음
+ */
+export function applyResult(stat, outcome, { today = dateStr(), exam = '', scheduled = true, now = Date.now() } = {}) {
+  const s = { st: 0, due: '', c: 0, w: 0, ...(normalizeStat(stat) || {}) };
   s.s = now;
-  if (correctFirstTry) {
-    s.c++;
-    s.b = Math.min(s.b + 1, MAX_BOX);
-    s.d = now + BOX_INTERVAL_DAYS[s.b] * DAY_MS;
-  } else {
+  if (!s.f) s.f = today; // 처음 배운 날 (하루 새 단어 수 계산용)
+  if (outcome === 'wrong') {
     s.w++;
-    s.b = 0;
-    s.d = now; // 다음 학습 때 바로 다시 나옴
+    s.st = 0;
+    s.due = capDue(addDays(today, 1), today, exam);
+    return s;
   }
+  s.c++;
+  if (outcome === 'hint') s.h = (s.h || 0) + 1;
+  if (!scheduled) return s;
+  if (outcome === 'ok') {
+    s.st = Math.min(s.st + 1, MAX_STAGE);
+    s.due = addDays(today, STAGE_DAYS[s.st]);
+  } else s.due = addDays(today, 1);
+  s.due = capDue(s.due, today, exam);
   return s;
 }
 
-// 학습할 단어 고르기: 복습 시점이 된 단어 > 많이 틀린 단어 > 낮은 단계 순으로 가중치
-export function pickWords(words, stats, size, mode, now = Date.now(), rand = Math.random) {
-  let pool = words;
-  if (mode === 'wrong') pool = words.filter(w => stats[w.id] && stats[w.id].w > 0 && stats[w.id].b < 3);
-  if (mode === 'order') return pool.slice(0, size);
-  const scored = pool.map(w => {
-    const s = stats[w.id];
-    let score;
-    if (!s) score = 600 + rand() * 200; // 새 단어
-    else {
-      const due = s.d <= now;
-      const wrongRate = s.w / Math.max(1, s.c + s.w);
-      score = (due ? 1000 : 0) + s.w * 40 + wrongRate * 200 + (MAX_BOX - s.b) * 25 + rand() * 120;
-      if (!due) score -= Math.min(500, (s.d - now) / DAY_MS * 20);
+export const isDue = (s, today) => !!(s && s.due && s.due <= today);
+
+/**
+ * 오늘의 학습: 복습일이 된 단어 → (시험 3일 전부터) 범위 단어 3등분 중 오늘 몫 → 새 단어(하루 개수만큼)
+ * allWords: 전체 단어(복습은 범위와 상관없이), rangeWords: 학습 범위(새 단어·시험 범위)
+ */
+export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newPerDay = 20, exam = '' } = {}) {
+  const st = id => normalizeStat(stats[id]);
+  const review = allWords.filter(w => isDue(st(w.id), today))
+    .sort((a, b) => st(a.id).due.localeCompare(st(b.id).due) || st(a.id).st - st(b.id).st);
+  const taken = new Set(review.map(w => w.id));
+
+  let final = [];
+  let examInfo = null;
+  if (exam) {
+    const left = daysBetween(today, exam);
+    examInfo = { left };
+    if (left >= 1 && left <= 3) {
+      // 시험 3일 전·2일 전·전날에 범위 단어를 3등분해서 한 번씩. 빠진 날 몫은 다음 날 같이
+      const start = addDays(exam, -3);
+      const k = 3 - left;
+      const size = Math.ceil(rangeWords.length / 3);
+      final = rangeWords.slice(0, size * (k + 1)).filter(w => {
+        const s = st(w.id);
+        return !taken.has(w.id) && !(s && s.s && dateStr(s.s) >= start);
+      });
+      final.forEach(w => taken.add(w.id));
+      examInfo.finalDay = k + 1;
     }
-    return { w, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, size).map(x => x.w);
+  }
+
+  const newToday = Object.values(stats).filter(s => s && s.f === today).length;
+  const quota = Math.max(0, newPerDay - newToday);
+  const fresh = rangeWords.filter(w => !stats[w.id] && !taken.has(w.id)).slice(0, quota);
+  return { review, final, fresh, examInfo };
 }
 
 export function shuffle(arr, rand = Math.random) {
@@ -504,18 +560,23 @@ export function mergeProgress(a, b) {
   for (const src of [(a && a.stats) || {}, (b && b.stats) || {}]) {
     for (const [id, s] of Object.entries(src)) {
       if (!s || (s.s || 0) < resetAt) continue;
-      if (!out[id] || (s.s || 0) > (out[id].s || 0)) out[id] = s;
+      if (!out[id] || (s.s || 0) > (out[id].s || 0)) out[id] = normalizeStat(s);
     }
   }
-  return { v: 1, resetAt, stats: out };
+  // 시험일·하루 새 단어 수 같은 설정도 더 최근에 바꾼 쪽으로
+  const pa = (a && a.prefs) || null, pb = (b && b.prefs) || null;
+  const prefs = !pa ? pb : !pb ? pa : (pa.at || 0) >= (pb.at || 0) ? pa : pb;
+  return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}) };
 }
+
+export const samePrefs = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
 
 export function sameStats(x, y) {
   const kx = Object.keys(x || {}), ky = Object.keys(y || {});
   if (kx.length !== ky.length) return false;
   return kx.every(k => {
     const a = x[k], b = y[k];
-    return b && a.s === b.s && a.b === b.b && a.c === b.c && a.w === b.w && a.d === b.d;
+    return b && a.s === b.s && a.st === b.st && a.due === b.due && a.c === b.c && a.w === b.w && a.f === b.f && a.h === b.h;
   });
 }
 
