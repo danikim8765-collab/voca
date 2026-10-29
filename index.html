@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#6c5ce7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="VOCA">
+  <title>VOCA 빈칸 암기</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 홈 -->
+  <section id="home" class="screen active">
+    <header class="top">
+      <h1>VOCA <span class="sub">빈칸 암기</span></h1>
+      <button class="icon-btn" id="btn-settings" aria-label="설정">⚙︎</button>
+    </header>
+
+    <div id="load-status" class="status">단어를 불러오는 중…</div>
+
+    <div id="home-body" hidden>
+      <div id="resume-card" class="card resume" hidden>
+        <div>
+          <b>이어서 학습하기</b>
+          <div class="muted" id="resume-info"></div>
+        </div>
+        <div class="row">
+          <button class="btn ghost small" id="btn-resume-drop">버리기</button>
+          <button class="btn primary small" id="btn-resume">이어하기</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label">학습 범위</div>
+        <div class="range">
+          <select id="day-from" aria-label="시작 DAY"></select>
+          <span>~</span>
+          <select id="day-to" aria-label="끝 DAY"></select>
+        </div>
+        <div class="chips" id="range-chips">
+          <button class="chip" data-range="last">최신 DAY</button>
+          <button class="chip" data-range="last3">최근 3 DAY</button>
+          <button class="chip" data-range="all">전체</button>
+        </div>
+        <div class="stats" id="range-stats"></div>
+        <div class="bar"><div class="bar-fill" id="range-bar"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="label">문제 방식</div>
+        <div class="seg" id="seg-kind">
+          <button data-v="choice">4지선다</button>
+          <button data-v="type">직접 입력</button>
+        </div>
+        <div class="label">한 번에 공부할 단어 수</div>
+        <div class="seg" id="seg-size">
+          <button data-v="10">10</button>
+          <button data-v="20">20</button>
+          <button data-v="30">30</button>
+          <button data-v="0">전체</button>
+        </div>
+      </div>
+
+      <button class="btn primary big" id="btn-start">학습 시작</button>
+      <div class="row two">
+        <button class="btn secondary" id="btn-wrong">오답 복습 <span id="wrong-count" class="pill"></span></button>
+        <button class="btn secondary" id="btn-order">순서대로</button>
+      </div>
+      <button class="btn ghost" id="btn-list">단어장 보기</button>
+
+      <div class="label mt">DAY별 진도 <span class="muted">(누르면 그 DAY만 선택)</span></div>
+      <div class="days" id="day-grid"></div>
+    </div>
+  </section>
+
+  <!-- 퀴즈 -->
+  <section id="quiz" class="screen">
+    <header class="quiz-top">
+      <button class="icon-btn" id="btn-quit" aria-label="그만하기">✕</button>
+      <div class="bar grow"><div class="bar-fill" id="quiz-bar"></div></div>
+      <span class="count" id="quiz-count"></span>
+    </header>
+    <div class="quiz-body">
+      <div class="q-meta"><span class="tag" id="q-day"></span><span class="tag warn" id="q-again" hidden>다시 나온 단어</span></div>
+      <div class="q-prompt">빈칸에 공통으로 들어갈 말은?</div>
+      <div id="q-sentences"></div>
+      <div id="q-meaning" class="q-meaning" hidden></div>
+      <button class="btn ghost small" id="btn-hint">💡 힌트</button>
+    </div>
+    <div class="quiz-actions" id="q-actions"></div>
+
+    <div class="sheet" id="feedback" hidden>
+      <div class="sheet-inner">
+        <div class="fb-head" id="fb-head"></div>
+        <div class="fb-word">
+          <div>
+            <div class="w" id="fb-word"></div>
+            <div class="muted" id="fb-pron"></div>
+          </div>
+          <button class="speak big" id="fb-speak" aria-label="단어 발음 듣기">🔊</button>
+        </div>
+        <div class="fb-meaning" id="fb-meaning"></div>
+        <div id="fb-sentences"></div>
+        <div id="fb-extras" class="extras"></div>
+        <button class="btn primary big" id="btn-next">다음</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 결과 -->
+  <section id="result" class="screen">
+    <header class="top"><h1>학습 완료 🎉</h1></header>
+    <div class="card center">
+      <div class="score" id="res-score"></div>
+      <div class="muted" id="res-detail"></div>
+    </div>
+    <div class="label">이번에 틀린 단어</div>
+    <div id="res-wrong" class="list"></div>
+    <div class="row two sticky-bottom">
+      <button class="btn secondary" id="btn-res-home">홈으로</button>
+      <button class="btn primary" id="btn-res-again">한 번 더</button>
+    </div>
+  </section>
+
+  <!-- 단어장 -->
+  <section id="list" class="screen">
+    <header class="top">
+      <button class="icon-btn" id="btn-list-back" aria-label="뒤로">←</button>
+      <h1 id="list-title">단어장</h1>
+      <span></span>
+    </header>
+    <div class="seg" id="seg-filter">
+      <button data-v="all">전체</button>
+      <button data-v="wrong">오답</button>
+      <button data-v="new">미학습</button>
+      <button data-v="done">암기 완료</button>
+    </div>
+    <div id="word-list" class="list"></div>
+  </section>
+
+  <!-- 설정 -->
+  <section id="settings" class="screen">
+    <header class="top">
+      <button class="icon-btn" id="btn-settings-back" aria-label="뒤로">←</button>
+      <h1>설정</h1>
+      <span></span>
+    </header>
+    <div class="card">
+      <div class="label">발음</div>
+      <div class="seg" id="seg-accent">
+        <button data-v="en-US">미국식</button>
+        <button data-v="en-GB">영국식</button>
+      </div>
+      <div class="label">말하기 속도 <span id="rate-val" class="muted"></span></div>
+      <input type="range" id="rate" min="0.6" max="1.2" step="0.1">
+      <label class="toggle"><input type="checkbox" id="opt-autospeak"> 정답 확인 후 단어 자동 발음</label>
+      <label class="toggle"><input type="checkbox" id="opt-ko"> 예문 해석 미리 보기</label>
+      <label class="toggle"><input type="checkbox" id="opt-meaning"> 단어 뜻 미리 보기</label>
+      <button class="btn ghost small" id="btn-test-voice">🔊 발음 테스트</button>
+    </div>
+    <div class="card">
+      <div class="label">진도 백업</div>
+      <p class="muted">진도는 이 폰의 브라우저에 저장돼요. 브라우저 데이터를 지우거나 다른 폰으로 옮길 땐 백업 파일을 써주세요.</p>
+      <div class="row two">
+        <button class="btn secondary" id="btn-export">백업 저장</button>
+        <button class="btn secondary" id="btn-import">백업 불러오기</button>
+      </div>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+      <button class="btn danger small" id="btn-reset">진도 전체 초기화</button>
+    </div>
+    <div class="card">
+      <div class="label">단어 데이터</div>
+      <p class="muted" id="data-info"></p>
+      <button class="btn ghost small" id="btn-reload">서버에서 다시 불러오기</button>
+      <button class="btn ghost small" id="btn-local-csv">폰에 있는 CSV 직접 열기</button>
+      <input type="file" id="csv-file" accept=".csv,text/csv" multiple hidden>
+    </div>
+  </section>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
