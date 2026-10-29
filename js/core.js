@@ -380,3 +380,60 @@ export function pickDistractors(target, all, n = 3, rand = Math.random) {
   cands.sort((a, b) => a.score - b.score);
   return cands.slice(0, n).map(c => c.w);
 }
+
+// ---------- 해석에서 뜻 부분 강조 ----------
+// 뜻 "A에게 B를 확신시키다" + 해석 "…결백을 확신시켰다." → "확신시켰다"를 표시
+const KO_SKIP = new Set([
+  '하', '되', '것', '수', '등', '및', '또는', '의', '을', '를', '이', '가', '은', '는', '에', '에게', '에서', '으로', '로',
+  '와', '과', '도', '하게', '하는', '하다', '되다', '것을', '것이', '것에', '것으로', '한테', '께',
+]);
+const KO_WORD_END = /[\s.,!?;:"'“”‘’()\[\]…·~]/;
+
+export function highlightMeaning(ko, meaning) {
+  const text = String(ko || '');
+  if (!text || !meaning) return [{ t: 'text', v: text }];
+  const cleaned = String(meaning).replace(/[A-Za-z0-9~〜…·.,;:/|+=_'"!?()\[\]-]/g, ' ');
+  const tokens = [...new Set(cleaned.split(/\s+/).map(t => t.replace(/[^가-힣]/g, '')).filter(Boolean))];
+  const ranges = [];
+  const covered = i => ranges.some(r => i >= r.start && i < r.end);
+  const wordStart = i => i === 0 || KO_WORD_END.test(text[i - 1]);
+  for (const tok of tokens) {
+    if (KO_SKIP.has(tok)) continue;
+    const stem = tok.length > 1 && tok.endsWith('다') ? tok.slice(0, -1) : tok;
+    if (KO_SKIP.has(stem)) continue;
+    const minLen = stem.length >= 3 ? 2 : 1;
+    let hit = null;
+    for (let len = stem.length; len >= minLen && !hit; len--) {
+      const pre = stem.slice(0, len);
+      if (len === 1 && KO_SKIP.has(pre)) break;
+      for (let i = text.indexOf(pre); i >= 0; i = text.indexOf(pre, i + 1)) {
+        if (covered(i)) continue;
+        if (len === 1 && !wordStart(i)) continue; // 한 글자는 어절 맨 앞에서만
+        hit = i;
+        break;
+      }
+    }
+    if (hit == null) continue;
+    let end = hit;
+    while (end < text.length && !KO_WORD_END.test(text[end])) end++;
+    ranges.push({ start: hit, end });
+  }
+  if (!ranges.length) return [{ t: 'text', v: text }];
+  ranges.sort((a, b) => a.start - b.start);
+  // 공백만 사이에 둔 강조는 하나로 합침 ("당연하게 여기지")
+  const merged = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && (r.start <= last.end || /^\s+$/.test(text.slice(last.end, r.start)))) last.end = Math.max(last.end, r.end);
+    else merged.push({ ...r });
+  }
+  const segs = [];
+  let pos = 0;
+  for (const r of merged) {
+    if (r.start > pos) segs.push({ t: 'text', v: text.slice(pos, r.start) });
+    segs.push({ t: 'mark', v: text.slice(r.start, r.end) });
+    pos = r.end;
+  }
+  if (pos < text.length) segs.push({ t: 'text', v: text.slice(pos) });
+  return segs;
+}

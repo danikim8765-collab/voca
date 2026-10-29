@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, isTypedCorrect, displayAnswer, answerParts,
-  applyResult, pickWords, pickDistractors, shuffle, MAX_BOX,
+  applyResult, pickWords, pickDistractors, shuffle, MAX_BOX, highlightMeaning,
 } from './core.js';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
@@ -288,7 +288,7 @@ function renderQuestion() {
   const noBlank = !(b1 && b1.ok) && !(b2 && b2.ok);
   [[b1, w.ex1ko], [b2, w.ex2ko]].forEach(([b, ko], i) => {
     if (!b || !b.segs.length) return;
-    box.appendChild(sentenceCard(b, ko, i + 1, false));
+    box.appendChild(sentenceCard(b, ko, i + 1, false, false, w.meaning));
   });
   document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요' : '빈칸에 공통으로 들어갈 말은?';
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
@@ -309,7 +309,7 @@ function meaningText(w) {
   return [w.pos, w.meaning].filter(Boolean).join(' ');
 }
 
-function sentenceCard(b, ko, n, filled, wrongAnswer) {
+function sentenceCard(b, ko, n, filled, wrongAnswer, meaning) {
   const card = el('div', 'sent');
   const head = el('div', 'sent-head');
   head.appendChild(el('span', 'num', `예문 ${n}`));
@@ -331,7 +331,8 @@ function sentenceCard(b, ko, n, filled, wrongAnswer) {
   }
   card.appendChild(en);
   if (ko) {
-    const k = el('div', 'ko' + (!filled && !settings.showKo ? ' hide' : ''), ko);
+    const k = el('div', 'ko' + (!filled && !settings.showKo ? ' hide' : ''));
+    for (const s of highlightMeaning(ko, meaning)) k.appendChild(s.t === 'mark' ? el('b', 'ko-mark', s.v) : document.createTextNode(s.v));
     if (!filled && !settings.showKo) k.addEventListener('click', () => k.classList.remove('hide'));
     card.appendChild(k);
   }
@@ -453,7 +454,7 @@ function showFeedback(correct, given) {
   const box = $('#fb-sentences');
   box.innerHTML = '';
   [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
-    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, !correct));
+    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, !correct, w.meaning));
   });
   const ex = $('#fb-extras');
   ex.innerHTML = '';
@@ -515,7 +516,7 @@ function wordItem(w) {
       [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].forEach(([en, ko], i) => {
         if (!en) return;
         const b = makeBlanks(en, w.blank, w.word);
-        det.appendChild(sentenceCard(b, ko, i + 1, true));
+        det.appendChild(sentenceCard(b, ko, i + 1, true, false, w.meaning));
       });
       for (const [k, v] of w.extras) {
         const d = el('div', 'muted');
