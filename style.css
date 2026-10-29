@@ -299,7 +299,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
   background: var(--bg); border-bottom: 2px solid var(--muted);
 }
 .blank.typing.active { background: var(--primary-soft); border-bottom-color: var(--primary); }
-.blank .kb-caret { vertical-align: -0.12em; height: 1.05em; }
+.blank .kb-caret { vertical-align: -0.12em; height: 1.05em; margin: 0 -1px; } /* 폭 0: 글자 사이가 벌어지지 않게 */
 
 /* 정답 보고 따라 쓰기 */
 .blank .ghost { color: var(--muted); opacity: .55; }

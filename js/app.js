@@ -5,7 +5,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610290936';
+const APP_VERSION = '202610290942';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -472,22 +472,26 @@ function renderAppKeyboard(actions, helpText, check, autoCheck) {
   const cards = [...document.querySelectorAll('#q-sentences .sent')];
   const targets = [q.b1, q.b2].filter(b => b && b.segs.length).map(b => b.blanks);
   const caret = el('span', 'kb-caret');
+  let ghostText = '', ghostLen = 0;
   const render = () => {
     cards.forEach((card, ci) => {
       const spans = [...card.querySelectorAll('.blank')];
       const { fill, active } = fillBlanks(kb.value, targets[ci] || []);
+      // 힌트로 보여줄 회색 글자: 첫 힌트는 몇 글자만, 정답 보고 쓰기는 전부
+      const ghostFill = ci === 0 && ghostLen ? fillBlanks(ghostText.slice(0, ghostLen), targets[0]).fill : [];
       spans.forEach((sp, i) => {
         sp.classList.add('typing');
         sp.classList.toggle('active', i === active);
         const typed = fill[i] || '';
         const want = (targets[ci] || [])[i] || '';
+        const ghost = want.slice(0, ci === 0 ? (ghostFill[i] || '').length : q.revealed ? want.length : 0);
         const onTrack = want.toLowerCase().startsWith(typed.toLowerCase());
         sp.textContent = '';
-        // 정답 보고 쓰기: 아직 안 쓴 부분은 회색으로, 다르게 쓴 글자는 빨갛게(첫 문장 기준)
+        // 정답 보고 쓰기에서 다르게 쓴 글자는 빨갛게(첫 문장 기준)
         if (q.revealed && !onTrack && ci === 0) sp.appendChild(el('span', 'typo', typed));
         else sp.appendChild(document.createTextNode(typed));
         if (ci === 0 && i === active) sp.appendChild(caret);
-        if (q.revealed && onTrack) sp.appendChild(el('span', 'ghost', want.slice(typed.length)));
+        if (onTrack && ghost.length > typed.length) sp.appendChild(el('span', 'ghost', ghost.slice(typed.length)));
         else if (!typed) sp.appendChild(document.createTextNode('\u00a0'));
       });
     });
@@ -550,11 +554,15 @@ function renderAppKeyboard(actions, helpText, check, autoCheck) {
   q.typing = {
     get: () => kb.value,
     set: v => { kb.value = v; render(); },
-    reveal: (target, keep) => {
+    // 회색 글자 힌트: keep까지는 입력으로 남기고, upto 글자까지 회색으로 보여줌
+    ghost: (target, keep, upto) => {
       kb.value = keep;
+      ghostText = target;
+      ghostLen = upto;
       help.textContent = '회색 글자를 따라 써보세요';
       render();
     },
+    reveal: (target, keep) => q.typing.ghost(target, keep, Infinity),
   };
   // 고정된 키보드에 문장이 가리지 않게 아래 여백 확보
   requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`; });
@@ -566,22 +574,24 @@ function useHint() {
     if (q.revealed) return;
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
     const cur = q.typing.get();
-    // 첫 번째: 맞게 쓴 데까지 살리고 2글자 더
+    let k = 0;
+    const low = cur.toLowerCase();
+    while (k < low.length && low[k] === target[k]) k++;
+    const keep = target.slice(0, k); // 맞게 쓴 데까지만 남김
+    // 첫 번째: 그다음 2글자를 회색으로 보여줌 (앱 키보드) / 채워줌 (폰 키보드)
     if (!q.letterHint) {
       const next = nextLetterHint(cur, target);
       q.letterHint = true;
       if (next != null) {
-        q.typing.set(next);
+        if (q.typing.ghost) q.typing.ghost(target, keep, next.length);
+        else q.typing.set(next);
         setHintButtons('💡 정답 보고 쓰기');
         return;
       }
     }
     // 두 번째: 전체 정답을 회색으로 보여주고 따라 쓰게 함 (틀린 것으로 기록, 곧 다시 나옴)
     q.revealed = true;
-    let k = 0;
-    const low = cur.toLowerCase();
-    while (k < low.length && low[k] === target[k]) k++;
-    q.typing.reveal(target, target.slice(0, k));
+    q.typing.reveal(target, keep);
     setHintButtons(null);
     return;
   }
