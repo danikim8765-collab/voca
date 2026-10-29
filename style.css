@@ -294,7 +294,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .sent .en { --typed-weight: 400; }
 .blank.typing {
   font: inherit; font-weight: var(--typed-weight); line-height: inherit; letter-spacing: inherit;
-  color: var(--text); text-align: left; white-space: pre;
+  color: var(--primary); text-align: left; white-space: pre;
   padding: 0 10px; margin: 0 3px; border-radius: 8px 8px 2px 2px;
   background: var(--bg); border-bottom: 2px solid var(--muted);
 }
