@@ -88,7 +88,7 @@ function speak(text) {
   if (!text) return;
   if (!window.speechSynthesis) { toast('이 브라우저는 발음 듣기를 지원하지 않아요'); return; }
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text.replace(/[~〜…_]+|\.{3}/g, ' '));
+  const u = new SpeechSynthesisUtterance(text.replace(/\[[^\]]*\]/g, ' ').replace(/[~〜…_]+|\.{3}/g, ' '));
   u.lang = settings.accent;
   u.rate = settings.rate;
   const v = pickVoice();
@@ -282,13 +282,14 @@ function renderQuestion() {
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = `DAY ${w.day}`;
   $('#q-again').hidden = !session.again[id];
+  $('#q-star').hidden = !w.star;
 
   const box = $('#q-sentences');
   box.innerHTML = '';
   const noBlank = !(b1 && b1.ok) && !(b2 && b2.ok);
   [[b1, w.ex1ko], [b2, w.ex2ko]].forEach(([b, ko], i) => {
     if (!b || !b.segs.length) return;
-    box.appendChild(sentenceCard(b, ko, i + 1, false, false, w.meaning));
+    box.appendChild(sentenceCard(b, ko, i + 1, false, false, w.meaning, i ? w.ex2src : w.ex1src));
   });
   document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요' : '빈칸에 공통으로 들어갈 말은?';
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
@@ -305,14 +306,17 @@ function renderQuestion() {
   else renderChoices(actions);
 }
 
+// "1. 치명적인 2. 결정적인" → 번호마다 줄바꿈
+const formatMeaning = m => String(m || '').replace(/\s+(?=\d+\.\s)/g, '\n');
+
 function meaningText(w) {
-  return [w.pos, w.meaning].filter(Boolean).join(' ');
+  return [w.pos, formatMeaning(w.meaning)].filter(Boolean).join(' ');
 }
 
-function sentenceCard(b, ko, n, filled, wrongAnswer, meaning) {
+function sentenceCard(b, ko, n, filled, wrongAnswer, meaning, src) {
   const card = el('div', 'sent');
   const head = el('div', 'sent-head');
-  head.appendChild(el('span', 'num', `예문 ${n}`));
+  head.appendChild(el('span', 'num', `예문 ${n}` + (src ? ` · ${src}` : '')));
   if (filled) head.appendChild(speakBtn(b.segs.map(s => s.v).join('')));
   card.appendChild(head);
   const en = el('div', 'en');
@@ -449,12 +453,12 @@ function showFeedback(correct, given) {
   const m = $('#fb-meaning');
   m.innerHTML = '';
   if (w.pos) m.appendChild(el('span', 'pos', w.pos));
-  m.appendChild(document.createTextNode(w.meaning || ''));
+  m.appendChild(document.createTextNode(formatMeaning(w.meaning)));
 
   const box = $('#fb-sentences');
   box.innerHTML = '';
   [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
-    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, !correct, w.meaning));
+    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, !correct, w.meaning, i ? w.ex2src : w.ex1src));
   });
   const ex = $('#fb-extras');
   ex.innerHTML = '';
@@ -503,6 +507,7 @@ function wordItem(w) {
   const main = el('div', 'item-main');
   const top = el('div');
   top.appendChild(el('span', 'w', w.word));
+  if (w.star) top.append(' ', el('span', 'tag star', '형광'));
   if (s && s.w) top.append(' ', el('span', 'badge-wrong', `✕${s.w}`));
   main.append(top, el('div', 'm', [w.pos, w.meaning].filter(Boolean).join(' ')));
   const dots = el('div', 'dots');
@@ -516,7 +521,7 @@ function wordItem(w) {
       [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].forEach(([en, ko], i) => {
         if (!en) return;
         const b = makeBlanks(en, w.blank, w.word);
-        det.appendChild(sentenceCard(b, ko, i + 1, true, false, w.meaning));
+        det.appendChild(sentenceCard(b, ko, i + 1, true, false, w.meaning, i ? w.ex2src : w.ex1src));
       });
       for (const [k, v] of w.extras) {
         const d = el('div', 'muted');

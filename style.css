@@ -121,6 +121,8 @@ button { cursor: pointer; }
 .quiz-body { padding-bottom: 8px; }
 .q-meta { display: flex; gap: 6px; margin-bottom: 10px; }
 .tag { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: 8px; padding: 2px 8px; }
+.tag.star { color: #b58500; background: rgba(255, 212, 59, .3); }
+.item .tag.star { font-size: 11px; vertical-align: 2px; }
 .tag.warn { color: var(--warn); background: rgba(245, 159, 0, .12); }
 .q-prompt { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
 .sent { background: var(--card); border-radius: 18px; padding: 16px 18px; margin-bottom: 10px; box-shadow: var(--shadow); }
@@ -141,7 +143,7 @@ button { cursor: pointer; }
 .blank.hint { color: var(--primary); font-weight: 700; }
 .blank.filled { color: var(--ok); font-weight: 800; background: var(--ok-soft); border-color: var(--ok); }
 .blank.filled.bad { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
-.q-meaning { background: var(--primary-soft); color: var(--text); border-radius: 14px; padding: 12px 14px; margin: 6px 0 10px; font-weight: 600; }
+.q-meaning { white-space: pre-line; background: var(--primary-soft); color: var(--text); border-radius: 14px; padding: 12px 14px; margin: 6px 0 10px; font-weight: 600; }
 
 .quiz-actions { padding-top: 6px; }
 .choice {
@@ -172,7 +174,7 @@ button { cursor: pointer; }
 .fb-head.bad { color: var(--bad); }
 .fb-word { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .fb-word .w { font-size: 24px; font-weight: 800; }
-.fb-meaning { font-size: 16px; margin: 4px 0 14px; }
+.fb-meaning { font-size: 16px; margin: 4px 0 14px; white-space: pre-line; }
 .fb-meaning .pos { color: var(--primary); font-weight: 700; margin-right: 6px; }
 #fb-sentences .sent { background: var(--bg); box-shadow: none; }
 #fb-sentences .sent .en { font-size: 17px; }

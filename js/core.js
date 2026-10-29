@@ -37,6 +37,7 @@ const COLUMN_RULES = {
   meaning: { names: ['뜻', '의미', 'meaning', '한글뜻', '한국어', '우리말', 'korean', '한글', '단어뜻'] },
   pos: { names: ['품사', 'pos'] },
   pron: { names: ['발음기호', '발음', 'pronunciation', 'ipa'] },
+  star: { names: ['형광', '중요', '별표', 'star', '중요표시'] },
 };
 
 export function mapColumns(headers) {
@@ -75,6 +76,12 @@ export function splitSentence(cell) {
   return { en: s, ko: '' };
 }
 
+// 예문 끝의 출처 표시 "[수능응용]" 분리
+export function splitSource(cell) {
+  const m = String(cell || '').match(/^([\s\S]*?)\s*\[([^\]]{1,12})\]\s*$/);
+  return m && m[1].trim() ? [m[1].trim(), m[2]] : [String(cell || '').trim(), ''];
+}
+
 export function dayNumber(v) {
   const m = String(v || '').match(/\d+/);
   return m ? parseInt(m[0], 10) : null;
@@ -98,8 +105,10 @@ export function rowsToWords(csvTexts) {
       lastDay = day;
       const word = get('word') || get('blank');
       if (!word || day == null) continue;
-      const e1 = splitSentence(get('ex1'));
-      const e2 = splitSentence(get('ex2'));
+      const [x1, src1] = splitSource(get('ex1'));
+      const [x2, src2] = splitSource(get('ex2'));
+      const e1 = splitSentence(x1);
+      const e2 = splitSentence(x2);
       const id = `${day}|${word}`;
       if (seen.has(id)) continue;
       seen.add(id);
@@ -109,8 +118,10 @@ export function rowsToWords(csvTexts) {
         blank: get('blank') || word,
         ex1: e1.en, ex1ko: get('ex1ko') || e1.ko,
         ex2: e2.en, ex2ko: get('ex2ko') || e2.ko,
+        ex1src: src1, ex2src: src2,
+        star: /^(o|y|yes|1|true|★|v|✓|○)$/i.test(get('star')),
         pos: get('pos'), pron: get('pron'),
-        extras: extras.map(i => [headers[i], (row[i] || '').trim()]).filter(([, v]) => v),
+        extras: extras.map(i => [headers[i], (row[i] || '').trim()]).filter(([, v]) => v && !/^[-–—x]$/i.test(v)),
         source: name,
       });
     }
@@ -147,43 +158,62 @@ export function answerParts(blankForm) {
 const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const BE_FORMS = '(?:be|am|is|are|was|were|been|being|\'m|\'s|\'re)';
 
-// 자주 쓰는 불규칙 동사 (빈칸형태가 원형이고 예문은 과거형일 때 대비)
+// 자주 쓰는 불규칙 동사 (단어는 원형, 예문은 과거형일 때 대비)
 const IRREGULAR = Object.fromEntries(`
-be:was:were:been:being:am:is:are make:made take:took:taken give:gave:given come:came go:went:gone:goes
-get:got:gotten have:had:has do:did:done:does keep:kept bring:brought think:thought hold:held run:ran
-break:broke:broken find:found stand:stood lead:led fall:fell:fallen feel:felt leave:left lay:laid lie:lay:lain
-see:saw:seen say:said tell:told know:knew:known grow:grew:grown throw:threw:thrown speak:spoke:spoken
-write:wrote:written drive:drove:driven rise:rose:risen choose:chose:chosen catch:caught teach:taught
-buy:bought seek:sought fight:fought sell:sold send:sent spend:spent build:built lose:lost meet:met
-pay:paid win:won begin:began:begun bear:bore:borne:born wear:wore:worn tear:tore:torn draw:drew:drawn
-show:showed:shown fly:flew:flown forget:forgot:forgotten stick:stuck strike:struck hang:hung swear:swore:sworn
-deal:dealt mean:meant sit:sat shake:shook:shaken wake:woke:woken hide:hid:hidden bite:bit:bitten
+make:made take:took:taken give:gave:given come:came go:went:gone:goes get:got:gotten have:had:has
+do:did:done:does keep:kept bring:brought think:thought hold:held run:ran break:broke:broken find:found
+stand:stood lead:led fall:fell:fallen feel:felt leave:left lay:laid lie:lay:lain see:saw:seen say:said
+tell:told know:knew:known grow:grew:grown throw:threw:thrown speak:spoke:spoken write:wrote:written
+drive:drove:driven rise:rose:risen choose:chose:chosen catch:caught teach:taught buy:bought seek:sought
+fight:fought sell:sold send:sent spend:spent build:built lose:lost meet:met pay:paid win:won begin:began:begun
+bear:bore:borne:born wear:wore:worn tear:tore:torn draw:drew:drawn show:showed:shown fly:flew:flown
+forget:forgot:forgotten stick:stuck strike:struck:stricken hang:hung swear:swore:sworn deal:dealt mean:meant
+sit:sat shake:shook:shaken wake:woke:woken hide:hid:hidden bite:bit:bitten fling:flung stride:strode:stridden
+cling:clung swing:swung sting:stung slide:slid sweep:swept weep:wept creep:crept leap:leapt:leaped dig:dug
+spin:spun sink:sank:sunk shrink:shrank:shrunk sow:sown tread:trod:trodden forbid:forbade:forbidden
+forgive:forgave:forgiven withdraw:withdrew:withdrawn undergo:underwent:undergone overcome:overcame
+foresee:foresaw:foreseen overtake:overtook:overtaken mislead:misled undertake:undertook:undertaken
+withstand:withstood uphold:upheld arise:arose:arisen awake:awoke:awoken feed:fed flee:fled ride:rode:ridden
+steal:stole:stolen freeze:froze:frozen shine:shone shoot:shot light:lit spit:spat string:strung wring:wrung
+wind:wound dwell:dwelt lend:lent bend:bent sling:slung stink:stank:stunk bind:bound grind:ground
+breed:bred bleed:bled flee:fled forsake:forsook:forsaken overhear:overheard override:overrode:overridden
 `.trim().split(/\s+/).flatMap(e => { const f = e.split(':'); return f.map(x => [x, f]); }));
 
-function wordPattern(w, fuzzy) {
-  const lw = w.toLowerCase();
-  if (lw === 'be') return BE_FORMS;
-  if (fuzzy && IRREGULAR[lw]) {
-    const forms = new Set(IRREGULAR[lw]);
-    for (const f of IRREGULAR[lw]) forms.add(f + 's').add(f.endsWith('e') ? f.slice(0, -1) + 'ing' : f + 'ing');
-    return `(?:${[...forms].map(escapeRe).join('|')})`;
+// 숙어 안의 전치사·부사는 형태가 변하지 않음
+const PARTICLES = new Set(`of to in on at for with from into onto up down out off over away back through about
+across by as along around against among upon under after before behind beyond without within toward towards
+apart aside ahead the a an and or`.split(/\s+/));
+
+// 규칙 변화: convince → convince|convinces|convinced|convincing, stop → stopped, carry → carried, cut → cutting
+function inflect(lw) {
+  let base = lw, tail = '';
+  if (/[^aeiou]y$/.test(lw)) { base = lw.slice(0, -1); tail = '(?:y|ies|ied|ying)'; }
+  else if (/ie$/.test(lw)) { base = lw.slice(0, -2); tail = '(?:ie|ies|ied|ying)'; }
+  else if (/e$/.test(lw)) { base = lw.slice(0, -1); tail = '(?:e|es|ed|ing)'; }
+  else {
+    const last = lw[lw.length - 1];
+    const dbl = /[bdgklmnprtvz]/.test(last) ? `|${last}ed|${last}ing` : '';
+    tail = `(?:|s|es|ed|ing${dbl})`;
   }
-  if (!fuzzy || w.length < 4 || !/^[A-Za-z]+$/.test(w)) return escapeRe(w);
-  // 어형 변화 허용: convince → convinc[a-z]*  (convinced, convincing ...)
-  let stem = lw;
-  if (/(ies|ied)$/.test(stem)) stem = stem.slice(0, -3);
-  else if (/(ing)$/.test(stem) && stem.length > 5) stem = stem.slice(0, -3);
-  else if (/(ed|es)$/.test(stem) && stem.length > 4) stem = stem.slice(0, -2);
-  else if (/[eys]$/.test(stem)) stem = stem.slice(0, -1);
-  if (stem.length < 3) stem = lw.slice(0, 3);
-  return escapeRe(stem) + '[a-z]*';
+  return escapeRe(base) + tail;
 }
 
-function partRegex(part, fuzzy) {
-  const ws = part.split(/\s+/).filter(Boolean);
-  const body = ws.map(w => wordPattern(w, fuzzy)).join('\\s+');
-  // 구형 iOS Safari는 lookbehind 미지원 → 앞 글자를 그룹으로 잡고 위치를 보정
-  return new RegExp(`(^|[^A-Za-z])(${body})(?![A-Za-z])`, 'gi');
+function wordPattern(w, head) {
+  const lw = w.toLowerCase();
+  if (lw === 'be') return BE_FORMS;
+  if (!/^[a-z]+$/.test(lw) || (PARTICLES.has(lw) && !head)) return escapeRe(w);
+  const alts = [inflect(lw)];
+  if (IRREGULAR[lw]) for (const f of IRREGULAR[lw]) if (f !== lw) alts.push(inflect(f));
+  return alts.length > 1 ? `(?:${alts.join('|')})` : alts[0];
+}
+
+// 구형 iOS Safari는 lookbehind 미지원 → 앞 글자를 그룹으로 잡고 위치를 보정
+const PRE = '(^|[^A-Za-z])';
+const POST = '(?![A-Za-z])';
+
+function partRegex(part) {
+  const body = part.split(/\s+/).filter(Boolean).map((w, i) => wordPattern(w, i === 0)).join('\\s+');
+  return new RegExp(`${PRE}(${body})${POST}`, 'gi');
 }
 
 function execAt(re, sent, pos) {
@@ -194,25 +224,53 @@ function execAt(re, sent, pos) {
   return { start, end: start + m[2].length };
 }
 
-// 순서대로 각 덩어리를 찾는다. 전부 찾으면 [{start,end}] 반환, 아니면 null
-function findSequential(sent, parts, fuzzy) {
-  const found = [];
-  let pos = 0;
-  for (const p of parts) {
-    const r = execAt(partRegex(p, fuzzy), sent, pos);
-    if (!r) return null;
-    found.push(r);
-    pos = r.end;
+// 여러 단어 덩어리: 붙어 있거나(carried off) 첫 단어 뒤가 갈라진 경우(carry this off, let his son down)
+function findPhrase(sent, part) {
+  const ws = part.split(/\s+/).filter(Boolean);
+  if (ws.length === 1) {
+    const re = partRegex(part);
+    const out = [];
+    let r, pos = 0;
+    while ((r = execAt(re, sent, pos))) { out.push(r); pos = r.end; }
+    return out;
   }
-  return found;
+  const head = wordPattern(ws[0], true);
+  const rest = ws.slice(1).map(w => wordPattern(w)).join('\\s+');
+  // 사이에는 구두점 없이 최대 3단어까지
+  const re = new RegExp(`${PRE}(${head})((?:\\s+[A-Za-z'-]+){0,3}?\\s+)(${rest})${POST}`, 'gi');
+  const out = [];
+  let m;
+  re.lastIndex = 0;
+  while ((m = re.exec(sent))) {
+    const s1 = m.index + m[1].length;
+    const e1 = s1 + m[2].length;
+    const s2 = e1 + m[3].length;
+    const e2 = s2 + m[4].length;
+    if (/^\s+$/.test(m[3])) out.push({ start: s1, end: e2 });
+    else out.push({ start: s1, end: e1 }, { start: s2, end: e2 });
+    re.lastIndex = e2;
+  }
+  return out;
 }
 
-function findAll(sent, part, fuzzy) {
-  const re = partRegex(part, fuzzy);
-  const out = [];
-  let r, pos = 0;
-  while ((r = execAt(re, sent, pos))) { out.push(r); pos = r.end; }
-  return out;
+// 갈라진 덩어리(convince A of B)를 순서대로 찾는다. 문장 안에 여러 번 나오면 모두 찾음
+function findSequences(sent, parts) {
+  const all = [];
+  let pos = 0;
+  for (;;) {
+    const seq = [];
+    let p = pos;
+    for (const part of parts) {
+      const r = execAt(partRegex(part), sent, p);
+      if (!r) break;
+      seq.push(r);
+      p = r.end;
+    }
+    if (seq.length < parts.length) break;
+    all.push(...seq);
+    pos = p;
+  }
+  return all;
 }
 
 const PRE_BLANK = /_{2,}|\(\s*\)|\[\s*\]|＿{2,}/g;
@@ -235,28 +293,19 @@ export function makeBlanks(sentence, blankForm, fallbackWord) {
     return build(sent, ranges, parts);
   }
 
-  const tryForms = [blankForm, fallbackWord].filter(Boolean);
+  const tryForms = [...new Set([blankForm, fallbackWord].filter(Boolean))];
   for (const form of tryForms) {
     const parts = answerParts(form);
     if (!parts.length) continue;
-    for (const fuzzy of [false, true]) {
-      if (parts.length === 1) {
-        const all = findAll(sent, parts[0], fuzzy);
-        if (all.length) return build(sent, all);
-      } else {
-        const seq = findSequential(sent, parts, fuzzy);
-        if (seq) return build(sent, seq);
-      }
-    }
+    const found = parts.length === 1 ? findPhrase(sent, parts[0]) : findSequences(sent, parts);
+    if (found.length) return build(sent, found);
     // 일부만 찾은 경우라도 찾은 덩어리는 가린다
     if (parts.length > 1) {
       const partial = [];
       let pos = 0;
       for (const p of parts) {
-        for (const fuzzy of [false, true]) {
-          const r = execAt(partRegex(p, fuzzy), sent, pos);
-          if (r) { partial.push(r); pos = r.end; break; }
-        }
+        const r = execAt(partRegex(p), sent, pos);
+        if (r) { partial.push(r); pos = r.end; }
       }
       if (partial.length) return build(sent, partial);
     }
@@ -392,7 +441,9 @@ const KO_WORD_END = /[\s.,!?;:"'“”‘’()\[\]…·~]/;
 export function highlightMeaning(ko, meaning) {
   const text = String(ko || '');
   if (!text || !meaning) return [{ t: 'text', v: text }];
-  const cleaned = String(meaning).replace(/[A-Za-z0-9~〜…·.,;:/|+=_'"!?()\[\]-]/g, ' ');
+  const cleaned = String(meaning)
+    .replace(/\([^)]*\)+/g, ' ') // ((주로 수동태로)), (농작물을) 같은 보충 설명은 제외
+    .replace(/[A-Za-z0-9~〜…·.,;:/|+=_'"!?()\[\]-]/g, ' ');
   const tokens = [...new Set(cleaned.split(/\s+/).map(t => t.replace(/[^가-힣]/g, '')).filter(Boolean))];
   const ranges = [];
   const covered = i => ranges.some(r => i >= r.start && i < r.end);

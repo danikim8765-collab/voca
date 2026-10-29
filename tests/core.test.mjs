@@ -91,3 +91,23 @@ test('해석에서 뜻 부분 강조', async () => {
   assert.equal(hl('나한테 의지해도 돼.', '~에 의존하다'), '나한테 의지해도 돼.');
   assert.equal(hl('그들은 지연을 악천후 탓으로 돌렸다.', 'A를 B의 탓으로 돌리다'), '그들은 지연을 악천후 [탓으로 돌렸다].');
 });
+
+test('실제 데이터에서 놓쳤던 형태', () => {
+  assert.equal(show(makeBlanks('He got upset and flung his papers.', 'fling')), 'He got upset and [flung] his papers.');
+  assert.equal(show(makeBlanks('He strode confidently into the room.', 'stride')), 'He [strode] confidently into the room.');
+  assert.equal(show(makeBlanks('Nonverbal cues are better than verbal cues.', 'cue')), 'Nonverbal [cues] are better than verbal [cues].');
+  assert.equal(show(makeBlanks('They are cutting off projects.', 'cut off')), 'They are [cutting off] projects.');
+  assert.equal(show(makeBlanks('He did not want to let his son down.', 'let down')), 'He did not want to [let] his son [down].');
+  assert.equal(show(makeBlanks('Talent to carry this off. / He carried off the prize.', 'carry off')), 'Talent to [carry] this [off]. / He [carried off] the prize.');
+  assert.equal(show(makeBlanks('Convince me of it. / We convinced them of it.', 'convince A of B')), '[Convince] me [of] it. / We [convinced] them [of] it.');
+  assert.equal(show(makeBlanks('She altered the alternative plan.', 'alter')), 'She [altered] the alternative plan.');
+  assert.equal(show(makeBlanks('The sign was swaying. He preoccupied himself.', 'sway')), 'The sign was [swaying]. He preoccupied himself.');
+  assert.equal(show(makeBlanks('He studied hard.', 'study')), 'He [studied] hard.');
+  assert.equal(show(makeBlanks('They stopped it.', 'stop')), 'They [stopped] it.');
+});
+
+test('출처 태그 분리', async () => {
+  const { splitSource } = await import('../js/core.js');
+  assert.deepEqual(splitSource('He is right. [수능응용]'), ['He is right.', '수능응용']);
+  assert.deepEqual(splitSource('He is right.'), ['He is right.', '']);
+});
