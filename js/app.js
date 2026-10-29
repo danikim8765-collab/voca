@@ -5,7 +5,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610290944';
+const APP_VERSION = '202610290955';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -298,6 +298,9 @@ function renderQuestion() {
   q = { w, b1, b2, answered: false, letterHint: false, revealed: false };
 
   $('#feedback').hidden = true;
+  $('#fb-head').hidden = true;
+  $('#q-sentences').className = '';
+  document.querySelector('.q-prompt').classList.remove('my-answer');
   $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = `DAY ${w.day}`;
@@ -346,11 +349,10 @@ function sentenceCard(b, ko, n, filled, wrongAnswer, meaning, src) {
   for (const s of b.segs) {
     if (s.t === 'text') en.appendChild(document.createTextNode(s.v));
     else {
+      // 빈칸 폭 = 정답 단어 폭: 정답을 안 보이게 깔고(sz) 그 위에 입력/정답을 겹쳐 씀(fl)
       const span = el('span', 'blank');
       span.dataset.i = s.i;
-      span.textContent = s.v || '   ';
-      // 빈칸 길이는 정답 길이와 비슷하게 (힌트가 되지 않도록 약간 랜덤)
-      if (!filled) span.style.minWidth = `${Math.max(3, Math.min(10, (s.v || '').length * 0.55 + 1.5))}em`;
+      span.append(el('span', 'sz', s.v || '\u00a0\u00a0\u00a0'), el('span', 'fl', filled ? s.v : ''));
       if (filled) span.classList.add('filled');
       if (filled && wrongAnswer) span.classList.add('bad');
       en.appendChild(span);
@@ -401,8 +403,12 @@ function renderTyping(actions) {
     return true;
   };
   // 정답을 다 쓰는 순간 확인 없이 바로 처리 (틀린 답은 확인을 눌러야 제출)
+  const fullLen = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks).length;
+  // 빈칸 글자 수만큼 다 쓰면 바로 제출 (맞으면 정답, 아니면 오답). 정답 보고 쓰기는 맞게 쓸 때까지
   const autoCheck = value => {
-    if (!q.answered && isRight(value)) { check(value); return true; }
+    if (q.answered) return false;
+    if (isRight(value)) { check(value); return true; }
+    if (!q.revealed && value.replace(/\s+$/, '').length >= fullLen) { check(value); return true; }
     return false;
   };
   if (settings.appKeyboard) {
@@ -435,7 +441,7 @@ function renderTyping(actions) {
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-  input.addEventListener('input', () => { if (isTypedCorrect(input.value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks)) input.blur(); autoCheck(input.value); });
+  input.addEventListener('input', () => { if (autoCheck(input.value)) input.blur(); });
   setTimeout(() => input.focus(), 50);
 }
 
@@ -486,13 +492,13 @@ function renderAppKeyboard(actions, helpText, check, autoCheck) {
         const want = (targets[ci] || [])[i] || '';
         const ghost = want.slice(0, ci === 0 ? (ghostFill[i] || '').length : q.revealed ? want.length : 0);
         const onTrack = want.toLowerCase().startsWith(typed.toLowerCase());
-        sp.textContent = '';
+        const fl = sp.querySelector('.fl');
+        fl.textContent = '';
         // 정답 보고 쓰기에서 다르게 쓴 글자는 빨갛게(첫 문장 기준)
-        if (q.revealed && !onTrack && ci === 0) sp.appendChild(el('span', 'typo', typed));
-        else sp.appendChild(document.createTextNode(typed));
-        if (ci === 0 && i === active) sp.appendChild(caret);
-        if (onTrack && ghost.length > typed.length) sp.appendChild(el('span', 'ghost', ghost.slice(typed.length)));
-        else if (!typed) sp.appendChild(document.createTextNode('\u00a0'));
+        if (q.revealed && !onTrack && ci === 0) fl.appendChild(el('span', 'typo', typed));
+        else fl.appendChild(document.createTextNode(typed));
+        if (ci === 0 && i === active) fl.appendChild(caret);
+        if (onTrack && ghost.length > typed.length) fl.appendChild(el('span', 'ghost', ghost.slice(typed.length)));
       });
     });
   };
@@ -595,8 +601,8 @@ function useHint() {
   }
   // 객관식: 빈칸마다 첫 글자
   document.querySelectorAll('#q-sentences .blank').forEach(s => {
-    const v = s.textContent.trim();
-    if (v) { s.textContent = v[0] + '·'.repeat(Math.max(0, Math.min(v.length - 1, 8))); s.classList.add('hint'); }
+    const v = s.querySelector('.sz').textContent.trim();
+    if (v) { s.querySelector('.fl').textContent = v[0] + '·'.repeat(Math.max(0, v.length - 1)); s.classList.add('hint'); }
   });
   setHintButtons(null);
 }
@@ -639,33 +645,71 @@ function answer(correct, given, copied) {
 
 function showFeedback(correct, given, copied) {
   const w = q.w;
+  const state = correct ? 'ok' : copied ? 'copied' : 'bad';
+  // 카드 위 상태 표시
   const head = $('#fb-head');
-  head.className = 'fb-head ' + (correct ? 'ok' : copied ? 'copied' : 'bad');
-  head.textContent = correct ? '정답이에요! 👏' : copied ? '잘 따라 썼어요 · 조금 뒤에 다시 나와요' : given ? `아쉬워요 · 내 답: ${given}` : '정답을 확인하세요';
-  $('#fb-word').textContent = w.word;
-  $('#fb-pron').textContent = w.pron || (w.blank !== w.word ? `빈칸: ${displayAnswer(w)}` : '');
-  const sp = $('#fb-speak');
-  sp.onclick = () => speak(w.word);
-  const m = $('#fb-meaning');
-  m.innerHTML = '';
-  if (w.pos) m.appendChild(el('span', 'pos', w.pos));
-  m.appendChild(document.createTextNode(formatMeaning(w.meaning)));
-
-  const box = $('#fb-sentences');
+  head.hidden = false;
+  head.className = 'tag fb-head ' + state;
+  head.textContent = correct ? '정답!' : copied ? '따라 썼어요 · 잠시 후 복습' : '오답 · 잠시 후 복습';
+  const prompt = document.querySelector('.q-prompt');
+  prompt.textContent = !correct && given ? `내 답: ${given}` : '\u00a0';
+  prompt.classList.toggle('my-answer', !correct && !!given);
+  // 문장 카드에 정답 채우기
+  const box = $('#q-sentences');
   box.innerHTML = '';
+  box.className = 'answered ' + state;
   [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
-    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, !correct && !copied, w.meaning, i ? w.ex2src : w.ex1src));
+    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, state === 'bad', w.meaning, i ? w.ex2src : w.ex1src));
   });
-  const ex = $('#fb-extras');
-  ex.innerHTML = '';
-  for (const [k, v] of w.extras) {
-    const d = el('div');
-    d.append(el('b', null, k), v);
-    ex.appendChild(d);
+  $('#btn-hint').hidden = true;
+  if (settings.kind === 'type') {
+    $('#q-actions').innerHTML = '';
+    $('#quiz').classList.remove('kb-mode');
   }
+
+  // 아래 시트: 단어, 발음, 뜻/예문 탭
+  $('#fb-word').textContent = w.word;
+  $('#fb-pron').textContent = w.pron || '';
+  $('#fb-speak').onclick = () => speak(w.word);
+
+  const mean = $('#fb-mean');
+  mean.innerHTML = '';
+  const card = el('div', 'fb-card');
+  const tags = el('div', 'fb-tags');
+  if (w.pos) tags.appendChild(el('span', 'tag', w.pos));
+  if (w.star) tags.appendChild(el('span', 'tag star', '형광'));
+  tags.appendChild(el('span', 'tag', `DAY ${w.day}`));
+  card.append(tags, el('div', 'fb-meaning', formatMeaning(w.meaning)));
+  if (answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
+  mean.appendChild(card);
+  if (w.extras.length) {
+    const ex = el('div', 'fb-card extras');
+    for (const [k, v] of w.extras) {
+      const d = el('div');
+      d.append(el('b', null, k), v);
+      ex.appendChild(d);
+    }
+    mean.appendChild(ex);
+  }
+
+  const exPane = $('#fb-ex');
+  exPane.innerHTML = '';
+  [[w.ex1, w.ex1ko, w.ex1src], [w.ex2, w.ex2ko, w.ex2src]].forEach(([en, ko, src], i) => {
+    if (en) exPane.appendChild(sentenceCard(makeBlanks(en, w.blank, w.word), ko, i + 1, true, false, w.meaning, src));
+  });
+  setFbTab('mean');
+
   $('#feedback').hidden = false;
-  $('#btn-next').focus({ preventScroll: true });
+  // 시트에 가리지 않게 문장 아래 여백
+  requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
+  $('#fb-mean').scrollTop = 0;
   if (settings.autoSpeak) speak(w.word);
+}
+
+function setFbTab(t) {
+  document.querySelectorAll('#fb-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  $('#fb-mean').hidden = t !== 'mean';
+  $('#fb-ex').hidden = t !== 'ex';
 }
 
 function next() {
@@ -867,6 +911,7 @@ function bind() {
     goHome();
   });
   $('#btn-hint').addEventListener('click', useHint);
+  $('#fb-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setFbTab(b.dataset.t); });
   $('#btn-next').addEventListener('click', next);
   $('#btn-res-home').addEventListener('click', () => goHome());
 

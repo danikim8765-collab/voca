@@ -136,10 +136,14 @@ button { cursor: pointer; }
 .sent .num { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: .05em; }
 .sent-head { display: flex; justify-content: space-between; align-items: center; }
 .blank {
-  display: inline-block; min-width: 3.2em; padding: 0 6px; margin: 0 1px;
+  display: inline-grid; padding: 0 8px; margin: 0 2px;
   border-bottom: 3px solid var(--primary); background: var(--blank); border-radius: 6px 6px 2px 2px;
-  color: transparent; line-height: 1.45; text-align: center; vertical-align: baseline;
+  line-height: 1.45; text-align: left; vertical-align: baseline;
 }
+/* 정답 글자(sz)를 안 보이게 깔아서 빈칸 폭을 단어에 맞추고, 그 위에 입력/정답(fl)을 겹침 */
+.blank > .sz, .blank > .fl { grid-area: 1 / 1; white-space: pre; }
+.blank > .sz { visibility: hidden; }
+.blank.ghost-full > .sz { visibility: visible; color: var(--muted); }
 .blank.hint { color: var(--primary); font-weight: 700; }
 .blank.filled { color: var(--ok); font-weight: 800; background: var(--ok-soft); border-color: var(--ok); }
 .blank.filled.bad { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
@@ -193,7 +197,7 @@ button { cursor: pointer; }
 .key.enter { flex: 2; background: var(--primary); color: #fff; font-size: 16px; font-weight: 700; }
 .type-help { font-size: 12px; color: var(--muted); margin: -2px 0 8px 4px; }
 
-.sheet { position: fixed; inset: 0; background: rgba(10, 8, 30, .35); display: flex; align-items: flex-end; z-index: 10; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; z-index: 10; }
 .sheet-inner {
   width: 100%; max-width: 560px; margin: 0 auto; background: var(--card); border-radius: 24px 24px 0 0;
   padding: 20px 18px calc(env(safe-area-inset-bottom) + 16px); max-height: 88dvh; overflow-y: auto;
@@ -306,3 +310,36 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .blank .typo { color: var(--bad); }
 .blank.ghost-full { color: var(--muted); }
 .fb-head.copied { color: var(--warn); }
+
+/* 정답 화면 (말해보카 형식): 카드는 그대로 정답 상태로, 아래에서 단어 시트 */
+#q-sentences.answered .sent { transition: box-shadow .2s, background .2s; }
+#q-sentences.answered.ok .sent { box-shadow: 0 0 0 3px var(--ok); background: var(--ok-soft); }
+#q-sentences.answered.bad .sent { box-shadow: 0 0 0 3px var(--bad); background: var(--bad-soft); }
+#q-sentences.answered.copied .sent { box-shadow: 0 0 0 3px var(--warn); }
+.tag.fb-head { font-size: 13px; padding: 3px 10px; }
+.tag.fb-head.ok { color: #fff; background: var(--ok); }
+.tag.fb-head.bad { color: #fff; background: var(--bad); }
+.tag.fb-head.copied { color: #fff; background: var(--warn); }
+.q-prompt.my-answer { color: var(--bad); font-weight: 700; }
+.sheet-inner {
+  box-shadow: 0 -10px 30px rgba(30, 20, 80, .15); max-height: 62dvh; padding-top: 10px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+/* 단어·탭·계속하기는 고정, 뜻/예문 내용만 스크롤 */
+.sheet-inner > * { flex: none; }
+.sheet-inner > .fb-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.grab { width: 44px; height: 5px; border-radius: 9px; background: var(--line); margin: 0 auto 12px; }
+.fb-word .w { font-size: 30px; }
+.fb-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 12px 0 14px; }
+.fb-tabs button { border: 0; background: none; padding: 8px 2px; font-size: 16px; font-weight: 700; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.fb-tabs button.on { color: var(--text); border-bottom-color: var(--text); }
+.fb-card { background: var(--bg); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+.fb-card .fb-meaning { font-size: 18px; font-weight: 700; margin: 6px 0 4px; white-space: pre-line; }
+.fb-tags { display: flex; gap: 6px; justify-content: flex-end; }
+.fb-pane .sent { background: var(--bg); box-shadow: none; }
+.fb-pane .sent .en { font-size: 17px; }
+.extras.fb-card div { margin-bottom: 4px; font-size: 14px; }
+.next-btn { margin-top: 6px; }
+.tag.fb-head { margin: 0; }
+#q-sentences.answered.ok .blank.filled { background: rgba(18, 184, 134, .2); }
+#q-sentences.answered.bad .blank.filled { background: rgba(250, 82, 82, .16); }
