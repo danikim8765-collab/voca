@@ -246,3 +246,31 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
   background: #2b2840; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
   max-width: 90vw; text-align: center;
 }
+
+/* 아이패드 등 큰 화면 */
+@media (min-width: 700px) {
+  body { font-size: 17px; }
+  .screen { max-width: 760px; padding-left: 28px; padding-right: 28px; }
+  .quiz-actions, .kb-mode .quiz-actions, .sticky-bottom, .sheet-inner { max-width: 760px; }
+  .top h1 { font-size: 26px; }
+  .sent { padding: 20px 24px; }
+  .sent .en { font-size: 24px; }
+  .sent .ko { font-size: 17px; }
+  .q-prompt { font-size: 16px; }
+  .choice { font-size: 20px; padding: 16px 18px; }
+  .btn.big { font-size: 20px; padding: 19px; }
+  .fb-word .w { font-size: 30px; }
+  .fb-meaning { font-size: 18px; }
+  #fb-sentences .sent .en { font-size: 20px; }
+  .key { height: 58px; font-size: 24px; border-radius: 10px; }
+  .kb-row { gap: 7px; margin-bottom: 8px; }
+  .kb-display { min-height: 62px; font-size: 22px; }
+  .days { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+}
+/* 가로 화면에서 키보드가 문장을 너무 가리지 않게 */
+@media (min-width: 700px) and (max-height: 900px) and (orientation: landscape) {
+  .key { height: 50px; }
+  .kb-row { margin-bottom: 6px; }
+  .kb-display { min-height: 52px; margin-bottom: 6px; }
+  .sent .en { font-size: 22px; }
+}
