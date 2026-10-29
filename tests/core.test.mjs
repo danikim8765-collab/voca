@@ -111,3 +111,17 @@ test('출처 태그 분리', async () => {
   assert.deepEqual(splitSource('He is right. [수능응용]'), ['He is right.', '수능응용']);
   assert.deepEqual(splitSource('He is right.'), ['He is right.', '']);
 });
+
+test('진도 합치기: 단어별 최신 기록, 초기화 반영', async () => {
+  const { mergeProgress, sameStats } = await import('../js/core.js');
+  const phone = { resetAt: 0, stats: { a: { b: 2, c: 2, w: 0, d: 9, s: 100 }, b: { b: 0, c: 0, w: 1, d: 5, s: 300 } } };
+  const ipad = { resetAt: 0, stats: { a: { b: 3, c: 3, w: 0, d: 20, s: 200 }, c: { b: 1, c: 1, w: 0, d: 7, s: 50 } } };
+  const m = mergeProgress(phone, ipad);
+  assert.equal(m.stats.a.s, 200);
+  assert.equal(m.stats.b.s, 300);
+  assert.equal(m.stats.c.s, 50);
+  assert.ok(sameStats(m.stats, mergeProgress(ipad, phone).stats));
+  const reset = mergeProgress({ resetAt: 250, stats: {} }, m);
+  assert.deepEqual(Object.keys(reset.stats), ['b']);
+  assert.ok(!sameStats(m.stats, reset.stats));
+});

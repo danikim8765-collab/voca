@@ -2,6 +2,7 @@ import {
   rowsToWords, makeBlanks, isTypedCorrect, displayAnswer, answerParts,
   applyResult, pickWords, pickDistractors, shuffle, MAX_BOX, highlightMeaning,
 } from './core.js';
+import { createSync } from './sync.js';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -11,6 +12,7 @@ const KEY = {
   settings: 'voca.settings.v1',
   session: 'voca.session.v1',
   csv: 'voca.csvcache.v1',
+  resetAt: 'voca.resetAt.v1',
 };
 const REQUEUE_GAP = 4; // 틀린 단어는 4문제 뒤에 다시
 
@@ -41,6 +43,20 @@ let session = null;
 let dataInfo = '';
 
 const saveStats = () => save(KEY.stats, stats);
+let resetAt = load(KEY.resetAt, 0);
+
+// ---------- 기기 간 동기화 ----------
+const sync = createSync({
+  getLocal: () => ({ v: 1, resetAt, stats }),
+  applyMerged: m => {
+    stats = m.stats;
+    resetAt = m.resetAt;
+    saveStats();
+    save(KEY.resetAt, resetAt);
+    if (current === 'home') renderHome();
+  },
+  onStatus: () => renderSyncStatus(),
+});
 const saveSettings = () => save(KEY.settings, settings);
 const saveSession = () => (session ? save(KEY.session, session) : localStorage.removeItem(KEY.session));
 
@@ -521,6 +537,7 @@ function answer(correct, given) {
   }
   session.pos++;
   saveStats();
+  sync.soon();
   saveSession();
   showFeedback(correct, given);
 }
@@ -563,6 +580,7 @@ function next() {
 }
 
 function finishSession() {
+  sync.now();
   const s = session;
   session = null;
   saveSession();
@@ -640,6 +658,19 @@ function renderList() {
 }
 
 // ---------- 설정 ----------
+function renderSyncStatus() {
+  const badge = $('#sync-badge');
+  badge.hidden = !sync.enabled;
+  badge.className = 'sync-badge ' + sync.status;
+  badge.textContent = { syncing: '☁︎ 동기화 중', ok: '☁︎ 동기화됨', error: '☁︎ 동기화 오류', idle: '☁︎' }[sync.status] || '';
+  $('#sync-off').hidden = sync.enabled;
+  $('#sync-on').hidden = !sync.enabled;
+  if (sync.enabled) {
+    const t = sync.last ? new Date(sync.last).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '아직 없음';
+    $('#sync-info').textContent = `GitHub 계정 ${sync.login}에 연결됨\n마지막 동기화: ${t}` + (sync.status === 'error' ? `\n⚠︎ ${sync.error}` : sync.status === 'syncing' ? '\n동기화 중…' : '');
+  }
+}
+
 function renderSettings() {
   setSeg('#seg-accent', settings.accent);
   $('#rate').value = settings.rate;
@@ -671,6 +702,7 @@ async function importProgress(file) {
     if (!confirm('백업 파일의 진도로 덮어쓸까요?')) return;
     stats = data.stats;
     saveStats();
+    sync.now();
     toast('진도를 불러왔어요');
     renderSettings();
   } catch {
@@ -743,7 +775,7 @@ function bind() {
   $('#btn-next').addEventListener('click', next);
   $('#btn-res-home').addEventListener('click', () => goHome());
 
-  $('#btn-settings').addEventListener('click', () => { renderSettings(); show('settings'); });
+  $('#btn-settings').addEventListener('click', () => { renderSettings(); renderSyncStatus(); show('settings'); });
   $('#btn-settings-back').addEventListener('click', () => goHome());
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });
@@ -753,12 +785,42 @@ function bind() {
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#btn-test-voice').addEventListener('click', () => speak('I tried to convince him of the danger.'));
   $('#btn-export').addEventListener('click', exportProgress);
+  $('#btn-sync-connect').addEventListener('click', async () => {
+    const token = $('#sync-token').value.trim();
+    if (!token) { toast('토큰을 붙여넣어 주세요'); return; }
+    const btn = $('#btn-sync-connect');
+    btn.disabled = true;
+    btn.textContent = '연결 중…';
+    try {
+      const login = await sync.connect(token);
+      $('#sync-token').value = '';
+      toast(`${login} 계정으로 연결했어요`);
+    } catch (e) {
+      toast(e.status === 401 ? '토큰이 맞지 않아요. 다시 복사해서 붙여넣어 주세요' : '연결하지 못했어요. 인터넷과 토큰을 확인해 주세요', 3500);
+    }
+    btn.disabled = false;
+    btn.textContent = '연결';
+    renderSyncStatus();
+  });
+  $('#btn-sync-now').addEventListener('click', async () => { await sync.now(); toast(sync.status === 'ok' ? '동기화했어요' : sync.error); });
+  $('#btn-sync-copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(sync.token); toast('토큰을 복사했어요. 다른 기기의 설정에 붙여넣으세요'); }
+    catch { prompt('이 토큰을 복사하세요', sync.token); }
+  });
+  $('#btn-sync-off').addEventListener('click', () => {
+    if (!confirm('이 기기의 동기화 연결을 끊을까요? (진도는 이 기기에 그대로 남아요)')) return;
+    sync.disconnect();
+    renderSyncStatus();
+  });
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', e => { if (e.target.files[0]) importProgress(e.target.files[0]); e.target.value = ''; });
   $('#btn-reset').addEventListener('click', () => {
-    if (!confirm('모든 학습 진도를 지울까요? 되돌릴 수 없어요.')) return;
+    if (!confirm(sync.enabled ? '모든 학습 진도를 지울까요? 동기화된 다른 기기의 진도도 함께 지워져요. 되돌릴 수 없어요.' : '모든 학습 진도를 지울까요? 되돌릴 수 없어요.')) return;
     stats = {};
+    resetAt = Date.now(); // 다른 기기의 예전 기록도 함께 지워지게
+    save(KEY.resetAt, resetAt);
     saveStats();
+    sync.now();
     localStorage.removeItem(KEY.session);
     toast('진도를 초기화했어요');
   });
@@ -790,9 +852,11 @@ function bind() {
 }
 
 bind();
-loadData().then(() => boot()).catch(err => {
+loadData().then(() => { boot(); renderSyncStatus(); sync.now(); }).catch(err => {
   $('#load-status').textContent = '단어를 불러오지 못했어요: ' + err.message;
 });
+
+document.addEventListener('visibilitychange', () => { if (words.length) sync.now(); });
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -488,3 +488,26 @@ export function highlightMeaning(ko, meaning) {
   if (pos < text.length) segs.push({ t: 'text', v: text.slice(pos) });
   return segs;
 }
+
+// ---------- 기기 간 진도 합치기 ----------
+// 단어별로 마지막 학습 시각(s)이 더 최근인 기록을 남긴다. resetAt 이전 기록은 버린다(진도 초기화).
+export function mergeProgress(a, b) {
+  const resetAt = Math.max((a && a.resetAt) || 0, (b && b.resetAt) || 0);
+  const out = {};
+  for (const src of [(a && a.stats) || {}, (b && b.stats) || {}]) {
+    for (const [id, s] of Object.entries(src)) {
+      if (!s || (s.s || 0) < resetAt) continue;
+      if (!out[id] || (s.s || 0) > (out[id].s || 0)) out[id] = s;
+    }
+  }
+  return { v: 1, resetAt, stats: out };
+}
+
+export function sameStats(x, y) {
+  const kx = Object.keys(x || {}), ky = Object.keys(y || {});
+  if (kx.length !== ky.length) return false;
+  return kx.every(k => {
+    const a = x[k], b = y[k];
+    return b && a.s === b.s && a.b === b.b && a.c === b.c && a.w === b.w && a.d === b.d;
+  });
+}
