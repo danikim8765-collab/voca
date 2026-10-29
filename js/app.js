@@ -399,8 +399,13 @@ function renderTyping(actions) {
     const correct = isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
     answer(correct, correct ? null : value.trim());
   };
+  // 정답을 다 쓰는 순간 확인 없이 바로 정답 처리 (틀린 답은 확인을 눌러야 제출)
+  const autoCheck = value => {
+    if (!q.answered && isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks)) { check(value); return true; }
+    return false;
+  };
   const giveUp = () => { if (!q.answered) answer(false, null); };
-  if (settings.appKeyboard) return renderAppKeyboard(actions, placeholder, helpText, check, giveUp);
+  if (settings.appKeyboard) return renderAppKeyboard(actions, placeholder, helpText, check, giveUp, autoCheck);
 
   const input = el('input', 'type-input');
   Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, enterKeyHint: 'done' });
@@ -420,6 +425,7 @@ function renderTyping(actions) {
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  input.addEventListener('input', () => { if (isTypedCorrect(input.value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks)) input.blur(); autoCheck(input.value); });
   dk.addEventListener('click', () => { input.blur(); giveUp(); });
   setTimeout(() => input.focus(), 50);
 }
@@ -428,7 +434,7 @@ function renderTyping(actions) {
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', "'zxcvbnm⌫"];
 let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
 
-function renderAppKeyboard(actions, placeholder, helpText, check, giveUp) {
+function renderAppKeyboard(actions, placeholder, helpText, check, giveUp, autoCheck) {
   $('#quiz').classList.add('kb-mode');
   const display = el('div', 'type-input kb-display');
   const text = el('span', 'kb-text');
@@ -454,6 +460,7 @@ function renderAppKeyboard(actions, placeholder, helpText, check, giveUp) {
       else if (key === ' ') { if (kb.value && !kb.value.endsWith(' ')) kb.value += ' '; }
       else if (kb.value.length < 60) kb.value += key;
       render();
+      autoCheck(kb.value);
     },
     submit() {
       if (q.answered) return;
