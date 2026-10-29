@@ -1,11 +1,11 @@
 import {
-  rowsToWords, makeBlanks, isTypedCorrect, displayAnswer, answerParts,
+  rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, pickWords, pickDistractors, shuffle, MAX_BOX, highlightMeaning, nextLetterHint, typingHintTarget,
 } from './core.js';
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610291043';
+const APP_VERSION = '202610291048';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -18,6 +18,7 @@ const KEY = {
   resetAt: 'voca.resetAt.v1',
 };
 const REQUEUE_GAP = 4; // 틀린 단어는 4문제 뒤에 다시
+const ANSWER_PAUSE = 550; // 맞힌 순간을 보여주고 정답 화면을 띄우기까지(ms)
 
 const $ = s => document.querySelector(s);
 const el = (tag, cls, text) => {
@@ -394,8 +395,11 @@ function renderChoices(actions) {
       b.classList.add(ok ? 'correct' : 'wrong');
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
-      if (ok && q.usedHint) answer(false, null, 'hint');
-      else answer(ok, ok ? null : displayAnswer(c));
+      q.answered = true;
+      setTimeout(() => {
+        if (ok && q.usedHint) answer(false, null, 'hint');
+        else answer(ok, ok ? null : displayAnswer(c));
+      }, ANSWER_PAUSE);
     });
     actions.appendChild(b);
   });
@@ -405,13 +409,20 @@ function renderTyping(actions) {
   const parts = answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
   const helpText = parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요';
-  const isRight = value => isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
+  // 빈칸에 들어갈 형태 그대로(abound 말고 abounds) 다 써야 정답
+  const want = normalizeAnswer(typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks));
+  const isRight = value => normalizeAnswer(value) === want;
   // 직접 입력엔 오답이 없음: 정답이 될 때까지 계속 쓰고, 맞는 순간 넘어감.
   // 힌트를 쓴 단어는 외운 걸로 치지 않고 잠시 후 한 번 더 나옴
   const check = value => {
     if (q.answered || !isRight(value)) return false;
-    if (q.usedHint) answer(false, null, q.revealed ? 'copied' : 'hint');
-    else answer(true, null);
+    q.answered = true; // 더 못 치게 막고, 빈칸이 초록으로 바뀌는 걸 잠깐 보여준 뒤 정답 화면
+    document.querySelectorAll('#q-sentences .blank').forEach(b => b.classList.add('got'));
+    document.querySelectorAll('#q-sentences .kb-caret').forEach(c => c.remove());
+    setTimeout(() => {
+      if (q.usedHint) answer(false, null, q.revealed ? 'copied' : 'hint');
+      else answer(true, null);
+    }, ANSWER_PAUSE);
     return true;
   };
   const autoCheck = check;

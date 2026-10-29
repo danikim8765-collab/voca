@@ -103,7 +103,6 @@
             <div class="w" id="fb-word"></div>
             <div class="muted" id="fb-pron"></div>
           </div>
-          <button class="speak big" id="fb-speak" aria-label="단어 발음 듣기">🔊</button>
         </div>
         <div class="fb-tabs" id="fb-tabs">
           <button data-t="mean" class="on">뜻</button>
@@ -111,7 +110,10 @@
         </div>
         <div class="fb-pane" id="fb-mean"></div>
         <div class="fb-pane" id="fb-ex" hidden></div>
-        <button class="btn primary big next-btn" id="btn-next">▶ 계속하기</button>
+        <div class="fb-actions">
+          <button class="speak-btn" id="fb-speak" aria-label="단어 발음 듣기">🔊</button>
+          <button class="btn primary big next-btn" id="btn-next">▶ 계속하기</button>
+        </div>
       </div>
     </div>
   </section>
