@@ -5,7 +5,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610290801';
+const APP_VERSION = '202610290933';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -551,12 +551,6 @@ function renderAppKeyboard(actions, helpText, check, giveUp, autoCheck) {
 
 function useHint() {
   if (!q || q.answered) return;
-  const mEl = $('#q-meaning');
-  if (q.hint === 0 && mEl.textContent) {
-    mEl.hidden = false;
-    q.hint = 1;
-    return;
-  }
   // 직접 입력: 맞게 쓴 데까지 살리고 2글자씩 채워줌 (누를 때마다)
   if (q.typing) {
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
@@ -566,7 +560,7 @@ function useHint() {
     q.hint = Math.max(q.hint, 2);
     return;
   }
-  // 객관식 두 번째 힌트: 빈칸마다 첫 글자
+  // 객관식: 빈칸마다 첫 글자
   q.hint = 2;
   document.querySelectorAll('#q-sentences .blank').forEach(s => {
     const v = s.textContent.trim();
