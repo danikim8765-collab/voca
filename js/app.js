@@ -5,7 +5,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610291048';
+const APP_VERSION = '202610291051';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -18,7 +18,7 @@ const KEY = {
   resetAt: 'voca.resetAt.v1',
 };
 const REQUEUE_GAP = 4; // 틀린 단어는 4문제 뒤에 다시
-const ANSWER_PAUSE = 550; // 맞힌 순간을 보여주고 정답 화면을 띄우기까지(ms)
+const ANSWER_PAUSE = 100; // 맞힌 순간을 보여주고 정답 화면을 띄우기까지(ms)
 
 const $ = s => document.querySelector(s);
 const el = (tag, cls, text) => {

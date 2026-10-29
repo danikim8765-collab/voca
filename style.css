@@ -136,16 +136,16 @@ button { cursor: pointer; }
 .sent .num { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: .05em; }
 .sent-head { display: flex; justify-content: space-between; align-items: center; }
 .blank {
-  display: inline-grid; padding: 0 8px; margin: 0 2px;
-  border-bottom: 3px solid var(--primary); background: var(--blank); border-radius: 6px 6px 2px 2px;
-  line-height: 1.45; text-align: left; vertical-align: baseline;
+  display: inline-grid; padding: 0 10px; margin: 0 3px;
+  border-bottom: 2px solid var(--primary); background: var(--blank); border-radius: 8px 8px 2px 2px;
+  line-height: inherit; text-align: left; vertical-align: baseline;
 }
 /* 정답 글자(sz)를 안 보이게 깔아서 빈칸 폭을 단어에 맞추고, 그 위에 입력/정답(fl)을 겹침 */
 .blank > .sz, .blank > .fl { grid-area: 1 / 1; white-space: pre; }
 .blank > .sz { visibility: hidden; }
 .blank.ghost-full > .sz { visibility: visible; color: var(--muted); }
-.blank.hint { color: var(--primary); font-weight: 700; }
-.blank.filled { color: var(--ok); font-weight: 800; background: var(--ok-soft); border-color: var(--ok); }
+.blank.hint { color: var(--primary); }
+.blank.filled { color: var(--ok); background: var(--ok-soft); border-color: var(--ok); }
 .blank.filled.bad { color: var(--bad); background: var(--bad-soft); border-color: var(--bad); }
 .q-meaning { white-space: pre-line; background: var(--primary-soft); color: var(--text); border-radius: 14px; padding: 12px 14px; margin: 6px 0 10px; font-weight: 600; }
 
