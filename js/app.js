@@ -5,7 +5,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610290955';
+const APP_VERSION = '202610291001';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -265,7 +265,7 @@ function startSession(mode, list) {
   const rw = list || rangeWords();
   const size = settings.size || rw.length;
   const picked = list ? shuffle(list) : pickWords(rw, stats, size, mode === 'order' ? 'order' : mode);
-  if (!picked.length) { toast(mode === 'wrong' ? '이 범위에 오답 단어가 없어요' : '학습할 단어가 없어요'); return; }
+  if (!picked.length) { toast(mode === 'wrong' ? '이 범위에 다시 볼 단어가 없어요' : '학습할 단어가 없어요'); return; }
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   const label = (from === to ? `DAY ${from}` : `DAY ${from}~${to}`)
     + (mode === 'wrong' ? ' 오답' : mode === 'order' ? ' 순서대로' : list ? ' 다시' : '');
@@ -383,7 +383,8 @@ function renderChoices(actions) {
       b.classList.add(ok ? 'correct' : 'wrong');
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
-      answer(ok, ok ? null : displayAnswer(c));
+      if (ok && q.usedHint) answer(false, null, 'hint');
+      else answer(ok, ok ? null : displayAnswer(c));
     });
     actions.appendChild(b);
   });
@@ -394,26 +395,19 @@ function renderTyping(actions) {
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
   const helpText = parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요';
   const isRight = value => isTypedCorrect(value, q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
-  // 확인을 눌렀을 때. 정답을 보고 쓰는 중이면 다 따라 쓸 때까지 제출하지 않음
+  // 직접 입력엔 오답이 없음: 정답이 될 때까지 계속 쓰고, 맞는 순간 넘어감.
+  // 힌트를 쓴 단어는 외운 걸로 치지 않고 잠시 후 한 번 더 나옴
   const check = value => {
-    if (q.answered) return false;
-    const correct = isRight(value);
-    if (q.revealed) { if (correct) answer(false, null, true); return correct; }
-    answer(correct, correct ? null : value.trim());
+    if (q.answered || !isRight(value)) return false;
+    if (q.usedHint) answer(false, null, q.revealed ? 'copied' : 'hint');
+    else answer(true, null);
     return true;
   };
-  // 정답을 다 쓰는 순간 확인 없이 바로 처리 (틀린 답은 확인을 눌러야 제출)
-  const fullLen = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks).length;
-  // 빈칸 글자 수만큼 다 쓰면 바로 제출 (맞으면 정답, 아니면 오답). 정답 보고 쓰기는 맞게 쓸 때까지
-  const autoCheck = value => {
-    if (q.answered) return false;
-    if (isRight(value)) { check(value); return true; }
-    if (!q.revealed && value.replace(/\s+$/, '').length >= fullLen) { check(value); return true; }
-    return false;
-  };
+  const autoCheck = check;
+  const notYet = () => toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   if (settings.appKeyboard) {
     const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 띄어쓰기로 다음 빈칸` : '키보드로 바로 입력하세요';
-    return renderAppKeyboard(actions, kbHelp, check, autoCheck);
+    return renderAppKeyboard(actions, kbHelp, check, autoCheck, notYet);
   }
 
   const input = el('input', 'type-input');
@@ -435,8 +429,7 @@ function renderTyping(actions) {
     },
   };
   const submit = () => {
-    if (!input.value.trim()) { input.focus(); return; }
-    if (!check(input.value)) { input.focus(); return; }
+    if (!check(input.value)) { if (input.value.trim()) notYet(); input.focus(); return; }
     input.blur();
   };
   ok.addEventListener('click', submit);
@@ -466,7 +459,7 @@ function fillBlanks(value, targets) {
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', "'zxcvbnm⌫"];
 let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
 
-function renderAppKeyboard(actions, helpText, check, autoCheck) {
+function renderAppKeyboard(actions, helpText, check, autoCheck, notYet) {
   $('#quiz').classList.add('kb-mode');
   const top = el('div', 'kb-top');
   const hintBtn = el('button', 'btn ghost small kb-hint', '💡 힌트');
@@ -517,7 +510,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck) {
       if (q.answered) return;
       const shake = () => { const c = cards[0] || top; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); };
       if (!kb.value.trim()) { shake(); return; }
-      if (!check(kb.value)) shake();
+      if (!check(kb.value)) { shake(); notYet(); }
     },
   };
   const key = (label, cls, fn) => {
@@ -575,6 +568,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck) {
 
 function useHint() {
   if (!q || q.answered) return;
+  q.usedHint = true;
   if (q.typing) {
     if (q.revealed) return;
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
@@ -615,7 +609,7 @@ function setHintButtons(label) {
   }
 }
 
-function answer(correct, given, copied) {
+function answer(correct, given, kind) {
   q.answered = true;
   const w = q.w;
   const id = w.id;
@@ -640,17 +634,17 @@ function answer(correct, given, copied) {
   saveStats();
   sync.soon();
   saveSession();
-  showFeedback(correct, given, copied);
+  showFeedback(correct, given, kind);
 }
 
-function showFeedback(correct, given, copied) {
+function showFeedback(correct, given, kind) {
   const w = q.w;
-  const state = correct ? 'ok' : copied ? 'copied' : 'bad';
+  const state = correct ? 'ok' : kind || 'bad';
   // 카드 위 상태 표시
   const head = $('#fb-head');
   head.hidden = false;
   head.className = 'tag fb-head ' + state;
-  head.textContent = correct ? '정답!' : copied ? '따라 썼어요 · 잠시 후 복습' : '오답 · 잠시 후 복습';
+  head.textContent = { ok: '정답!', hint: '정답! · 힌트 써서 한 번 더 복습', copied: '정답 보고 씀 · 한 번 더 복습', bad: '오답 · 잠시 후 복습' }[state];
   const prompt = document.querySelector('.q-prompt');
   prompt.textContent = !correct && given ? `내 답: ${given}` : '\u00a0';
   prompt.classList.toggle('my-answer', !correct && !!given);
@@ -728,13 +722,13 @@ function finishSession() {
   const wrong = s.wrong.filter(id => byId.has(id));
   const firstOk = total - wrong.length;
   $('#res-score').textContent = `${Math.round((firstOk / Math.max(1, total)) * 100)}%`;
-  $('#res-detail').textContent = `${s.label} · ${total}단어 중 한 번에 맞힌 단어 ${firstOk}개`;
+  $('#res-detail').textContent = `${s.label} · ${total}단어 중 힌트 없이 바로 맞힌 단어 ${firstOk}개`;
   const list = $('#res-wrong');
   list.innerHTML = '';
-  if (!wrong.length) list.appendChild(el('div', 'card center muted', '틀린 단어가 없어요. 완벽해요!'));
+  if (!wrong.length) list.appendChild(el('div', 'card center muted', '다시 볼 단어가 없어요. 완벽해요!'));
   for (const id of wrong) list.appendChild(wordItem(byId.get(id)));
   const again = $('#btn-res-again');
-  again.textContent = wrong.length ? '틀린 단어 다시' : '한 번 더';
+  again.textContent = wrong.length ? '다시 볼 단어 복습' : '한 번 더';
   again.onclick = () => (wrong.length ? startSession('retry', wrong.map(id => byId.get(id))) : startSession('smart'));
   show('result', false);
 }

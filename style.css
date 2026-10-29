@@ -315,11 +315,11 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 #q-sentences.answered .sent { transition: box-shadow .2s, background .2s; }
 #q-sentences.answered.ok .sent { box-shadow: 0 0 0 3px var(--ok); background: var(--ok-soft); }
 #q-sentences.answered.bad .sent { box-shadow: 0 0 0 3px var(--bad); background: var(--bad-soft); }
-#q-sentences.answered.copied .sent { box-shadow: 0 0 0 3px var(--warn); }
+#q-sentences.answered.copied .sent, #q-sentences.answered.hint .sent { box-shadow: 0 0 0 3px var(--warn); }
 .tag.fb-head { font-size: 13px; padding: 3px 10px; }
 .tag.fb-head.ok { color: #fff; background: var(--ok); }
 .tag.fb-head.bad { color: #fff; background: var(--bad); }
-.tag.fb-head.copied { color: #fff; background: var(--warn); }
+.tag.fb-head.copied, .tag.fb-head.hint { color: #fff; background: var(--warn); }
 .q-prompt.my-answer { color: var(--bad); font-weight: 700; }
 .sheet-inner {
   box-shadow: 0 -10px 30px rgba(30, 20, 80, .15); max-height: 62dvh; padding-top: 10px;
