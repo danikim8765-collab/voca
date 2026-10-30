@@ -6,7 +6,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610291231';
+const APP_VERSION = '202610301443';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -18,7 +18,6 @@ const KEY = {
   csv: 'voca.csvcache.v1',
   resetAt: 'voca.resetAt.v1',
 };
-const ANSWER_PAUSE = 100; // 맞힌 순간을 보여주고 정답 화면을 띄우기까지(ms)
 
 const $ = s => document.querySelector(s);
 const el = (tag, cls, text) => {
@@ -444,10 +443,8 @@ function renderChoices(actions) {
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
       q.answered = true;
-      setTimeout(() => {
-        if (ok && q.usedHint) answer(false, null, 'hint');
-        else answer(ok, ok ? null : displayAnswer(c));
-      }, ANSWER_PAUSE);
+      if (ok && q.usedHint) answer(false, null, 'hint');
+      else answer(ok, ok ? null : displayAnswer(c));
     });
     actions.appendChild(b);
   });
@@ -464,13 +461,8 @@ function renderTyping(actions) {
   // 힌트를 쓴 단어는 외운 걸로 치지 않고 잠시 후 한 번 더 나옴
   const check = value => {
     if (q.answered || !isRight(value)) return false;
-    q.answered = true; // 더 못 치게 막고, 빈칸이 초록으로 바뀌는 걸 잠깐 보여준 뒤 정답 화면
-    document.querySelectorAll('#q-sentences .blank').forEach(b => b.classList.add('got'));
-    document.querySelectorAll('#q-sentences .kb-caret').forEach(c => c.remove());
-    setTimeout(() => {
-      if (q.usedHint) answer(false, null, q.revealed ? 'copied' : 'hint');
-      else answer(true, null);
-    }, ANSWER_PAUSE);
+    if (q.usedHint) answer(false, null, q.revealed ? 'copied' : 'hint');
+    else answer(true, null);
     return true;
   };
   const autoCheck = check;
