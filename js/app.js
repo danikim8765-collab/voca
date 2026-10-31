@@ -6,7 +6,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610311140';
+const APP_VERSION = '202610311152';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -849,7 +849,7 @@ function wordItem(w) {
         det.appendChild(d);
       }
       item.appendChild(det);
-    } else item.querySelector('.detail')?.remove();
+    } else { const d = item.querySelector('.detail'); if (d) d.remove(); }
   });
   return item;
 }
@@ -897,7 +897,7 @@ function renderSettings() {
   $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
   $('#opt-appkb').checked = settings.appKeyboard;
-  $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days[0] ?? '-'}~${days[days.length - 1] ?? '-'}\n${dataInfo}`;
+  $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
 }
 
@@ -968,7 +968,8 @@ function bind() {
   $('#day-from').addEventListener('change', e => setRange(+e.target.value, settings.to));
   $('#day-to').addEventListener('change', e => setRange(settings.from, +e.target.value));
   $('#range-chips').addEventListener('click', e => {
-    const r = e.target.closest('button')?.dataset.range;
+    const cb = e.target.closest('button');
+    const r = cb && cb.dataset.range;
     const last = days[days.length - 1];
     if (r === 'last') setRange(last, last);
     if (r === 'last3') setRange(days[Math.max(0, days.length - 3)], last);
@@ -1060,7 +1061,7 @@ function bind() {
   document.addEventListener('keydown', e => {
     if (current !== 'quiz') return;
     if (!$('#feedback').hidden && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); return; }
-    if (kb && !q?.answered && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (kb && !(q && q.answered) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (e.key === 'Enter') kb.submit();
       else if (e.key === 'Backspace') kb.type('back');
       else if (/^[a-zA-Z' -]$/.test(e.key)) kb.type(e.key.toLowerCase());
@@ -1068,13 +1069,15 @@ function bind() {
       e.preventDefault();
       return;
     }
-    if (settings.kind === 'choice' && /^[1-4]$/.test(e.key) && !q?.answered) {
-      $('#q-actions').querySelectorAll('.choice')[+e.key - 1]?.click();
+    if (settings.kind === 'choice' && /^[1-4]$/.test(e.key) && !(q && q.answered)) {
+      const c = $('#q-actions').querySelectorAll('.choice')[+e.key - 1];
+      if (c) c.click();
     }
   });
 }
 
 bind();
+window.__vocaStarted = true;
 loadData().then(() => { boot(); renderSyncStatus(); sync.now(); }).catch(err => {
   $('#load-status').textContent = '단어를 불러오지 못했어요: ' + err.message;
 });

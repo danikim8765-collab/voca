@@ -228,6 +228,22 @@
 
   <div id="toast" class="toast" hidden></div>
 
+  <!-- 앱이 안 뜨는 폰에서 이유를 보여줌 (오래된 브라우저, 오류) -->
+  <script>
+    (function () {
+      function report(msg) {
+        var st = document.getElementById('load-status');
+        if (st && !window.__vocaStarted) st.textContent = msg;
+      }
+      window.addEventListener('error', function (e) {
+        report('앱을 여는 중 오류가 났어요.\n' + (e.message || '') + '\n\n브라우저를 최신으로 업데이트하거나 Chrome/Safari로 열어보세요.');
+      });
+      setTimeout(function () {
+        report('앱이 열리지 않아요.\n브라우저가 너무 오래됐을 수 있어요. 최신 Chrome이나 Safari로 열어보세요.\n(카카오톡 안에서 열었다면 오른쪽 위 메뉴 → 다른 브라우저로 열기)');
+      }, 8000);
+    })();
+  </script>
+  <script nomodule>document.getElementById('load-status').textContent = '이 브라우저는 너무 오래돼서 앱을 열 수 없어요. 최신 Chrome이나 Safari로 열어보세요.';</script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
