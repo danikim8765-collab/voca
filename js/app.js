@@ -6,7 +6,7 @@ import {
 import { createSync } from './sync.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202610301443';
+const APP_VERSION = '202610311140';
 
 // 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
 const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-.csv'];
@@ -454,10 +454,20 @@ function renderTyping(actions) {
   const parts = answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
   const helpText = parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요';
-  // 빈칸에 들어갈 형태 그대로(abound 말고 abounds) 다 써야 정답
-  const want = normalizeAnswer(typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks));
-  const isRight = value => normalizeAnswer(value) === want;
-  // 직접 입력엔 오답이 없음: 정답이 될 때까지 계속 쓰고, 맞는 순간 넘어감.
+  // 정답: 단어 원형(abound)도, 예문 속 형태(abounds)도 인정 — 단어를 외우는 게 우선
+  const cands = [...new Set([
+    answerParts(q.w.blank).join(' '),
+    typingHintTarget(q.w, q.b1 && q.b1.blanks, null),
+    typingHintTarget(q.w, q.b2 && q.b2.blanks, null),
+  ].map(normalizeAnswer).filter(Boolean))];
+  const isRight = value => cands.includes(normalizeAnswer(value));
+  // 더 이어질 정답이 없으면(abounds, fatal) 쓰는 순간 넘어가고,
+  // 원형이 예문 형태의 앞부분이면(abound → abounds) 확인을 눌러야 넘어감 (계속 써도 됨)
+  const isFinal = value => {
+    const n = normalizeAnswer(value);
+    return cands.includes(n) && !cands.some(c => c !== n && c.startsWith(n));
+  };
+  // 직접 입력엔 오답이 없음: 정답이 될 때까지 계속 씀.
   // 힌트를 쓴 단어는 외운 걸로 치지 않고 잠시 후 한 번 더 나옴
   const check = value => {
     if (q.answered || !isRight(value)) return false;
@@ -465,7 +475,12 @@ function renderTyping(actions) {
     else answer(true, null);
     return true;
   };
-  const autoCheck = check;
+  const autoCheck = value => {
+    if (isFinal(value)) return check(value);
+    // 확인만 누르면 되는 상태면 확인 버튼을 초록으로
+    document.querySelectorAll('#q-actions .key.enter, #q-actions .btn.primary').forEach(b => b.classList.toggle('ready', isRight(value)));
+    return false;
+  };
   const notYet = () => toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   if (settings.appKeyboard) {
     const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 띄어쓰기로 다음 빈칸` : '키보드로 바로 입력하세요';

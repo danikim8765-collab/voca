@@ -374,3 +374,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 @media (prefers-reduced-motion: reduce) {
   .sheet-inner, #q-sentences.answered .sent, #q-sentences.answered .blank.filled, .tag.fb-head { animation: none !important; }
 }
+
+/* 원형까지 맞게 썼을 때: 확인만 누르면 정답 */
+#q-actions .key.enter.ready, #q-actions .btn.primary.ready { background: var(--ok); animation: ready .9s ease-in-out infinite alternate; }
+@keyframes ready { to { box-shadow: 0 0 0 4px rgba(18, 184, 134, .25); } }
