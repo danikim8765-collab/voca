@@ -45,7 +45,7 @@
     --bad-soft: #43201f;
     --blank: #24365a;
     --shadow: none;
-    /* 키보드: 바탕은 민트 그라데이션 그대로, 키를 어둡게 해서 잘 구별되게 */
+    /* 키보드 키·4지선다 보기: 민트 그라데이션 위에서 잘 구별되게 어둡게 */
     --key-bg: #0f1829;
     --key-fn: #1f2f4c;
   }
@@ -184,7 +184,7 @@ button { cursor: pointer; }
 .quiz-actions { padding-top: 6px; }
 .choice {
   display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
-  background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 13px 14px; margin-bottom: 8px;
+  background: var(--key-bg, var(--card)); border: 2px solid var(--line); border-radius: 14px; padding: 13px 14px; margin-bottom: 8px;
   font-size: 17px; font-weight: 600; box-shadow: var(--shadow);
 }
 .choice .n { color: var(--muted); font-size: 13px; width: 16px; }
@@ -471,6 +471,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
     --danger: #e5484d; --danger-soft: #3a1c1c;
     --glow-0: #17171a; --glow-1: #17171a;
     --shadow: none;
+    --key-bg: var(--card); --key-fn: var(--line); /* 단어 모드는 바탕 단색이라 그대로 */
   }
   :root[data-mode="word"] .mode-thumb { background: #3a3a42; }
 }
