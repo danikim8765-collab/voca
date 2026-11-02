@@ -1,22 +1,25 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
-  highlightMeaning, nextLetterHint, typingHintTarget,
+  highlightMeaning, nextLetterHint, typingHintTarget, addDays, gradeMeaning, pickMeaningDistractors,
 } from './core.js';
 import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020012';
+const APP_VERSION = '202611020013';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
+// 예문 모드(./) · 단어 모드(./?m=word): 화면과 흐름은 같고 문제·색·진도 저장만 다름
+const WORD = document.documentElement.dataset.mode === 'word';
+const P = WORD ? 'voca.word.' : 'voca.';
 const KEY = {
-  stats: 'voca.stats.v1',
-  settings: 'voca.settings.v1',
-  session: 'voca.session.v1',
+  stats: P + 'stats.v1',
+  settings: P + 'settings.v1',
+  session: P + 'session.v1',
   csv: CSV_CACHE_KEY,
-  resetAt: 'voca.resetAt.v1',
+  resetAt: P + 'resetAt.v1',
 };
 
 const $ = s => document.querySelector(s);
@@ -47,6 +50,7 @@ if (Object.values(stats).some(v => v && v.st == null)) {
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
+  strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
 }, load(KEY.settings, {}));
 let session = null;
 let dataInfo = '';
@@ -56,6 +60,7 @@ let resetAt = load(KEY.resetAt, 0);
 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
+  file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
   getLocal: () => ({ v: 2, resetAt, stats, prefs: { exam: settings.exam, newPerDay: settings.newPerDay, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     stats = m.stats;
@@ -365,6 +370,7 @@ function renderQuestion() {
   const id = session.queue[session.pos];
   const w = byId.get(id);
   if (!w) { session.pos++; return session.pos < session.queue.length ? renderQuestion() : finishSession(); }
+  if (WORD) return renderWordQuestion(w);
   const b1 = w.ex1 ? makeBlanks(w.ex1, w.blank, w.word) : null;
   const b2 = w.ex2 ? makeBlanks(w.ex2, w.blank, w.word) : null;
   q = { w, b1, b2, answered: false, letterHint: false, revealed: false };
@@ -401,6 +407,124 @@ function renderQuestion() {
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderTyping(actions);
   else renderChoices(actions);
+}
+
+// ---------- 단어 모드: 단어를 보고 뜻 맞히기 ----------
+const synonymOf = w => { const e = w.extras.find(([h]) => h.replace(/\s/g, '') === '유의어'); return e ? e[1] : ''; };
+const wordHint = w => (synonymOf(w) ? `유의어: ${synonymOf(w)}` : w.ex1 ? `예문: ${w.ex1}` : '');
+const STRICT_DESC = {
+  easy: '여러 뜻 중 하나만 맞게 써도 정답이에요.',
+  mid: '비슷한 뜻은 하나만 써도 정답. 품사나 의미가 다른 뜻이 여럿이면 절반 이상 써야 정답이에요.',
+  hard: '나와 있는 뜻을 전부 써야 정답이에요.',
+};
+
+function wordCard(w) {
+  const card = el('div', 'sent word-card');
+  card.append(speakBtn(w.word), el('div', 'qw', w.word));
+  if (w.pron) card.appendChild(el('div', 'pron', w.pron));
+  return card;
+}
+
+function renderWordQuestion(w) {
+  q = { w, answered: false };
+  $('#feedback').hidden = true;
+  $('#fb-head').hidden = true;
+  const prompt = document.querySelector('.q-prompt');
+  prompt.classList.remove('my-answer');
+  prompt.textContent = settings.kind === 'type' ? '이 단어의 뜻을 써 보세요' : '이 단어의 뜻은?';
+  $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
+  $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
+  $('#q-day').textContent = `DAY ${w.day}`;
+  $('#q-again').hidden = !session.again[w.id];
+  const box = $('#q-sentences');
+  box.className = '';
+  box.innerHTML = '';
+  box.appendChild(wordCard(w));
+  const mEl = $('#q-meaning');
+  mEl.textContent = wordHint(w);
+  mEl.hidden = true;
+  $('#btn-hint').hidden = !mEl.textContent;
+  $('#btn-hint').textContent = '💡 힌트';
+  const actions = $('#q-actions');
+  actions.innerHTML = '';
+  kb = null;
+  $('#quiz').classList.remove('kb-mode');
+  $('.quiz-body').style.paddingBottom = '';
+  if (settings.kind === 'type') renderMeaningTyping(actions);
+  else renderMeaningChoices(actions);
+}
+
+function renderMeaningChoices(actions) {
+  const w = q.w;
+  const pool = rangeWords().length >= 8 ? rangeWords() : words;
+  let opts = pickMeaningDistractors(w, pool, 3);
+  if (opts.length < 3) opts = opts.concat(pickMeaningDistractors(w, words, 3).filter(o => !opts.some(x => x.meaning === o.meaning))).slice(0, 3);
+  const choices = shuffle([w, ...opts]);
+  choices.forEach((c, i) => {
+    const b = el('button', 'choice');
+    b.append(el('span', 'n', i + 1), el('span', null, c.meaning));
+    b.addEventListener('click', () => {
+      if (q.answered) return;
+      const ok = c === w;
+      b.classList.add(ok ? 'correct' : 'wrong');
+      if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
+      actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
+      q.answered = true;
+      if (ok && q.usedHint) answer(false, null, 'hint');
+      else answer(ok, ok ? null : c.meaning);
+    });
+    actions.appendChild(b);
+  });
+}
+
+// 직접 쓰기: 폰 키보드로 한글 뜻을 쓰고 확인. 채점은 설정의 느슨/보통/엄격
+function renderMeaningTyping(actions) {
+  const input = el('input', 'type-input');
+  Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, enterKeyHint: 'done' });
+  input.placeholder = '뜻 입력 (여러 뜻은 쉼표로)';
+  const ok = el('button', 'btn primary', '확인');
+  actions.append(input, el('div', 'type-help', `채점: ${{ easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통'} · 설정에서 바꿀 수 있어요`), ok);
+  const submit = () => {
+    if (q.answered) return;
+    const v = input.value.trim();
+    if (!v) { toast('뜻을 먼저 써 주세요'); input.focus(); return; }
+    const { score, missing } = gradeMeaning(v, q.w.meaning, settings.strict);
+    input.blur();
+    if (score === 2) answer(!q.usedHint, null, q.usedHint ? 'hint' : undefined);
+    else if (score === 1) answer(false, `${v} · ${missing}개 뜻이 빠졌어요`, 'partial');
+    else answer(false, v);
+  };
+  ok.addEventListener('click', submit);
+  input.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return; // 한글 조합 중 Enter는 무시
+    e.preventDefault();
+    e.stopPropagation();
+    submit();
+  });
+  setTimeout(() => input.focus(), 50);
+}
+
+// 예전 단어 모드(약한 단어 목록)에서 넘어올 때 한 번: 약한 단어를 오늘 '다시 볼 단어'로
+function migrateOldWordMode() {
+  if (!WORD) return;
+  const old = 'voca-meaning.voca:weak';
+  let weak = null;
+  try { weak = JSON.parse(localStorage.getItem(old) || 'null'); } catch {}
+  if (!weak || typeof weak !== 'object') return;
+  const today = dateStr();
+  let n = 0;
+  for (const w of words) {
+    if (!(w.word in weak) || stats[w.id]) continue;
+    const st = applyResult(null, 'wrong', { today });
+    st.due = today;
+    st.f = addDays(today, -1); // 오늘의 새 단어 수에서 빠지게
+    stats[w.id] = st;
+    n++;
+  }
+  saveStats();
+  localStorage.removeItem(old);
+  localStorage.removeItem('voca-meaning.voca:session');
+  if (n) toast(`예전 약한 단어 ${n}개를 '다시 볼 단어'로 옮겼어요`, 3500);
 }
 
 // "1. 치명적인 2. 결정적인" → 번호마다 줄바꿈
@@ -658,6 +782,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet) {
 function useHint() {
   if (!q || q.answered) return;
   q.usedHint = true;
+  if (WORD) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
   if (q.typing) {
     if (q.revealed) return;
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
@@ -704,7 +829,7 @@ function answer(correct, given, kind) {
   const id = w.id;
   const today = dateStr();
   // 힌트 없이 맞힘 / 힌트 쓰고 맞힘 / 틀림(정답 보고 따라 쓴 것 포함)
-  const outcome = correct ? 'ok' : kind === 'hint' ? 'hint' : 'wrong';
+  const outcome = correct ? 'ok' : kind === 'hint' || kind === 'partial' ? 'hint' : 'wrong';
   const before = stats[id];
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
   const retry = session.wrong.includes(id);
@@ -723,7 +848,8 @@ function answer(correct, given, kind) {
     session.done.push(id);
     if (outcome === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
     const n = stats[id].due ? daysBetween(today, stats[id].due) : 0;
-    label = outcome === 'hint' ? '힌트 사용 · 내일 다시'
+    label = kind === 'partial' ? '부분 정답 · 내일 다시'
+      : outcome === 'hint' ? '힌트 사용 · 내일 다시'
       : retry ? '정답! · 내일 다시'
         : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습` : '정답!';
   }
@@ -736,7 +862,7 @@ function answer(correct, given, kind) {
 
 function showFeedback(correct, given, kind, label) {
   const w = q.w;
-  const state = correct ? 'ok' : kind || 'bad';
+  const state = correct ? 'ok' : kind === 'partial' ? 'hint' : kind || 'bad';
   // 카드 위 상태 표시
   const head = $('#fb-head');
   head.hidden = false;
@@ -749,9 +875,12 @@ function showFeedback(correct, given, kind, label) {
   const box = $('#q-sentences');
   box.innerHTML = '';
   box.className = 'answered ' + state;
-  [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
-    if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, state === 'bad', w, i ? w.ex2src : w.ex1src));
-  });
+  if (WORD) box.appendChild(wordCard(w));
+  else {
+    [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
+      if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, state === 'bad', w, i ? w.ex2src : w.ex1src));
+    });
+  }
   $('#btn-hint').hidden = true;
   if (settings.kind === 'type') {
     $('#q-actions').innerHTML = '';
@@ -770,7 +899,7 @@ function showFeedback(correct, given, kind, label) {
   if (w.pos) tags.appendChild(el('span', 'tag', w.pos));
   tags.appendChild(el('span', 'tag', `DAY ${w.day}`));
   card.append(tags, el('div', 'fb-meaning', formatMeaning(w.meaning)));
-  if (answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
+  if (!WORD && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
   mean.appendChild(card);
   if (w.extras.length) {
     const ex = el('div', 'fb-card extras');
@@ -907,16 +1036,18 @@ function renderSettings() {
   $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
   $('#opt-appkb').checked = settings.appKeyboard;
+  setSeg('#seg-strict', settings.strict);
+  $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
 }
 
 function exportProgress() {
-  const data = JSON.stringify({ app: 'voca', v: 1, at: new Date().toISOString(), stats, settings }, null, 0);
+  const data = JSON.stringify({ app: WORD ? 'voca-word' : 'voca', v: 1, at: new Date().toISOString(), stats, settings }, null, 0);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `voca-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `voca-${WORD ? 'word-' : ''}backup-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -927,6 +1058,10 @@ async function importProgress(file) {
   try {
     const data = JSON.parse(await file.text());
     if (!data || typeof data.stats !== 'object') throw new Error();
+    if ((data.app === 'voca-word') !== WORD) { // 다른 모드의 백업
+      toast(WORD ? '예문 모드 백업 파일이에요. 예문 모드 설정에서 불러와 주세요' : '단어 모드 백업 파일이에요. 단어 모드 설정에서 불러와 주세요', 3500);
+      return;
+    }
     if (!(await ask({ title: '백업으로 덮어쓸까요?', body: '지금 이 기기의 진도가 백업 파일의 진도로 바뀌어요.', ok: '덮어쓰기', danger: true }))) return;
     stats = Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, normalizeStat(v)]));
     saveStats();
@@ -969,6 +1104,7 @@ function boot(fromLocal) {
   }
   status.hidden = true;
   $('#home-body').hidden = false;
+  migrateOldWordMode();
   fillDaySelects();
   if (fromLocal) { settings.from = days[0]; settings.to = days[days.length - 1]; }
   renderHome();
@@ -1017,6 +1153,7 @@ function bind() {
   $('#btn-settings').addEventListener('click', () => { renderSettings(); renderSyncStatus(); show('settings'); });
   $('#btn-settings-back').addEventListener('click', () => goHome());
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
+  onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });
   $('#opt-autospeak').addEventListener('change', e => { settings.autoSpeak = e.target.checked; saveSettings(); });
   $('#opt-ko').addEventListener('change', e => { settings.showKo = e.target.checked; saveSettings(); });

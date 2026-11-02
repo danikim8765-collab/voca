@@ -444,3 +444,40 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
   .mode-thumb{transition:none}
   ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
 }
+
+/* ---------- 단어 모드 (./?m=word): 화면은 같고 색만 예전 뜻 퀴즈 색 (종이색 바탕 · 먹색 버튼) ---------- */
+:root[data-mode="word"] [data-only="ex"], :root:not([data-mode="word"]) [data-only="word"] { display: none !important; }
+:root[data-mode="word"] {
+  --bg: #f7f6f1; --card: #ffffff; --text: #1a1a17; --muted: #8f8e85; --line: #e4e2d9;
+  --primary: #1a1a17; --primary-soft: #efeee7; --on-primary: #f7f6f1;
+  --ok: #166f4a; --ok-soft: #e2f1e9; --bad: #a8352d; --bad-soft: #fbe6e3; --warn: #8d6009;
+  --blank: #ebe6d6; --mark-bg: #ebe6d6; --mark-top: 58%;
+  --danger: #d9342b; --danger-soft: #fbe6e3;
+  --glow-0: #f7f6f1; --glow-1: #f7f6f1; /* 단어 모드는 바탕 단색 */
+  --shadow: 0 1px 2px rgba(26, 26, 23, .04);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-mode="word"] {
+    --bg: #17171a; --card: #1f1f23; --text: #f0efe9; --muted: #87857c; --line: #33333a;
+    --primary: #f0efe9; --primary-soft: #2a2a30; --on-primary: #17171a;
+    --ok: #63c99b; --ok-soft: #14281f; --bad: #f08c82; --bad-soft: #2e1815; --warn: #e0b45c;
+    --blank: #3a3a42; --mark-bg: rgba(110, 225, 170, .4); --mark-top: 50%;
+    --danger: #e5484d; --danger-soft: #3a1c1c;
+    --glow-0: #17171a; --glow-1: #17171a;
+    --shadow: none;
+  }
+  :root[data-mode="word"] .mode-thumb { background: #3a3a42; }
+}
+/* 예전처럼 카드·칸에 얇은 테두리 */
+:root[data-mode="word"] .card, :root[data-mode="word"] .sent, :root[data-mode="word"] .item { border: 1px solid var(--line); }
+:root[data-mode="word"] .day:not(.sel) { border-color: var(--line); }
+:root[data-mode="word"] .fb-pane .sent, :root[data-mode="word"] .fb-card, :root[data-mode="word"] .item .detail .sent { border: 0; }
+:root[data-mode="word"] .choice { font-size: 16px; line-height: 1.45; }
+:root[data-mode="word"] .toast { box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
+
+/* 단어 모드 문제: 단어를 크게 */
+.word-card { position: relative; text-align: center; padding: 34px 18px 30px; }
+.word-card .qw { font-size: 36px; font-weight: 800; letter-spacing: -.5px; line-height: 1.2; word-break: break-word; }
+.word-card .pron { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.word-card .speak { position: absolute; top: 12px; right: 12px; }
+@media (min-width: 700px) { .word-card .qw { font-size: 46px; } }
