@@ -282,7 +282,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
 }
 
 /* 동기화 */
-.head-right { display: flex; align-items: center; gap: 4px; }
+.head-right { display: flex; align-items: center; gap: 6px; }
 .sync-badge { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .sync-badge.ok { color: var(--ok); }
 .sync-badge.error { color: var(--bad); }
@@ -378,3 +378,11 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 /* 원형까지 맞게 썼을 때: 확인만 누르면 정답 */
 #q-actions .key.enter.ready, #q-actions .btn.primary.ready { background: var(--ok); animation: ready .9s ease-in-out infinite alternate; }
 @keyframes ready { to { box-shadow: 0 0 0 4px rgba(18, 184, 134, .25); } }
+
+/* 예문 ↔ 단어 모드 전환 (index.html · meaning.html 머리에 같은 모양) */
+.mode-switch { display: flex; gap: 2px; padding: 3px; background: var(--line); border-radius: 12px; flex: none; }
+.mode-switch a { display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; border-radius: 9px; color: var(--muted); }
+.mode-switch a.on { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(30, 20, 80, .14); }
+.mode-switch a:not(.on):active { background: var(--primary-soft); }
+.mode-switch svg { width: 20px; height: 20px; }
+@media (prefers-color-scheme: dark) { .mode-switch a.on { background: #3a3654; } }
