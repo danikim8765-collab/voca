@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020029';
+const APP_VERSION = '202611020030';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -709,7 +709,8 @@ function renderChoices(actions) {
   });
 }
 
-// 오답 풀이 말풍선: 키보드 바로 위(앱 키보드) 또는 입력칸 위(폰 키보드). 다시 쓰기 시작하거나 누르면 닫힘
+// 오답 풀이 말풍선: 키보드 바로 위(앱 키보드) 또는 입력칸 위(폰 키보드).
+// 문제 푸는 걸 막지 않게: 잠깐(글 길이에 따라 2.5~4.5초) 보였다가 저절로 사라지고, 다시 쓰기 시작해도 바로 사라짐. 눌러도 아래가 그대로 눌림
 const COACH_ICON = { spell: '✏️', near: '🌱', off: '🤔' };
 function showCoach(actions, f) {
   hideCoach();
@@ -722,10 +723,11 @@ function showCoach(actions, f) {
     msg.append(d, ` · ${f.text}`);
   } else msg.textContent = f.text;
   box.append(el('span', 'coach-ic', COACH_ICON[f.kind] || '💬'), msg);
-  box.addEventListener('click', hideCoach);
   actions.prepend(box);
+  const ms = Math.min(4500, 2500 + f.text.length * 30);
+  hideCoach.timer = setTimeout(() => { box.classList.add('out'); setTimeout(() => box.remove(), 300); }, ms);
 }
-function hideCoach() { document.querySelectorAll('.coach').forEach(c => c.remove()); }
+function hideCoach() { clearTimeout(hideCoach.timer); document.querySelectorAll('.coach').forEach(c => c.remove()); }
 
 const PAUSE_ACCEPT_MS = 800; // 원형까지 쓰고 이만큼 멈추면 정답
 

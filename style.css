@@ -540,7 +540,8 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .coach {
   display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin-bottom: 8px;
   border: 2px solid; border-radius: 14px; color: var(--text); font-size: 15px; line-height: 1.5;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, .14); animation: coach-in .22s ease-out; cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .14); animation: coach-in .22s ease-out;
+  pointer-events: none; transition: opacity .3s ease, transform .3s ease; /* 눌러도 아래(키보드·문장)가 그대로 눌림 */
 }
 .kb-mode .coach { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); margin: 0; }
 .coach.spell { background: var(--spell-soft); border-color: var(--spell); }
@@ -551,3 +552,4 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .coach-diff { font-weight: 700; letter-spacing: .03em; }
 .coach-diff b { color: var(--bad); font-weight: 800; }
 @keyframes coach-in { from { opacity: 0; transform: translateY(6px); } }
+.coach.out { opacity: 0; transform: translateY(6px); }
