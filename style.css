@@ -1,34 +1,46 @@
+/* 표지 색: 네이비 #233352 · 피치 #D9BBA5 · VOCA 블랙 #111414 · 일러스트 화이트 #F5F6F6 */
 :root {
-  --bg: #f4f3fb;
-  --card: #ffffff;
-  --text: #1e1b2e;
-  --muted: #7a7790;
-  --line: #e6e4f2;
-  --primary: #6c5ce7;
-  --primary-soft: #ece9fd;
-  --ok: #12b886;
-  --ok-soft: #e3f8f1;
-  --bad: #fa5252;
-  --bad-soft: #ffeceb;
-  --warn: #f59f00;
-  --blank: #d9d4fb;
-  --shadow: 0 2px 10px rgba(40, 30, 110, .06);
+  --navy: #233352;
+  --peach: #D9BBA5;
+  --black: #111414;
+  --white: #F5F6F6;
+
+  --bg: #F3EAE3;          /* 피치를 옅게 깐 바탕 */
+  --card: #FFFFFF;
+  --text: var(--black);
+  --muted: #6F6B68;
+  --line: #E6DCD3;
+  --primary: var(--navy);
+  --on-primary: var(--white);
+  --primary-soft: #EAE0D8;
+  --ok: #12936B;
+  --ok-soft: #E2F4EC;
+  --bad: #D9443F;
+  --bad-soft: #FBE9E7;
+  --warn: #D98A00;
+  --blank: #E8D2C2;       /* 빈칸·형광펜: 피치 */
+  --toast: var(--navy);
+  --shadow: 0 2px 10px rgba(35, 51, 82, .07);
+  --shadow-up: 0 -10px 30px rgba(35, 51, 82, .15);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14131c;
-    --card: #1f1d2b;
-    --text: #eceaf6;
-    --muted: #9a97b0;
-    --line: #2f2c40;
-    --primary: #8e80ff;
-    --primary-soft: #2b2650;
-    --ok: #38d9a9;
-    --ok-soft: #133b31;
-    --bad: #ff6b6b;
-    --bad-soft: #43201f;
-    --blank: #3c3666;
+    --bg: var(--black);
+    --card: #1B212C;
+    --text: var(--white);
+    --muted: #9EA4AE;
+    --line: #2C3444;
+    --primary: var(--peach);
+    --on-primary: var(--black);
+    --primary-soft: var(--navy);
+    --ok: #38C99B;
+    --ok-soft: #12352B;
+    --bad: #FF6B6B;
+    --bad-soft: #43201F;
+    --blank: #4A3C33;
+    --toast: #2E3F63;
     --shadow: none;
+    --shadow-up: 0 -10px 30px rgba(0, 0, 0, .4);
   }
 }
 
@@ -96,13 +108,13 @@ button { cursor: pointer; }
 .btn { border: 0; border-radius: 14px; padding: 13px 16px; font-weight: 700; width: 100%; margin-bottom: 8px; }
 .btn.big { padding: 17px; font-size: 18px; }
 .btn.small { padding: 9px 14px; font-size: 14px; width: auto; }
-.btn.primary { background: var(--primary); color: #fff; }
+.btn.primary { background: var(--primary); color: var(--on-primary); }
 .btn.secondary { background: var(--primary-soft); color: var(--primary); }
 .btn.ghost { background: transparent; color: var(--muted); }
 .btn.danger { background: var(--bad-soft); color: var(--bad); }
 .btn:active { transform: scale(.98); }
 .btn:disabled { opacity: .45; }
-.pill { background: var(--primary); color: #fff; font-size: 12px; border-radius: 99px; padding: 0 7px; margin-left: 4px; }
+.pill { background: var(--primary); color: var(--on-primary); font-size: 12px; border-radius: 99px; padding: 0 7px; margin-left: 4px; }
 .pill:empty { display: none; }
 
 .days { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
@@ -123,7 +135,7 @@ button { cursor: pointer; }
 .tag { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: 8px; padding: 2px 8px; }
 .tag.star { color: #b58500; background: rgba(255, 212, 59, .3); }
 .item .tag.star { font-size: 11px; vertical-align: 2px; }
-.tag.warn { color: var(--warn); background: rgba(245, 159, 0, .12); }
+.tag.warn { color: var(--warn); background: rgba(217, 138, 0, .12); }
 .q-prompt { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
 .sent { background: var(--card); border-radius: 18px; padding: 16px 18px; margin-bottom: 10px; box-shadow: var(--shadow); }
 .sent .en { font-size: 19px; line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere; }
@@ -194,7 +206,7 @@ button { cursor: pointer; }
 .key.fn { background: var(--line); font-size: 18px; }
 .key.wide { flex: 1.5; }
 .key.space { flex: 5; font-size: 15px; color: var(--muted); }
-.key.enter { flex: 2; background: var(--primary); color: #fff; font-size: 16px; font-weight: 700; }
+.key.enter { flex: 2; background: var(--primary); color: var(--on-primary); font-size: 16px; font-weight: 700; }
 .type-help { font-size: 12px; color: var(--muted); margin: -2px 0 8px 4px; }
 
 .sheet { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; z-index: 10; }
@@ -249,7 +261,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
 
 .toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 90px); transform: translateX(-50%);
-  background: #2b2840; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
+  background: var(--toast); color: var(--white); padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
   max-width: 90vw; text-align: center;
 }
 
@@ -328,7 +340,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .tag.fb-head.copied, .tag.fb-head.hint { color: #fff; background: var(--warn); }
 .q-prompt.my-answer { color: var(--bad); font-weight: 700; }
 .sheet-inner {
-  box-shadow: 0 -10px 30px rgba(30, 20, 80, .15); max-height: 62dvh; padding-top: 10px;
+  box-shadow: var(--shadow-up); max-height: 62dvh; padding-top: 10px;
   display: flex; flex-direction: column; overflow: hidden;
 }
 /* 단어·탭·계속하기는 고정, 뜻/예문 내용만 스크롤 */
@@ -347,8 +359,8 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .extras.fb-card div { margin-bottom: 4px; font-size: 14px; }
 .next-btn { margin-top: 6px; }
 .tag.fb-head { margin: 0; }
-#q-sentences.answered.ok .blank.filled { background: rgba(18, 184, 134, .2); }
-#q-sentences.answered.bad .blank.filled { background: rgba(250, 82, 82, .16); }
+#q-sentences.answered.ok .blank.filled { background: rgba(18, 147, 107, .2); }
+#q-sentences.answered.bad .blank.filled { background: rgba(217, 68, 63, .16); }
 
 /* 맞힌 순간: 빈칸이 초록으로 살짝 튀었다가 정답 화면 */
 
@@ -377,4 +389,4 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 
 /* 원형까지 맞게 썼을 때: 확인만 누르면 정답 */
 #q-actions .key.enter.ready, #q-actions .btn.primary.ready { background: var(--ok); animation: ready .9s ease-in-out infinite alternate; }
-@keyframes ready { to { box-shadow: 0 0 0 4px rgba(18, 184, 134, .25); } }
+@keyframes ready { to { box-shadow: 0 0 0 4px rgba(18, 147, 107, .25); } }
