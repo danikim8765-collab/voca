@@ -426,9 +426,6 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
   .sheet-inner, #q-sentences.answered .sent, #q-sentences.answered .blank.filled, .tag.fb-head { animation: none !important; }
 }
 
-/* 원형까지 맞게 썼을 때: 확인만 누르면 정답 */
-#q-actions .key.enter.ready, #q-actions .btn.primary.ready { background: var(--ok); animation: ready .9s ease-in-out infinite alternate; }
-@keyframes ready { to { box-shadow: 0 0 0 4px rgba(18, 184, 134, .25); } }
 
 /* 예문 ↔ 단어 모드 전환 (index.html · meaning.html 머리에 같은 모양, 같은 자리) */
 .mode-switch{position:relative;display:flex;gap:2px;padding:3px;background:var(--line);border-radius:12px;flex:none}
