@@ -364,6 +364,7 @@ export function isTypedCorrect(input, word, blanks1, blanks2) {
   const got = normalizeAnswer(input);
   if (!got) return false;
   const candidates = [
+    word.word,
     answerParts(word.blank).join(' '),
     (blanks1 || []).join(' '),
     (blanks2 || []).join(' '),

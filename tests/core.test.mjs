@@ -296,3 +296,14 @@ test('유의어·반의어 골라내기', async () => {
   assert.deepEqual(r.rest, [['파생어', 'obsession']]);
   assert.deepEqual(synAnt([]), { syn: '', ant: '', rest: [] });
 });
+
+test('직접 입력: 원형, 예문 형태, 단어장에 적힌 그대로 모두 정답', () => {
+  const w = { word: 'outlaw', blank: 'outlaw' };
+  assert.ok(isTypedCorrect('outlaw', w, ['outlawed'], ['outlawed']));
+  assert.ok(isTypedCorrect('Outlawed', w, ['outlawed'], ['outlawed']));
+  const p = { word: 'convince A of B', blank: 'convince A of B' };
+  assert.ok(isTypedCorrect('convince of', p, ['convinced', 'of'], null));
+  assert.ok(isTypedCorrect('convinced of', p, ['convinced', 'of'], null));
+  assert.ok(isTypedCorrect('convince A of B', p, ['convinced', 'of'], null));
+  assert.ok(!isTypedCorrect('outlawing', w, ['outlawed'], null));
+});
