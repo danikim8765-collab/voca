@@ -503,3 +503,4 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 #list .seg button { padding: 8px 2px; font-size: 14px; }
 .day.solo { background: var(--primary-soft); }
 .today-head .btn.small { width: auto; padding: 4px 10px; font-size: 13px; }
+#card-range.off { opacity: .4; filter: grayscale(1); pointer-events: none; }
