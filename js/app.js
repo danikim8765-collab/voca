@@ -4,10 +4,10 @@ import {
   highlightMeaning, nextLetterHint, typingHintTarget,
 } from './core.js';
 import { createSync } from './sync.js';
-import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts } from './files.js';
+import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020002';
+const APP_VERSION = '202611020003';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -133,23 +133,30 @@ function speakBtn(text, big) {
 }
 
 // ---------- 데이터 ----------
-async function loadData() {
+const describeData = (texts, fromCache, missing) =>
+  `${texts.map(t => t.name.replace('local:', '폰: ')).join(', ') || '없음'}`
+  + (fromCache ? ` (오프라인: 저장된 데이터 ${fromCache}개 사용)` : '')
+  + (missing.length ? `\n못 찾은 파일: ${missing.join(', ')}` : '');
+
+// 서버에서 받아서 씀. shown과 같으면 단어 목록은 그대로 두고 false
+async function loadData(shown) {
   const { texts, fromCache, missing } = await loadCSVTexts();
-  setWords(rowsToWords(texts));
+  const changed = !shown || !sameTexts(texts, shown);
+  if (changed) setWords(rowsToWords(texts));
   await applyHighlights();
-  dataInfo = `${texts.map(t => t.name.replace('local:', '폰: ')).join(', ') || '없음'}`
-    + (fromCache ? ` (오프라인: 저장된 데이터 ${fromCache}개 사용)` : '')
-    + (missing.length ? `\n못 찾은 파일: ${missing.join(', ')}` : '');
+  dataInfo = describeData(texts, fromCache, missing);
+  return changed;
 }
 
 // 해석에서 뜻 부분이 자동으로 안 찾아지는 단어용 강조어 목록 (없어도 됨)
+const applyHighlightMap = map => { for (const w of words) if (!w.koMark && map[w.word]) w.koMark = map[w.word]; };
 async function applyHighlights() {
   let map = load('voca.highlights.v1', {});
   try {
     const res = await fetch('highlights.json?t=' + Date.now(), { cache: 'no-store' });
     if (res.ok) { map = await res.json(); save('voca.highlights.v1', map); }
   } catch {}
-  for (const w of words) if (!w.koMark && map[w.word]) w.koMark = map[w.word];
+  applyHighlightMap(map);
 }
 
 function setWords(list) {
@@ -1055,8 +1062,20 @@ function bind() {
 
 bind();
 window.__vocaStarted = true;
-loadData().then(() => { boot(); renderSyncStatus(); sync.now(); }).catch(err => {
-  $('#load-status').textContent = '단어를 불러오지 못했어요: ' + err.message;
+// 저장해 둔 단어로 바로 화면을 띄우고(모드 전환이 빠르게), 서버 확인은 뒤에서.
+// 서버 CSV가 바뀌었을 때만 다시 그림. 처음 여는 기기면 서버에서 받을 때까지 기다림.
+const quickTexts = cachedCSVTexts();
+if (quickTexts.length) {
+  setWords(rowsToWords(quickTexts));
+  applyHighlightMap(load('voca.highlights.v1', {}));
+  dataInfo = describeData(quickTexts, 0, []);
+  boot(); renderSyncStatus(); sync.now();
+}
+loadData(quickTexts.length ? quickTexts : null).then(changed => {
+  if (!quickTexts.length) { boot(); renderSyncStatus(); sync.now(); }
+  else if (changed) boot();
+}).catch(err => {
+  if (!quickTexts.length) $('#load-status').textContent = '단어를 불러오지 못했어요: ' + err.message;
 });
 
 document.addEventListener('visibilitychange', () => {

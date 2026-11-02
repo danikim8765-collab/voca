@@ -215,12 +215,26 @@ button{cursor:pointer}
 .mark{color:var(--primary);font-weight:800}
 /* 예문 ↔ 단어 모드 전환 (index.html과 같은 모양) */
 .head-right{display:flex;align-items:center;gap:6px}
-.mode-switch{display:flex;gap:2px;padding:3px;background:var(--line);border-radius:12px;flex:none}
-.mode-switch a{display:flex;align-items:center;justify-content:center;width:40px;height:32px;border-radius:9px;color:var(--muted)}
-.mode-switch a.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
-.mode-switch a:not(.on):active{background:var(--primary-soft)}
+.mode-switch{position:relative;display:flex;gap:2px;padding:3px;background:var(--line);border-radius:12px;flex:none}
+.mode-thumb{position:absolute;top:3px;left:3px;width:40px;height:32px;border-radius:9px;background:var(--card);
+  box-shadow:0 1px 3px rgba(0,0,0,.12);transition:transform .2s cubic-bezier(.2,.8,.2,1);view-transition-name:mode-thumb}
+.mode-switch[data-mode="wd"] .mode-thumb{transform:translateX(42px)}
+.mode-switch a{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:40px;height:32px;border-radius:9px;color:var(--muted);transition:color .2s}
+.mode-switch a.on{color:var(--text)}
+.mode-switch a:not(.on):active{opacity:.6}
+.mode-switch a[data-m="ex"]{view-transition-name:mode-ex}
+.mode-switch a[data-m="wd"]{view-transition-name:mode-wd}
 .mode-switch svg{width:20px;height:20px}
-@media (prefers-color-scheme:dark){.mode-switch a.on{background:#3a3a42}}
+@media (prefers-color-scheme:dark){.mode-thumb{background:#3a3a42}}
+/* 예문 ↔ 단어 페이지 사이 전환 */
+@view-transition{navigation:auto}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.22s}
+::view-transition-group(mode-thumb){animation-duration:.3s;animation-timing-function:cubic-bezier(.2,.8,.2,1)}
+@media (prefers-reduced-motion:reduce){
+  .mode-thumb{transition:none}
+  ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
+}
+.gear-space{width:40px;height:40px;flex:none}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 90px);transform:translateX(-50%);
   background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:90vw;text-align:center}
 
@@ -243,174 +257,10 @@ button{cursor:pointer}
   .sheet-inner,.word-card.answered,.tag.fb-head{animation:none!important}
 }
 </style>
-</head>
-<body>
-
-<!-- 홈 -->
-<section id="home" class="screen active">
-  <header class="top">
-    <h1>VOCA <span class="sub">뜻 퀴즈</span></h1>
-    <span class="head-right"><nav class="mode-switch" aria-label="학습 모드"><a href="./" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="meaning.html" class="on" aria-current="page" aria-label="단어 (뜻 퀴즈)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav></span>
-  </header>
-
-  <div id="load-status" class="status">단어를 불러오는 중…</div>
-
-  <div id="home-body" hidden>
-  <div id="resume-card" class="card resume" hidden>
-    <div>
-      <b>풀던 퀴즈</b>
-      <div class="muted" id="resume-info"></div>
-    </div>
-    <div class="row">
-      <button class="btn ghost small" id="btn-resume-drop">버리기</button>
-      <button class="btn primary small" id="btn-resume">이어하기</button>
-    </div>
-  </div>
-
-  <div class="card today">
-    <div class="label">퀴즈</div>
-    <div class="plan">
-      <div><b id="p-q">0</b>문제</div>
-      <div><b id="p-all">0</b>범위 단어</div>
-      <div><b id="p-weak">0</b>약한 단어</div>
-    </div>
-    <button class="btn primary big" id="btn-start">퀴즈 시작</button>
-    <div class="muted" id="start-note"></div>
-  </div>
-
-  <div class="card">
-    <div class="label">DAY 범위</div>
-    <div class="range">
-      <select id="day-from" aria-label="시작 DAY"></select>
-      <span>~</span>
-      <select id="day-to" aria-label="끝 DAY"></select>
-    </div>
-    <div class="chips" id="range-chips">
-      <button class="chip" data-range="last">최신 DAY</button>
-      <button class="chip" data-range="last3">최근 3 DAY</button>
-      <button class="chip" data-range="all">전체</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="label">문제 범위</div>
-    <div class="seg" id="seg-scope">
-      <button data-v="all">전부</button>
-      <button data-v="weak">약한 단어만</button>
-    </div>
-    <div class="label">문항 수</div>
-    <div class="seg" id="seg-qn">
-      <button data-v="10">10</button>
-      <button data-v="20">20</button>
-      <button data-v="30">30</button>
-      <button data-v="0">전부</button>
-    </div>
-    <div class="qstep">
-      <button id="qminus" aria-label="줄이기">−</button>
-      <input id="qnum" type="number" inputmode="numeric" pattern="[0-9]*" min="1" enterkeyhint="done" aria-label="문항 수">
-      <button id="qplus" aria-label="늘리기">+</button>
-    </div>
-    <div class="muted" id="qn-desc"></div>
-    <div class="label">문제 방식</div>
-    <div class="seg" id="seg-kind">
-      <button data-v="pick">4지선다</button>
-      <button data-v="write">직접 쓰기</button>
-    </div>
-    <div class="muted" id="kind-desc"></div>
-    <div id="mode-wrap">
-      <div class="label">채점</div>
-      <div class="seg" id="seg-mode">
-        <button data-v="easy">느슨</button>
-        <button data-v="mid">보통</button>
-        <button data-v="hard">엄격</button>
-      </div>
-      <div class="muted" id="mode-desc"></div>
-    </div>
-  </div>
-
-  <button class="btn secondary" id="btn-weak">약한 단어 보기 <span id="weak-count" class="pill"></span></button>
-
-  <div class="label mt">DAY별 단어 <span class="muted">(누르면 그 DAY만 선택)</span></div>
-  <div class="days" id="day-grid"></div>
-  </div>
-</section>
-
-<!-- 퀴즈 -->
-<section id="quiz" class="screen">
-  <header class="quiz-top">
-    <button class="icon-btn" id="btn-quit" aria-label="그만하기">✕</button>
-    <div class="bar grow"><div class="bar-fill" id="quiz-bar"></div></div>
-    <span class="count" id="quiz-count"></span>
-  </header>
-  <div class="q-meta">
-    <span class="tag" id="q-day"></span>
-    <span class="tag plain" id="q-mode"></span>
-    <span class="tag fb-head" id="fb-head" hidden></span>
-  </div>
-  <div class="q-prompt" id="q-prompt"></div>
-  <div class="sent word-card" id="q-card">
-    <div class="qw" id="q-word"></div>
-    <div class="pron" id="q-pron"></div>
-  </div>
-  <div class="q-meaning" id="q-hint" hidden></div>
-  <div class="quiz-actions" id="q-actions"></div>
-
-  <div class="sheet" id="feedback" hidden>
-    <div class="sheet-inner">
-      <div class="grab"></div>
-      <div class="fb-word"><div class="w" id="fb-word"></div></div>
-      <div id="fb-grade"></div>
-      <div class="fb-tabs" id="fb-tabs">
-        <button data-t="mean" class="on">뜻</button>
-        <button data-t="ex">예문</button>
-      </div>
-      <div class="fb-pane" id="fb-mean"></div>
-      <div class="fb-pane" id="fb-ex" hidden></div>
-      <div class="fb-actions">
-        <button class="speak-btn" id="fb-speak" aria-label="단어 발음 듣기">🔊</button>
-        <button class="btn primary big" id="btn-next">▶ 계속하기</button>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- 결과 -->
-<section id="result" class="screen">
-  <header class="top"><h1>퀴즈 완료 🎉</h1></header>
-  <div class="card center">
-    <div class="score" id="res-score"></div>
-    <div class="muted" id="res-detail"></div>
-    <div class="res-tally" id="res-tally"></div>
-  </div>
-  <div class="label">다시 볼 단어 <span class="muted">(틀렸거나 부분 정답)</span></div>
-  <div id="res-wrong" class="list"></div>
-  <div class="row two sticky-bottom">
-    <button class="btn secondary" id="btn-res-home">홈으로</button>
-    <button class="btn secondary" id="btn-res-wrong">틀린 것만</button>
-    <button class="btn primary" id="btn-res-again">한 번 더</button>
-  </div>
-</section>
-
-<!-- 약한 단어 -->
-<section id="weak" class="screen">
-  <header class="top">
-    <button class="icon-btn" id="btn-weak-back" aria-label="뒤로">←</button>
-    <h1>약한 단어</h1>
-    <span class="muted" id="weak-total" style="min-width:40px;text-align:right"></span>
-  </header>
-  <p class="muted" style="margin:0 2px 12px">틀린 단어가 여기 쌓이고, 두 번 연속 맞히면 빠져요.</p>
-  <div id="weak-list" class="list"></div>
-  <div class="sticky-bottom" id="weak-bottom">
-    <button class="btn primary" id="btn-weak-quiz">약한 단어 퀴즈</button>
-  </div>
-</section>
-
-<div id="toast" class="toast" hidden></div>
-
-<script nomodule>document.getElementById('load-status').textContent='이 브라우저는 너무 오래돼서 열 수 없어요. 최신 Chrome이나 Safari로 열어보세요.';</script>
-<script type="module">
+<!-- 화면을 다 그릴 준비가 될 때까지 첫 화면을 미룸 → 모드 전환 때 "불러오는 중"이 깜빡이지 않음 -->
+<script type="module" blocking="render">
 import { rowsToWords, makeBlanks } from './js/core.js';
-import { loadCSVTexts } from './js/files.js';
+import { loadCSVTexts, cachedCSVTexts, sameTexts } from './js/files.js';
 
 const MODE={
   easy:{name:'느슨',desc:'비슷하면 맞게 쳐요. 여러 뜻 중 하나만 써도 정답.',
@@ -428,8 +278,7 @@ const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'
 
 /* ===== 단어 데이터: 예문 모드(index.html)와 같은 CSV를 읽는다 =====
    한 줄: [DAY, 단어, 발음, 뜻, 힌트(유의어), 참고 [[머리글, 내용]…], 예문 [{en, ko, blank, word}…]] */
-async function loadData(){
-  const {texts}=await loadCSVTexts();
+function toRows(texts){
   return rowsToWords(texts).filter(w=>w.meaning).map(w=>{
     const ex=w.extras.map(([h,v])=>[String(h).replace(/\s/g,''),v]);
     const syn=ex.find(([h])=>h==='유의어');
@@ -439,8 +288,10 @@ async function loadData(){
     return [w.day,w.word,w.pron,w.meaning,syn?'유의어 '+syn[1]:'',ref,sents];
   });
 }
-let DATA=[];
-try{DATA=await loadData()}catch(e){}
+/* 저장해 둔 단어로 바로 띄우고(모드 전환이 빠르게), 서버 확인은 뒤에서(맨 아래). 처음 여는 기기면 서버에서 받을 때까지 기다림. */
+const quickTexts=cachedCSVTexts();
+let DATA=quickTexts.length?toRows(quickTexts):[];
+if(!DATA.length){try{DATA=toRows((await loadCSVTexts()).texts)}catch(e){}}
 if(!DATA.length){
   $('load-status').textContent='단어를 불러오지 못했어요.\n인터넷 연결을 확인하고 다시 열어 주세요.';
   throw new Error('단어 데이터 없음');
@@ -670,11 +521,17 @@ function makeOpts(q,src){
 }
 
 /* ===== 홈: DAY 범위 ===== */
-const DAYS=[...new Set(DATA.map(r=>r[0]))].sort((a,b)=>a-b);
-let dFrom=DAYS[0], dTo=DAYS[DAYS.length-1];
+let DAYS=[];
+let dFrom, dTo;
 function selDays(){return DAYS.filter(d=>d>=dFrom&&d<=dTo)}
-const dayOpts=DAYS.map(d=>'<option value="'+d+'">DAY '+d+'</option>').join('');
-$('day-from').innerHTML=dayOpts;$('day-to').innerHTML=dayOpts;
+function fillDays(){
+  DAYS=[...new Set(DATA.map(r=>r[0]))].sort((a,b)=>a-b);
+  if(!DAYS.includes(dFrom))dFrom=DAYS[0];
+  if(!DAYS.includes(dTo))dTo=DAYS[DAYS.length-1];
+  const dayOpts=DAYS.map(d=>'<option value="'+d+'">DAY '+d+'</option>').join('');
+  $('day-from').innerHTML=dayOpts;$('day-to').innerHTML=dayOpts;
+}
+fillDays();
 $('day-from').onchange=()=>{dFrom=+$('day-from').value;if(dFrom>dTo)dTo=dFrom;count()};
 $('day-to').onchange=()=>{dTo=+$('day-to').value;if(dTo<dFrom)dFrom=dTo;count()};
 $('range-chips').querySelectorAll('.chip').forEach(c=>c.onclick=()=>{
@@ -1066,6 +923,13 @@ $('btn-res-home').onclick=()=>{go('home');count()};
 
 /* ===== 시작 시 저장분 불러오기 ===== */
 drawKind();
+/* 서버 CSV가 저장해 둔 것과 다르면(새 DAY 등) 단어 목록만 바꿔서 다시 그림 */
+if(quickTexts.length)loadCSVTexts().then(({texts})=>{
+  if(sameTexts(texts,quickTexts))return;
+  const rows=toRows(texts);
+  if(!rows.length)return;
+  DATA=rows;fillDays();count();
+}).catch(()=>{});
 (async()=>{
   const w=await STORE.get(K_WEAK);
   if(w&&typeof w==='object')weak=w;
@@ -1073,6 +937,200 @@ drawKind();
   count();showResume();
 })();
 if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</head>
+<body>
+
+<!-- 홈 -->
+<section id="home" class="screen active">
+  <header class="top">
+    <h1>VOCA <span class="sub">뜻 퀴즈</span></h1>
+    <span class="head-right"><nav class="mode-switch" data-mode="wd" aria-label="학습 모드"><span class="mode-thumb" aria-hidden="true"></span><a href="./" data-m="ex" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="meaning.html" data-m="wd" class="on" aria-current="page" aria-label="단어 (뜻 퀴즈)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav><span class="gear-space" aria-hidden="true"></span></span>
+  </header>
+
+  <div id="load-status" class="status">단어를 불러오는 중…</div>
+
+  <div id="home-body" hidden>
+  <div id="resume-card" class="card resume" hidden>
+    <div>
+      <b>풀던 퀴즈</b>
+      <div class="muted" id="resume-info"></div>
+    </div>
+    <div class="row">
+      <button class="btn ghost small" id="btn-resume-drop">버리기</button>
+      <button class="btn primary small" id="btn-resume">이어하기</button>
+    </div>
+  </div>
+
+  <div class="card today">
+    <div class="label">퀴즈</div>
+    <div class="plan">
+      <div><b id="p-q">0</b>문제</div>
+      <div><b id="p-all">0</b>범위 단어</div>
+      <div><b id="p-weak">0</b>약한 단어</div>
+    </div>
+    <button class="btn primary big" id="btn-start">퀴즈 시작</button>
+    <div class="muted" id="start-note"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">DAY 범위</div>
+    <div class="range">
+      <select id="day-from" aria-label="시작 DAY"></select>
+      <span>~</span>
+      <select id="day-to" aria-label="끝 DAY"></select>
+    </div>
+    <div class="chips" id="range-chips">
+      <button class="chip" data-range="last">최신 DAY</button>
+      <button class="chip" data-range="last3">최근 3 DAY</button>
+      <button class="chip" data-range="all">전체</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">문제 범위</div>
+    <div class="seg" id="seg-scope">
+      <button data-v="all">전부</button>
+      <button data-v="weak">약한 단어만</button>
+    </div>
+    <div class="label">문항 수</div>
+    <div class="seg" id="seg-qn">
+      <button data-v="10">10</button>
+      <button data-v="20">20</button>
+      <button data-v="30">30</button>
+      <button data-v="0">전부</button>
+    </div>
+    <div class="qstep">
+      <button id="qminus" aria-label="줄이기">−</button>
+      <input id="qnum" type="number" inputmode="numeric" pattern="[0-9]*" min="1" enterkeyhint="done" aria-label="문항 수">
+      <button id="qplus" aria-label="늘리기">+</button>
+    </div>
+    <div class="muted" id="qn-desc"></div>
+    <div class="label">문제 방식</div>
+    <div class="seg" id="seg-kind">
+      <button data-v="pick">4지선다</button>
+      <button data-v="write">직접 쓰기</button>
+    </div>
+    <div class="muted" id="kind-desc"></div>
+    <div id="mode-wrap">
+      <div class="label">채점</div>
+      <div class="seg" id="seg-mode">
+        <button data-v="easy">느슨</button>
+        <button data-v="mid">보통</button>
+        <button data-v="hard">엄격</button>
+      </div>
+      <div class="muted" id="mode-desc"></div>
+    </div>
+  </div>
+
+  <button class="btn secondary" id="btn-weak">약한 단어 보기 <span id="weak-count" class="pill"></span></button>
+
+  <div class="label mt">DAY별 단어 <span class="muted">(누르면 그 DAY만 선택)</span></div>
+  <div class="days" id="day-grid"></div>
+  </div>
+</section>
+
+<!-- 퀴즈 -->
+<section id="quiz" class="screen">
+  <header class="quiz-top">
+    <button class="icon-btn" id="btn-quit" aria-label="그만하기">✕</button>
+    <div class="bar grow"><div class="bar-fill" id="quiz-bar"></div></div>
+    <span class="count" id="quiz-count"></span>
+  </header>
+  <div class="q-meta">
+    <span class="tag" id="q-day"></span>
+    <span class="tag plain" id="q-mode"></span>
+    <span class="tag fb-head" id="fb-head" hidden></span>
+  </div>
+  <div class="q-prompt" id="q-prompt"></div>
+  <div class="sent word-card" id="q-card">
+    <div class="qw" id="q-word"></div>
+    <div class="pron" id="q-pron"></div>
+  </div>
+  <div class="q-meaning" id="q-hint" hidden></div>
+  <div class="quiz-actions" id="q-actions"></div>
+
+  <div class="sheet" id="feedback" hidden>
+    <div class="sheet-inner">
+      <div class="grab"></div>
+      <div class="fb-word"><div class="w" id="fb-word"></div></div>
+      <div id="fb-grade"></div>
+      <div class="fb-tabs" id="fb-tabs">
+        <button data-t="mean" class="on">뜻</button>
+        <button data-t="ex">예문</button>
+      </div>
+      <div class="fb-pane" id="fb-mean"></div>
+      <div class="fb-pane" id="fb-ex" hidden></div>
+      <div class="fb-actions">
+        <button class="speak-btn" id="fb-speak" aria-label="단어 발음 듣기">🔊</button>
+        <button class="btn primary big" id="btn-next">▶ 계속하기</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 결과 -->
+<section id="result" class="screen">
+  <header class="top"><h1>퀴즈 완료 🎉</h1></header>
+  <div class="card center">
+    <div class="score" id="res-score"></div>
+    <div class="muted" id="res-detail"></div>
+    <div class="res-tally" id="res-tally"></div>
+  </div>
+  <div class="label">다시 볼 단어 <span class="muted">(틀렸거나 부분 정답)</span></div>
+  <div id="res-wrong" class="list"></div>
+  <div class="row two sticky-bottom">
+    <button class="btn secondary" id="btn-res-home">홈으로</button>
+    <button class="btn secondary" id="btn-res-wrong">틀린 것만</button>
+    <button class="btn primary" id="btn-res-again">한 번 더</button>
+  </div>
+</section>
+
+<!-- 약한 단어 -->
+<section id="weak" class="screen">
+  <header class="top">
+    <button class="icon-btn" id="btn-weak-back" aria-label="뒤로">←</button>
+    <h1>약한 단어</h1>
+    <span class="muted" id="weak-total" style="min-width:40px;text-align:right"></span>
+  </header>
+  <p class="muted" style="margin:0 2px 12px">틀린 단어가 여기 쌓이고, 두 번 연속 맞히면 빠져요.</p>
+  <div id="weak-list" class="list"></div>
+  <div class="sticky-bottom" id="weak-bottom">
+    <button class="btn primary" id="btn-weak-quiz">약한 단어 퀴즈</button>
+  </div>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+
+<script nomodule>document.getElementById('load-status').textContent='이 브라우저는 너무 오래돼서 열 수 없어요. 최신 Chrome이나 Safari로 열어보세요.';</script>
+<script>
+/* 예문 ↔ 단어 전환: 지원 브라우저는 페이지 사이를 부드럽게(View Transitions, 흰 칸이 미끄러짐).
+   지원 안 하면 흰 칸이 먼저 미끄러진 뒤 페이지를 바꿈. */
+(function () {
+  var nav = document.querySelector('.mode-switch');
+  if (!nav) return;
+  var self = nav.getAttribute('data-mode');
+  var smooth = !!window.CSSViewTransitionRule && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function set(m) {
+    nav.setAttribute('data-mode', m);
+    nav.querySelectorAll('a').forEach(function (a) {
+      var on = a.getAttribute('data-m') === m;
+      a.classList.toggle('on', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  nav.addEventListener('click', function (e) {
+    var a = e.target.closest('a');
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    if (a.getAttribute('data-m') === self) return;
+    if (smooth) { location.href = a.href; return; }
+    set(a.getAttribute('data-m'));
+    setTimeout(function () { location.href = a.href; }, 170);
+  });
+  // 뒤로가기로 돌아왔을 때(페이지 캐시) 흰 칸을 원래 자리로
+  window.addEventListener('pageshow', function (e) { if (e.persisted) set(self); });
+})();
 </script>
 </body>
 </html>
