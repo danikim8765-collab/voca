@@ -1,13 +1,13 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
+  applyResult, buildPlan, pickReview, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
   highlightMeaning, nextLetterHint, typingHintTarget, addDays, gradeMeaning, pickMeaningDistractors,
 } from './core.js';
 import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020013';
+const APP_VERSION = '202611020014';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -20,6 +20,7 @@ const KEY = {
   session: P + 'session.v1',
   csv: CSV_CACHE_KEY,
   resetAt: P + 'resetAt.v1',
+  day: P + 'day.v1', // 오늘의 복습 단어 목록 {date, review: [id]} (시작할 때 정해서 고정)
 };
 
 const $ = s => document.querySelector(s);
@@ -50,6 +51,7 @@ if (Object.values(stats).some(v => v && v.st == null)) {
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
+  extraN: 20, // 추가 학습·복습 개수
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
 }, load(KEY.settings, {}));
 let session = null;
@@ -207,6 +209,28 @@ function rangeWords() {
 const isMastered = s => s && s.st >= MAX_STAGE; // 4단계(14일 간격)까지 올라간 단어
 const isWrongNote = s => s && s.st === 0;          // 마지막에 틀린 단어 (0단계)
 const todayPlan = () => buildPlan(words, rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam });
+const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
+const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
+
+// 오늘의 복습: 시작하면 그날 목록을 고정. 그 전에는 지금 고르면 나올 단어로 미리 보여 줌
+function reviewState() {
+  const day = loadDay();
+  const started = Array.isArray(day.review);
+  const ids = started ? day.review.filter(id => byId.has(id)) : pickReview(words, stats).map(w => w.id);
+  const left = started ? ids.filter(id => !seenToday(id)) : ids;
+  return { started, total: ids.length, left, done: !left.length };
+}
+
+// 오늘의 학습 → 오늘의 복습 → 추가 학습·복습 순서로 열림
+function flowState() {
+  const plan = todayPlan();
+  const learnLeft = plan.final.length + plan.fresh.length;
+  const rv = reviewState();
+  const learnDone = !learnLeft;
+  return { plan, learnLeft, learnDone, rv, reviewOpen: learnDone || rv.started, extraOpen: learnDone && rv.done };
+}
+const extraNew = n => rangeWords().filter(w => !stats[w.id]).slice(0, n);
+const extraReview = n => pickReview(words, stats, { n });
 
 function fillDaySelects() {
   for (const sel of [$('#day-from'), $('#day-to')]) {
@@ -288,27 +312,57 @@ function renderHome() {
   } else rc.hidden = true;
 }
 
-// 오늘의 학습: 복습할 단어 → 시험 대비 → 새 단어
+// 홈의 오늘 카드들: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기
 function renderPlan() {
-  const plan = todayPlan();
-  const box = $('#plan-info');
-  box.innerHTML = '';
-  const items = [[plan.review.length, '복습'], [plan.fresh.length, '새 단어']];
-  if (plan.examInfo && plan.examInfo.finalDay) items.splice(1, 0, [plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
-  for (const [n, l] of items) {
-    const d = el('div');
-    d.append(el('b', null, n), l);
-    box.appendChild(d);
-  }
-  const total = plan.review.length + plan.final.length + plan.fresh.length;
+  const { plan, learnLeft, learnDone, rv, reviewOpen, extraOpen } = flowState();
+  const fill = (box, items) => {
+    box.innerHTML = '';
+    for (const [n, l] of items) {
+      const d = el('div');
+      d.append(el('b', null, n), l);
+      box.appendChild(d);
+    }
+  };
+
+  const items = [[plan.fresh.length, '새 단어']];
+  if (plan.examInfo && plan.examInfo.finalDay) items.unshift([plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
+  fill($('#plan-info'), items);
   const btn = $('#btn-start');
-  btn.textContent = total ? `오늘 학습 시작 (${total})` : '오늘 학습 완료 🎉';
-  btn.classList.toggle('done', !total);
+  btn.textContent = learnLeft ? `오늘 학습 시작 (${learnLeft})` : '오늘 학습 완료 ✓';
+  btn.classList.toggle('done', learnDone);
+  btn.disabled = learnDone;
   const dd = $('#exam-dday');
   const left = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   dd.hidden = left == null || left < 0;
   if (!dd.hidden) { dd.textContent = left === 0 ? 'D-day' : `시험 D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
-  $('#plan-note').textContent = total ? '' : '내일 복습할 단어가 다시 나와요. 더 하고 싶으면 아래 연습을 이용하세요.';
+  $('#plan-note').textContent = learnLeft ? '' : '오늘 새 단어는 다 했어요.';
+
+  // 오늘의 복습
+  const due = plan.review.length;
+  const shown = rv.left.length;
+  const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
+  fill($('#review-info'), [[shown, '복습'], [dueIn, '복습일 된 단어']]);
+  const rb = $('#btn-review');
+  rb.disabled = rv.done || !reviewOpen;
+  rb.classList.toggle('done', rv.done);
+  rb.textContent = rv.done ? (rv.total ? '오늘 복습 완료 ✓' : '복습할 단어가 아직 없어요') : `오늘 복습 시작 (${shown})`;
+  $('#review-note').textContent = !reviewOpen ? '오늘의 학습을 끝내면 열려요.'
+    : !rv.done && due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습으로 할 수 있어요.`
+    : '';
+
+  // 더 하기 (추가 학습 · 추가 복습)
+  $('#card-extra').hidden = !extraOpen;
+  if (extraOpen) {
+    const n = settings.extraN;
+    setSeg('#seg-extra', String(n));
+    const nNew = extraNew(n).length, nRev = extraReview(n).length;
+    const bn = $('#btn-extra-new'), br = $('#btn-extra-review');
+    bn.textContent = nNew ? `추가 학습 (${nNew})` : '새 단어 없음';
+    br.textContent = nRev ? `추가 복습 (${nRev})` : '복습할 단어 없음';
+    bn.disabled = !nNew;
+    br.disabled = !nRev;
+    $('#extra-note').textContent = nNew ? '추가 학습한 단어도 내일부터 복습에 나와요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
+  }
 }
 
 function setSeg(sel, v) {
@@ -331,10 +385,25 @@ function startSession(mode, list) {
   let ids, label;
   if (mode === 'today') {
     const plan = todayPlan();
-    // 복습 → 시험 대비 → 새 단어(교재 순서) 순으로
-    ids = [...shuffle(plan.review), ...shuffle(plan.final), ...plan.fresh].map(w => w.id);
-    if (!ids.length) { toast('오늘 할 학습을 다 했어요! 내일 또 만나요'); return; }
+    // 시험 대비 → 새 단어(교재 순서) 순으로
+    ids = [...shuffle(plan.final), ...plan.fresh].map(w => w.id);
+    if (!ids.length) { toast('오늘 새 단어는 다 했어요'); return; }
     label = '오늘의 학습';
+  } else if (mode === 'review') {
+    // 처음 시작할 때 오늘의 복습 목록을 고정 → 중간에 그만둬도 남은 단어만 이어서
+    const day = loadDay();
+    if (!Array.isArray(day.review)) { day.review = pickReview(words, stats).map(w => w.id); save(KEY.day, day); }
+    ids = shuffle(day.review.filter(id => byId.has(id) && !seenToday(id)));
+    if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
+    label = '오늘의 복습';
+  } else if (mode === 'extraNew') {
+    ids = extraNew(settings.extraN).map(w => w.id);
+    if (!ids.length) { toast('이 범위에 새 단어가 없어요'); return; }
+    label = '추가 학습';
+  } else if (mode === 'extraReview') {
+    ids = shuffle(extraReview(settings.extraN)).map(w => w.id);
+    if (!ids.length) { toast('복습할 단어가 없어요'); return; }
+    label = '추가 복습';
   } else if (list) {
     ids = shuffle(list).map(w => w.id);
     label = '다시 볼 단어';
@@ -943,18 +1012,27 @@ function finishSession() {
   session = null;
   saveSession();
   $('#feedback').hidden = true;
-  const total = s.total;
   const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
-  const firstOk = total - wrong.length;
-  $('#res-score').textContent = `${Math.round((firstOk / Math.max(1, total)) * 100)}%`;
-  $('#res-detail').textContent = `${s.label} · ${total}단어 중 힌트 없이 바로 맞힌 단어 ${firstOk}개`;
+  $('#res-title').textContent = `${s.label} 끝`;
+  $('#res-detail').textContent = `${s.total}단어를 다 봤어요.`;
+  $('#res-wrong-label').textContent = wrong.length ? `틀렸거나 헷갈린 단어 ${wrong.length}개 · 한 번씩만 더 보고 가요` : '';
   const list = $('#res-wrong');
   list.innerHTML = '';
-  if (!wrong.length) list.appendChild(el('div', 'card center muted', '다시 볼 단어가 없어요. 완벽해요!'));
+  if (!wrong.length) list.appendChild(el('div', 'card center muted', '틀린 단어 없이 다 맞혔어요 👏'));
   for (const id of wrong) list.appendChild(wordItem(byId.get(id)));
+  // 틀린 게 있으면 그 단어만 한 번 더, 없으면 다음 할 일(오늘의 복습 · 더 하기)로
   const again = $('#btn-res-again');
-  again.textContent = wrong.length ? '다시 볼 단어 연습' : '홈으로';
-  again.onclick = () => (wrong.length ? startSession('retry', wrong.map(id => byId.get(id))) : goHome());
+  const f = flowState();
+  const nextStep = !f.rv.done && f.reviewOpen ? ['오늘의 복습 하기', () => startSession('review')] : null;
+  if (wrong.length) {
+    again.textContent = '틀린 단어 다시 풀기';
+    again.onclick = () => startSession('retry', wrong.map(id => byId.get(id)));
+  } else if (nextStep) {
+    [again.textContent, again.onclick] = nextStep;
+  } else {
+    again.textContent = '홈으로';
+    again.onclick = () => goHome();
+  }
   show('result', false);
 }
 
@@ -1127,6 +1205,10 @@ function bind() {
   $('#exam-date').addEventListener('change', e => setExam(e.target.value));
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });
   $('#btn-start').addEventListener('click', () => startSession('today'));
+  $('#btn-review').addEventListener('click', () => startSession('review'));
+  $('#btn-extra-new').addEventListener('click', () => startSession('extraNew'));
+  $('#btn-extra-review').addEventListener('click', () => startSession('extraReview'));
+  onSeg('#seg-extra', v => { settings.extraN = +v; saveSettings(); renderPlan(); });
   $('#btn-wrong').addEventListener('click', () => startSession('wrong'));
   $('#btn-order').addEventListener('click', () => startSession('order'));
   $('#btn-resume').addEventListener('click', resumeSession);

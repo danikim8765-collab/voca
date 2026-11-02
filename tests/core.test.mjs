@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, buildPlan, normalizeStat, addDays, daysBetween } from '../js/core.js';
+import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, buildPlan, pickReview, normalizeStat, addDays, daysBetween } from '../js/core.js';
 
 const show = r => r.segs.map(s => (s.t === 'blank' ? `[${s.v}]` : s.v)).join('');
 
@@ -104,7 +104,7 @@ test('예전 기록 변환: 진도 유지', () => {
   assert.equal(normalizeStat({ b: 0, c: 0, w: 1, d: new Date(2026, 10, 1).getTime(), s: 1 }).st, 0);
 });
 
-test('오늘의 학습: 복습 먼저, 새 단어는 하루 개수만큼', () => {
+test('오늘의 학습: 새 단어는 하루 개수만큼 (복습일 된 단어는 따로 돌려줌)', () => {
   const T = '2026-11-02';
   const words = Array.from({ length: 30 }, (_, i) => ({ id: 'w' + i, day: 1 + Math.floor(i / 10) }));
   const stats = {
@@ -245,4 +245,35 @@ test('단어 모드: 뜻 보기는 정답·서로와 겹치지 않게', async ()
   assert.equal(out.length, 3);
   assert.ok(!out.some(w => w.word === 'lethal' || w.word === 'fatal'));
   assert.ok(!out.some((x, i) => out.some((y, j) => i !== j && meaningsClash(x.meaning, y.meaning))));
+});
+
+test('오늘의 복습: 복습일 된 단어 먼저, 나머지는 약한 단어부터, 오늘 배우거나 본 단어는 빼고', () => {
+  const T = '2026-11-02';
+  const now = new Date(2026, 10, 2, 9).getTime();
+  const old = new Date(2026, 9, 20).getTime();
+  const words = Array.from({ length: 8 }, (_, i) => ({ id: 'w' + i, day: 1 }));
+  const stats = {
+    w0: { st: 3, due: '2026-11-09', c: 3, w: 0, s: old, f: '2026-10-01' },       // 안 밀림, 튼튼
+    w1: { st: 1, due: T, c: 1, w: 0, s: old, f: '2026-10-01' },                  // 오늘 복습일
+    w2: { st: 2, due: '2026-10-30', c: 2, w: 0, s: old, f: '2026-10-01' },       // 더 오래 밀림
+    w3: { st: 1, due: '2026-11-04', c: 1, w: 3, s: old, f: '2026-10-01' },       // 안 밀림, 많이 틀림
+    w4: { st: 1, due: '2026-11-04', c: 3, w: 0, s: old, f: '2026-10-01' },       // 안 밀림, 안 틀림
+    w5: { st: 1, due: '2026-11-03', c: 1, w: 0, s: now, f: T },                  // 오늘 배운 새 단어
+    w6: { st: 2, due: '2026-11-05', c: 2, w: 0, s: now, f: '2026-10-01' },       // 오늘 이미 봄
+  };
+  const ids = n => pickReview(words, stats, { today: T, n }).map(w => w.id);
+  assert.deepEqual(ids(20), ['w2', 'w1', 'w3', 'w4', 'w0']);
+  assert.deepEqual(ids(3), ['w2', 'w1', 'w3']);
+  assert.deepEqual(ids(0), []);
+});
+
+test('시험 대비 몫에는 복습일이 된 단어도 들어감', () => {
+  const exam = '2026-11-20';
+  const today = addDays(exam, -3);
+  const words = Array.from({ length: 3 }, (_, i) => ({ id: 'w' + i, day: 1 }));
+  const old = new Date(2026, 9, 1).getTime();
+  const stats = Object.fromEntries(words.map(w => [w.id, { st: 1, due: today, c: 1, w: 0, s: old, f: '2026-10-01' }]));
+  const p = buildPlan(words, words, stats, { today, exam, newPerDay: 0 });
+  assert.deepEqual(p.final.map(w => w.id), ['w0']);
+  assert.equal(p.review.length, 3);
 });

@@ -49,7 +49,7 @@
         </div>
       </div>
 
-      <div class="card today">
+      <div class="card today" id="card-learn">
         <div class="today-head">
           <div class="label">오늘의 학습</div>
           <span class="tag" id="exam-dday" hidden></span>
@@ -57,6 +57,30 @@
         <div class="plan" id="plan-info"></div>
         <button class="btn primary big" id="btn-start">오늘 학습 시작</button>
         <div class="muted" id="plan-note"></div>
+      </div>
+
+      <div class="card today" id="card-review">
+        <div class="today-head">
+          <div class="label">오늘의 복습 <span class="muted">(전에 한 단어)</span></div>
+        </div>
+        <div class="plan" id="review-info"></div>
+        <button class="btn primary big" id="btn-review">오늘 복습 시작</button>
+        <div class="muted" id="review-note"></div>
+      </div>
+
+      <div class="card" id="card-extra" hidden>
+        <div class="label">더 하기 <span class="muted">(개수 고르기)</span></div>
+        <div class="seg" id="seg-extra">
+          <button data-v="10">10</button>
+          <button data-v="20">20</button>
+          <button data-v="30">30</button>
+          <button data-v="50">50</button>
+        </div>
+        <div class="row two">
+          <button class="btn secondary" id="btn-extra-new">추가 학습</button>
+          <button class="btn secondary" id="btn-extra-review">추가 복습</button>
+        </div>
+        <div class="muted" id="extra-note"></div>
       </div>
 
       <div class="card">
@@ -147,12 +171,12 @@
 
   <!-- 결과 -->
   <section id="result" class="screen">
-    <header class="top"><h1>학습 완료 🎉</h1></header>
-    <div class="card center">
-      <div class="score" id="res-score"></div>
+    <header class="top"><h1 id="res-title">학습 끝</h1></header>
+    <div class="card center res-cheer">
+      <div class="cheer">공부하느라 수고하셨어요</div>
       <div class="muted" id="res-detail"></div>
     </div>
-    <div class="label">다시 볼 단어 (틀렸거나 힌트 쓴 단어)</div>
+    <div class="label" id="res-wrong-label"></div>
     <div id="res-wrong" class="list"></div>
     <div class="row two sticky-bottom">
       <button class="btn secondary" id="btn-res-home">홈으로</button>
