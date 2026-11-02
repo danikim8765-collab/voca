@@ -1,33 +1,35 @@
 :root {
-  --bg: #f4f3fb;
+  --bg: #f3f5f9;
   --card: #ffffff;
-  --text: #1e1b2e;
-  --muted: #7a7790;
-  --line: #e6e4f2;
-  --primary: #6c5ce7;
-  --primary-soft: #ece9fd;
+  --text: #1a2233;
+  --muted: #707a8c;
+  --line: #e3e7ef;
+  --primary: #1f3a68;
+  --primary-soft: #e6ecf5;
+  --on-primary: #ffffff;
   --ok: #12b886;
   --ok-soft: #e3f8f1;
   --bad: #fa5252;
   --bad-soft: #ffeceb;
   --warn: #f59f00;
-  --blank: #d9d4fb;
-  --shadow: 0 2px 10px rgba(40, 30, 110, .06);
+  --blank: #d3deef;
+  --shadow: 0 2px 10px rgba(20, 35, 70, .06);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14131c;
-    --card: #1f1d2b;
-    --text: #eceaf6;
-    --muted: #9a97b0;
-    --line: #2f2c40;
-    --primary: #8e80ff;
-    --primary-soft: #2b2650;
+    --bg: #11151d;
+    --card: #1b2130;
+    --text: #e8ecf4;
+    --muted: #95a0b4;
+    --line: #2a3244;
+    --primary: #8fb0e6;
+    --primary-soft: #22304a;
+    --on-primary: #11151d;
     --ok: #38d9a9;
     --ok-soft: #133b31;
     --bad: #ff6b6b;
     --bad-soft: #43201f;
-    --blank: #3c3666;
+    --blank: #2e3f5e;
     --shadow: none;
   }
 }
@@ -96,13 +98,13 @@ button { cursor: pointer; }
 .btn { border: 0; border-radius: 14px; padding: 13px 16px; font-weight: 700; width: 100%; margin-bottom: 8px; }
 .btn.big { padding: 17px; font-size: 18px; }
 .btn.small { padding: 9px 14px; font-size: 14px; width: auto; }
-.btn.primary { background: var(--primary); color: #fff; }
+.btn.primary { background: var(--primary); color: var(--on-primary); }
 .btn.secondary { background: var(--primary-soft); color: var(--primary); }
 .btn.ghost { background: transparent; color: var(--muted); }
 .btn.danger { background: var(--bad-soft); color: var(--bad); }
 .btn:active { transform: scale(.98); }
 .btn:disabled { opacity: .45; }
-.pill { background: var(--primary); color: #fff; font-size: 12px; border-radius: 99px; padding: 0 7px; margin-left: 4px; }
+.pill { background: var(--primary); color: var(--on-primary); font-size: 12px; border-radius: 99px; padding: 0 7px; margin-left: 4px; }
 .pill:empty { display: none; }
 
 .days { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
@@ -194,7 +196,7 @@ button { cursor: pointer; }
 .key.fn { background: var(--line); font-size: 18px; }
 .key.wide { flex: 1.5; }
 .key.space { flex: 5; font-size: 15px; color: var(--muted); }
-.key.enter { flex: 2; background: var(--primary); color: #fff; font-size: 16px; font-weight: 700; }
+.key.enter { flex: 2; background: var(--primary); color: var(--on-primary); font-size: 16px; font-weight: 700; }
 .type-help { font-size: 12px; color: var(--muted); margin: -2px 0 8px 4px; }
 
 .sheet { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; z-index: 10; }
@@ -249,7 +251,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
 
 .toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 90px); transform: translateX(-50%);
-  background: #2b2840; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
+  background: #1f2a3d; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
   max-width: 90vw; text-align: center;
 }
 
@@ -328,7 +330,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .tag.fb-head.copied, .tag.fb-head.hint { color: #fff; background: var(--warn); }
 .q-prompt.my-answer { color: var(--bad); font-weight: 700; }
 .sheet-inner {
-  box-shadow: 0 -10px 30px rgba(30, 20, 80, .15); max-height: 62dvh; padding-top: 10px;
+  box-shadow: 0 -10px 30px rgba(15, 30, 60, .15); max-height: 62dvh; padding-top: 10px;
   display: flex; flex-direction: column; overflow: hidden;
 }
 /* 단어·탭·계속하기는 고정, 뜻/예문 내용만 스크롤 */
@@ -382,7 +384,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 /* 예문 ↔ 단어 모드 전환 (index.html · meaning.html 머리에 같은 모양, 같은 자리) */
 .mode-switch{position:relative;display:flex;gap:2px;padding:3px;background:var(--line);border-radius:12px;flex:none}
 .mode-thumb{position:absolute;top:3px;left:3px;width:40px;height:32px;border-radius:9px;background:var(--card);
-  box-shadow:0 1px 3px rgba(30,20,80,.14);transition:transform .2s cubic-bezier(.2,.8,.2,1);view-transition-name:mode-thumb}
+  box-shadow:0 1px 3px rgba(15,30,60,.14);transition:transform .2s cubic-bezier(.2,.8,.2,1);view-transition-name:mode-thumb}
 .mode-switch[data-mode="wd"] .mode-thumb{transform:translateX(42px)}
 .mode-switch a{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:40px;height:32px;border-radius:9px;color:var(--muted);transition:color .2s}
 .mode-switch a.on{color:var(--text)}
@@ -390,7 +392,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .mode-switch a[data-m="ex"]{view-transition-name:mode-ex}
 .mode-switch a[data-m="wd"]{view-transition-name:mode-wd}
 .mode-switch svg{width:20px;height:20px}
-@media (prefers-color-scheme:dark){.mode-thumb{background:#3a3654}}
+@media (prefers-color-scheme:dark){.mode-thumb{background:#2f3a52}}
 /* 예문 ↔ 단어 페이지 사이 전환 */
 @view-transition{navigation:auto}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.22s}
