@@ -7,6 +7,9 @@
   --primary: #1f3a68;
   --primary-soft: #e6ecf5;
   --on-primary: #ffffff;
+  /* 라이트: 아래쪽에 옅은 피치 → 위로 갈수록 바탕색 (키보드·선지 쪽이 중심) */
+  --glow-0: #f7e2d1;
+  --glow-1: #f9ece3;
   --ok: #12b886;
   --ok-soft: #e3f8f1;
   --bad: #fa5252;
@@ -26,6 +29,8 @@
     --primary: #f1ebe2;
     --primary-soft: #162238;
     --on-primary: #0e1626;
+    --glow-0: #0e1626;
+    --glow-1: #0e1626;
     --ok: #38d9a9;
     --ok-soft: #133b31;
     --bad: #ff6b6b;
@@ -36,7 +41,13 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; background: var(--bg); color: var(--text); }
+html, body { margin: 0; color: var(--text); }
+html { background: var(--bg); }
+/* 화면에 고정된 배경 그라데이션 (스크롤해도 아래쪽이 피치) */
+body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(to top, var(--glow-0) 0, var(--glow-1) 300px, var(--bg) 72vh);
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
   font-size: 16px;
@@ -167,7 +178,7 @@ button { cursor: pointer; }
 .type-input:focus { border-color: var(--primary); }
 .kb-mode .quiz-actions {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; max-width: 560px; margin: 0 auto;
-  padding: 8px 6px calc(env(safe-area-inset-bottom) + 6px); background: var(--bg);
+  padding: 8px 6px calc(env(safe-area-inset-bottom) + 6px); background: linear-gradient(to top, var(--glow-0) 0, var(--glow-1) 300px);
   border-top: 1px solid var(--line);
 }
 .kb-top { display: flex; justify-content: space-between; align-items: center; padding: 0 6px; }
@@ -240,7 +251,7 @@ button { cursor: pointer; }
 .mark { color: var(--primary); font-weight: 800; }
 .sticky-bottom {
   position: fixed; left: 0; right: 0; bottom: 0; max-width: 560px; margin: 0 auto;
-  padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px); background: linear-gradient(to top, var(--bg) 80%, transparent);
+  padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px); background: linear-gradient(to top, var(--glow-0) 80%, transparent);
 }
 .sticky-bottom .btn { margin: 0; }
 
