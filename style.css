@@ -517,3 +517,19 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .day-head b { font-size: 15px; font-weight: 800; }
 .day-head span { font-size: 12px; color: var(--muted); }
 #word-list .day-head:first-child { margin-top: 4px; }
+
+/* 원형까지 맞게 썼을 때: 확인 버튼이 톡 튀며 빛나고, 0.8초 동안 차오른 뒤 넘어감 */
+:root { --ok-glow: 18, 184, 134; --on-ok: #fff; }
+@media (prefers-color-scheme: dark) { :root { --ok-glow: 56, 217, 169; --on-ok: #0b1a1c; } }
+#q-actions .key.enter.ready, #q-actions .btn.primary.ready {
+  position: relative; overflow: hidden; background: var(--ok); color: var(--on-ok); font-weight: 800;
+  box-shadow: 0 0 0 3px rgba(var(--ok-glow), .45), 0 0 22px 6px rgba(var(--ok-glow), .55);
+  animation: ready-pop .28s cubic-bezier(.3, 1.6, .5, 1), ready-glow .5s ease-in-out .28s infinite alternate;
+}
+#q-actions .key.enter.ready::after, #q-actions .btn.primary.ready::after {
+  content: ""; position: absolute; inset: 0; background: rgba(255, 255, 255, .32);
+  transform-origin: left; transform: scaleX(0); animation: ready-fill var(--pause, 800ms) linear forwards;
+}
+@keyframes ready-pop { 0% { transform: scale(1); } 55% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes ready-glow { to { box-shadow: 0 0 0 5px rgba(var(--ok-glow), .3), 0 0 30px 10px rgba(var(--ok-glow), .7); } }
+@keyframes ready-fill { to { transform: scaleX(1); } }

@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020026';
+const APP_VERSION = '202611020027';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -53,6 +53,7 @@ if (Object.values(stats).some(v => v && v.st == null)) {
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
+  baseAccept: 'pause', // 원형이 예문 형태의 앞부분일 때(outlaw → outlawed): pause = 0.8초 멈추면 정답, instant = 바로
   extraN: 20, // 추가 학습·복습 개수
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
 }, load(KEY.settings, {}));
@@ -706,6 +707,8 @@ function renderChoices(actions) {
   });
 }
 
+const PAUSE_ACCEPT_MS = 800; // 원형까지 쓰고 이만큼 멈추면 정답
+
 function renderTyping(actions) {
   const parts = answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
@@ -718,7 +721,12 @@ function renderTyping(actions) {
     typingHintTarget(q.w, q.b2 && q.b2.blanks, null),
   ].map(normalizeAnswer).filter(Boolean))];
   const isRight = value => cands.includes(normalizeAnswer(value));
-  // 정답 중 하나(원형 outlaw, 예문 형태 outlawed 등)가 되는 순간 바로 넘어감
+  // 더 이어질 정답이 없으면(outlawed, fatal) 쓰는 순간 넘어감.
+  // 원형이 예문 형태의 앞부분이면(outlaw → outlawed): 설정에 따라 0.8초 멈추면(또는 확인) 넘어가거나 바로 넘어감
+  const isFinal = value => {
+    const n = normalizeAnswer(value);
+    return cands.includes(n) && !cands.some(c => c !== n && c.startsWith(n));
+  };
   // 직접 입력엔 오답이 없음: 정답이 될 때까지 계속 씀.
   // 힌트를 쓴 단어는 외운 걸로 치지 않고 잠시 후 한 번 더 나옴
   const check = value => {
@@ -727,7 +735,26 @@ function renderTyping(actions) {
     else answer(true, null);
     return true;
   };
-  const autoCheck = value => (isRight(value) ? check(value) : false);
+  const thisQ = q;
+  let pause = null;
+  // 확인 버튼을 빛나게(정답 상태) — 0.8초 동안 버튼이 차오르고 다 차면 넘어감
+  const setReady = on => document.querySelectorAll('#q-actions .key.enter, #q-actions .btn.primary').forEach(b => {
+    b.classList.remove('ready');
+    if (on) { void b.offsetWidth; b.style.setProperty('--pause', `${PAUSE_ACCEPT_MS}ms`); b.classList.add('ready'); }
+  });
+  const autoCheck = value => {
+    clearTimeout(pause);
+    const right = isRight(value);
+    if (right && (settings.baseAccept === 'instant' || isFinal(value))) return check(value);
+    setReady(right);
+    if (right) {
+      pause = setTimeout(() => {
+        if (q !== thisQ || q.answered || !q.typing || normalizeAnswer(q.typing.get()) !== normalizeAnswer(value)) return;
+        if (check(value) && document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      }, PAUSE_ACCEPT_MS);
+    }
+    return false;
+  };
   const notYet = () => toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   if (settings.appKeyboard) {
     const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 띄어쓰기로 다음 빈칸` : '키보드로 바로 입력하세요';
@@ -1253,6 +1280,7 @@ function renderSettings() {
   $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
   $('#opt-appkb').checked = settings.appKeyboard;
+  setSeg('#seg-base', settings.baseAccept);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
@@ -1384,6 +1412,7 @@ function bind() {
   $('#opt-ko').addEventListener('change', e => { settings.showKo = e.target.checked; saveSettings(); });
   $('#opt-meaning').addEventListener('change', e => { settings.showMeaning = e.target.checked; saveSettings(); });
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
+  onSeg('#seg-base', v => { settings.baseAccept = v; saveSettings(); });
   $('#btn-test-voice').addEventListener('click', () => speak('I tried to convince him of the danger.'));
   $('#btn-export').addEventListener('click', exportProgress);
   $('#btn-sync-connect').addEventListener('click', async () => {
