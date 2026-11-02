@@ -1,14 +1,14 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
-  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, addDays, gradeMeaning, pickMeaningDistractors,
+  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks,
 } from './core.js';
 import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020028';
+const APP_VERSION = '202611020029';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -217,8 +217,10 @@ async function applyHighlights() {
   applyHighlightMap(map);
 }
 
+let findWord = () => null; // 단어장에서 그 말(변화형 포함)인 단어 찾기 (오답 풀이용)
 function setWords(list) {
   words = list;
+  findWord = makeWordFinder(words);
   byId = new Map(words.map(w => [w.id, w]));
   days = [...new Set(words.map(w => w.day))].sort((a, b) => a - b);
 }
@@ -707,6 +709,24 @@ function renderChoices(actions) {
   });
 }
 
+// 오답 풀이 말풍선: 키보드 바로 위(앱 키보드) 또는 입력칸 위(폰 키보드). 다시 쓰기 시작하거나 누르면 닫힘
+const COACH_ICON = { spell: '✏️', near: '🌱', off: '🤔' };
+function showCoach(actions, f) {
+  hideCoach();
+  const box = el('div', `coach ${f.kind}`);
+  box.setAttribute('role', 'status');
+  const msg = el('div', 'coach-msg');
+  if (f.diff) {
+    const d = el('span', 'coach-diff');
+    for (const seg of f.diff) d.appendChild(seg.t === 'ok' ? document.createTextNode(seg.v) : el('b', seg.t, seg.v));
+    msg.append(d, ` · ${f.text}`);
+  } else msg.textContent = f.text;
+  box.append(el('span', 'coach-ic', COACH_ICON[f.kind] || '💬'), msg);
+  box.addEventListener('click', hideCoach);
+  actions.prepend(box);
+}
+function hideCoach() { document.querySelectorAll('.coach').forEach(c => c.remove()); }
+
 const PAUSE_ACCEPT_MS = 800; // 원형까지 쓰고 이만큼 멈추면 정답
 
 function renderTyping(actions) {
@@ -765,7 +785,12 @@ function renderTyping(actions) {
     }
     return false;
   };
-  const notYet = () => toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
+  // 틀린 답을 내면 왜 틀렸는지 말풍선으로 (철자 노랑 · 비슷함 초록 · 다른 말 빨강)
+  const notYet = value => {
+    const f = coachFeedback(value, q.w, { cands, find: t => findWord(t, q.w.id), showMeaning: settings.showKo || settings.showMeaning });
+    if (f) showCoach(actions, f);
+    else toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
+  };
   if (settings.appKeyboard) {
     const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '키보드로 바로 입력하세요';
     return renderAppKeyboard(actions, kbHelp, check, autoCheck, notYet, fillsSlot);
@@ -790,12 +815,13 @@ function renderTyping(actions) {
     },
   };
   const submit = () => {
-    if (!check(input.value)) { if (input.value.trim()) notYet(); input.focus(); return; }
+    if (!check(input.value)) { if (input.value.trim()) notYet(input.value); input.focus(); return; }
     input.blur();
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
   input.addEventListener('input', e => {
+    hideCoach();
     // 칸을 다 채우면 띄어쓰기를 넣어 다음 칸으로 (끝에 이어 쓸 때만)
     if (e.inputType && e.inputType.startsWith('insert') && input.selectionStart === input.value.length && fillsSlot(input.value)) input.value += ' ';
     if (autoCheck(input.value)) input.blur();
@@ -864,6 +890,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
     value: '',
     type(key) {
       if (q.answered) return;
+      hideCoach(); // 다시 쓰기 시작하면 말풍선은 닫힘
       if (key === 'back') kb.value = kb.value.slice(0, -1);
       else if (key === ' ') { if (kb.value && !kb.value.endsWith(' ')) kb.value += ' '; }
       else if (kb.value.length < 60) {
@@ -877,7 +904,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
       if (q.answered) return;
       const shake = () => { const c = cards[0] || top; c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake'); };
       if (!kb.value.trim()) { shake(); return; }
-      if (!check(kb.value)) { shake(); notYet(); }
+      if (!check(kb.value)) { shake(); notYet(kb.value); }
     },
   };
   const key = (label, cls, fn) => {
@@ -978,6 +1005,7 @@ function setHintButtons(label) {
 }
 
 function answer(correct, given, kind) {
+  hideCoach();
   q.answered = true;
   const w = q.w;
   const id = w.id;
