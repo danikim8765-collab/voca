@@ -235,8 +235,15 @@ button{cursor:pointer}
   ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
 }
 .gear-space{width:40px;height:40px;flex:none}
+/* 되돌리기 버튼이 있는 알림 */
+.toast.has-act{display:flex;align-items:center;gap:14px;text-align:left;padding:8px 8px 8px 16px;white-space:nowrap}
+.toast.has-act[hidden]{display:none}
+.toast-act{border:1px solid color-mix(in srgb,currentColor 40%,transparent);background:color-mix(in srgb,currentColor 10%,transparent);
+  color:inherit;font-size:13px;font-weight:700;border-radius:999px;padding:6px 12px;flex:none}
+.toast-act:active{background:color-mix(in srgb,currentColor 22%,transparent)}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 90px);transform:translateX(-50%);
-  background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:90vw;text-align:center}
+  background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:90vw;text-align:center;
+  box-shadow:0 6px 20px rgba(0,0,0,.18)}
 
 /* 아이패드 등 큰 화면 */
 @media (min-width:700px){
@@ -362,11 +369,15 @@ function showResume(){
   r.hidden=false;
 }
 
-function toast(t){const el=$('toast');el.textContent=t;el.hidden=false;
-  clearTimeout(el._t);el._t=setTimeout(()=>el.hidden=true,2200)}
+// action = {label, fn}: 알림 안에 버튼(예: 되돌리기). 화면이 바뀌면 같이 사라짐
+function toast(t,ms,action){const el=$('toast');el.textContent=t;el.classList.toggle('has-act',!!action);
+  if(action){const b=document.createElement('button');b.className='toast-act';b.textContent=action.label;
+    b.onclick=()=>{clearTimeout(el._t);el.hidden=true;action.fn()};el.appendChild(b)}
+  el.hidden=false;clearTimeout(el._t);el._t=setTimeout(()=>el.hidden=true,ms||2200)}
 
 function go(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id===id));
+  if($('toast').classList.contains('has-act'))$('toast').hidden=true;   // 되돌리기 알림은 그 화면에서만
   window.scrollTo(0,0);
 }
 
@@ -646,11 +657,13 @@ $('btn-resume').onclick=()=>{
   sess=null;$('resume-card').hidden=true;
   go('quiz');draw();
 };
-let dropArm=0;
+/* 버리기: 바로 지우고, 4초 동안 되돌리기 가능 */
 $('btn-resume-drop').onclick=()=>{
-  const now=Date.now();
-  if(now-dropArm<2600){dropArm=0;sess=null;STORE.del(K_SESS);showResume();toast('버렸어요');return}
-  dropArm=now;toast('한 번 더 누르면 지워요');
+  const saved=sess;
+  sess=null;STORE.del(K_SESS);showResume();
+  toast('이어하던 퀴즈를 버렸어요',4000,{label:'되돌리기',fn:()=>{
+    if(!saved)return;sess=saved;STORE.set(K_SESS,saved);showResume();
+  }});
 };
 
 /* ===== 약한 단어 목록 ===== */
@@ -688,12 +701,8 @@ function goHome(){
   go('home');count();
   STORE.get(K_SESS).then(s=>{sess=s;showResume()});
 }
-let quitArm=0;
-$('btn-quit').onclick=()=>{
-  const now=Date.now();
-  if(now-quitArm<2600){quitArm=0;goHome();return}
-  quitArm=now;toast('한 번 더 누르면 홈으로 (여기까지 저장돼요)');
-};
+/* ✕: 바로 홈으로 (여기까지 저장돼서 홈에서 이어하기 가능) — 예문 모드와 같게 */
+$('btn-quit').onclick=goHome;
 
 /* ===== 문제 ===== */
 function draw(){

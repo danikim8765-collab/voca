@@ -7,7 +7,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020009';
+const APP_VERSION = '202611020010';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -73,9 +73,16 @@ const sync = createSync({
 const saveSettings = () => save(KEY.settings, settings);
 const saveSession = () => (session ? save(KEY.session, session) : localStorage.removeItem(KEY.session));
 
-function toast(msg, ms = 2200) {
+// action = { label, fn }: 알림 안에 버튼(예: 되돌리기). 화면이 바뀌면 같이 사라짐
+function toast(msg, ms = 2200, action) {
   const t = $('#toast');
   t.textContent = msg;
+  t.classList.toggle('has-act', !!action);
+  if (action) {
+    const b = el('button', 'toast-act', action.label);
+    b.addEventListener('click', () => { clearTimeout(toast.timer); t.hidden = true; action.fn(); });
+    t.appendChild(b);
+  }
   t.hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => (t.hidden = true), ms);
@@ -85,6 +92,7 @@ function toast(msg, ms = 2200) {
 let current = 'home';
 function show(id, push = true) {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+  if ($('#toast').classList.contains('has-act')) $('#toast').hidden = true; // 되돌리기 알림은 그 화면에서만
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
   current = id;
   window.scrollTo(0, 0);
@@ -965,7 +973,16 @@ function bind() {
   $('#btn-wrong').addEventListener('click', () => startSession('wrong'));
   $('#btn-order').addEventListener('click', () => startSession('order'));
   $('#btn-resume').addEventListener('click', resumeSession);
-  $('#btn-resume-drop').addEventListener('click', () => { localStorage.removeItem(KEY.session); renderHome(); });
+  // 버리기: 바로 지우고, 4초 동안 되돌리기 가능
+  $('#btn-resume-drop').addEventListener('click', () => {
+    const saved = localStorage.getItem(KEY.session);
+    localStorage.removeItem(KEY.session);
+    renderHome();
+    toast('이어하던 학습을 버렸어요', 4000, {
+      label: '되돌리기',
+      fn: () => { if (saved && !localStorage.getItem(KEY.session)) localStorage.setItem(KEY.session, saved); renderHome(); },
+    });
+  });
   $('#btn-list').addEventListener('click', () => { listFilter = 'all'; renderList(); show('list'); });
   $('#btn-list-back').addEventListener('click', () => goHome());
   onSeg('#seg-filter', v => { listFilter = v; renderList(); });

@@ -269,9 +269,18 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
 
 .toast {
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 90px); transform: translateX(-50%);
-  background: #1f2a3d; color: #fff; padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
+  box-shadow: 0 6px 20px rgba(10, 20, 40, .18);
   max-width: 90vw; text-align: center;
 }
+/* 되돌리기 버튼이 있는 알림 */
+.toast.has-act { display: flex; align-items: center; gap: 14px; text-align: left; padding: 8px 8px 8px 16px; white-space: nowrap; }
+.toast.has-act[hidden] { display: none; }
+.toast-act {
+  border: 1px solid color-mix(in srgb, currentColor 40%, transparent); background: color-mix(in srgb, currentColor 10%, transparent); color: inherit;
+  font-size: 13px; font-weight: 700; border-radius: 999px; padding: 6px 12px; flex: none;
+}
+.toast-act:active { background: color-mix(in srgb, currentColor 22%, transparent); }
 
 /* 아이패드 등 큰 화면 */
 @media (min-width: 700px) {
