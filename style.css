@@ -17,19 +17,20 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #11151d;
-    --card: #1b2130;
-    --text: #e8ecf4;
-    --muted: #95a0b4;
-    --line: #2a3244;
-    --primary: #8fb0e6;
-    --primary-soft: #22304a;
-    --on-primary: #11151d;
+    /* 다크: 네이비 바탕 + 연한 피치 */
+    --bg: #0e1626;
+    --card: #1a2640;
+    --text: #edf0f6;
+    --muted: #aeb7c7;
+    --line: #2b3b5c;
+    --primary: #e6cdbb;
+    --primary-soft: #0a111e;
+    --on-primary: #141a26;
     --ok: #38d9a9;
     --ok-soft: #133b31;
     --bad: #ff6b6b;
     --bad-soft: #43201f;
-    --blank: #2e3f5e;
+    --blank: #4f4349;
     --shadow: none;
   }
 }
@@ -123,8 +124,6 @@ button { cursor: pointer; }
 .quiz-body { padding-bottom: 8px; }
 .q-meta { display: flex; gap: 6px; margin-bottom: 10px; }
 .tag { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: 8px; padding: 2px 8px; }
-.tag.star { color: #b58500; background: rgba(255, 212, 59, .3); }
-.item .tag.star { font-size: 11px; vertical-align: 2px; }
 .tag.warn { color: var(--warn); background: rgba(245, 159, 0, .12); }
 .q-prompt { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
 .sent { background: var(--card); border-radius: 18px; padding: 16px 18px; margin-bottom: 10px; box-shadow: var(--shadow); }
@@ -392,7 +391,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .mode-switch a[data-m="ex"]{view-transition-name:mode-ex}
 .mode-switch a[data-m="wd"]{view-transition-name:mode-wd}
 .mode-switch svg{width:20px;height:20px}
-@media (prefers-color-scheme:dark){.mode-thumb{background:#2f3a52}}
+@media (prefers-color-scheme:dark){.mode-thumb{background:#3b4d73}}
 /* 예문 ↔ 단어 페이지 사이 전환 */
 @view-transition{navigation:auto}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.22s}
