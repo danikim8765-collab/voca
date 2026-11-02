@@ -443,14 +443,15 @@ export function applyResult(stat, outcome, { today = dateStr(), exam = '', sched
 export const isDue = (s, today) => !!(s && s.due && s.due <= today);
 
 /**
- * 오늘의 학습: 복습일이 된 단어 → (시험 3일 전부터) 범위 단어 3등분 중 오늘 몫 → 새 단어(하루 개수만큼)
+ * 오늘의 학습: (시험 3일 전부터) 범위 단어 3등분 중 오늘 몫 → 새 단어(하루 개수만큼)
+ * review(복습일이 된 단어)는 개수 표시용으로만 같이 돌려줌. 복습은 pickReview로 따로 '오늘의 복습'에서
  * allWords: 전체 단어(복습은 범위와 상관없이), rangeWords: 학습 범위(새 단어·시험 범위)
  */
 export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newPerDay = 20, exam = '' } = {}) {
   const st = id => normalizeStat(stats[id]);
   const review = allWords.filter(w => isDue(st(w.id), today))
     .sort((a, b) => st(a.id).due.localeCompare(st(b.id).due) || st(a.id).st - st(b.id).st);
-  const taken = new Set(review.map(w => w.id));
+  const taken = new Set();
 
   let final = [];
   let examInfo = null;
@@ -464,7 +465,7 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
       const size = Math.ceil(rangeWords.length / 3);
       final = rangeWords.slice(0, size * (k + 1)).filter(w => {
         const s = st(w.id);
-        return !taken.has(w.id) && !(s && s.s && dateStr(s.s) >= start);
+        return !(s && s.s && dateStr(s.s) >= start);
       });
       final.forEach(w => taken.add(w.id));
       examInfo.finalDay = k + 1;
@@ -475,6 +476,28 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
   const quota = Math.max(0, newPerDay - newToday);
   const fresh = rangeWords.filter(w => !stats[w.id] && !taken.has(w.id)).slice(0, quota);
   return { review, final, fresh, examInfo };
+}
+
+export const REVIEW_SIZE = 20; // 오늘의 복습 단어 수
+
+/**
+ * 복습할 단어 n개: 전에 배운 단어 중 오늘 배우거나 오늘 이미 본 단어는 빼고
+ * 복습일이 된 단어(오래 밀린 것부터) → 나머지는 약한 단어부터(단계 낮은, 많이 틀린, 오래 안 본 순)
+ */
+export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE } = {}) {
+  const pool = [];
+  for (const w of allWords) {
+    const s = normalizeStat(stats[w.id]);
+    if (!s || s.f === today || (s.s && dateStr(s.s) === today)) continue;
+    pool.push({ w, s, due: isDue(s, today) });
+  }
+  const miss = s => (s.w || 0) / Math.max(1, (s.c || 0) + (s.w || 0));
+  pool.sort((a, b) => (b.due - a.due)
+    || (a.due ? a.s.due.localeCompare(b.s.due) : 0)
+    || a.s.st - b.s.st
+    || miss(b.s) - miss(a.s)
+    || (a.s.s || 0) - (b.s.s || 0));
+  return pool.slice(0, Math.max(0, n)).map(p => p.w);
 }
 
 export function shuffle(arr, rand = Math.random) {

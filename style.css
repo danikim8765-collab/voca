@@ -250,7 +250,8 @@ button { cursor: pointer; }
 .extras b { color: var(--muted); font-weight: 600; margin-right: 6px; }
 
 /* 결과/단어장 */
-.score { font-size: 44px; font-weight: 900; color: var(--primary); }
+.cheer { font-size: 22px; font-weight: 800; color: var(--primary); margin-bottom: 6px; }
+.res-cheer { padding: 24px 16px; }
 .list { margin-bottom: 90px; }
 .item { background: var(--card); border-radius: 14px; padding: 12px 14px; margin-bottom: 8px; box-shadow: var(--shadow); }
 .item-head { display: flex; align-items: center; gap: 10px; }
@@ -411,6 +412,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .plan > div { flex: 1; background: var(--bg); border-radius: 12px; padding: 10px 8px; text-align: center; font-size: 13px; color: var(--muted); }
 .plan b { display: block; font-size: 22px; color: var(--text); }
 .today .btn { margin-bottom: 6px; }
+#card-extra .row.two { margin-bottom: 6px; }
 #plan-note { text-align: center; }
 .exam-row { gap: 8px; }
 .date-input { flex: 1; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); font-size: 16px; min-width: 0; }
