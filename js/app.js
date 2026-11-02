@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020022';
+const APP_VERSION = '202611020023';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -706,19 +706,22 @@ function renderChoices(actions) {
   });
 }
 
+const PAUSE_ACCEPT_MS = 800; // 원형까지 쓰고 이만큼 멈추면 정답
+
 function renderTyping(actions) {
   const parts = answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
   const helpText = parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요';
   // 정답: 단어 원형(abound)도, 예문 속 형태(abounds)도 인정 — 단어를 외우는 게 우선
   const cands = [...new Set([
+    q.w.word, // 단어장에 적힌 그대로 (convince A of B도)
     answerParts(q.w.blank).join(' '),
     typingHintTarget(q.w, q.b1 && q.b1.blanks, null),
     typingHintTarget(q.w, q.b2 && q.b2.blanks, null),
   ].map(normalizeAnswer).filter(Boolean))];
   const isRight = value => cands.includes(normalizeAnswer(value));
   // 더 이어질 정답이 없으면(abounds, fatal) 쓰는 순간 넘어가고,
-  // 원형이 예문 형태의 앞부분이면(abound → abounds) 확인을 눌러야 넘어감 (계속 써도 됨)
+  // 원형이 예문 형태의 앞부분이면(abound → abounds) 잠깐 멈추면(또는 확인) 정답으로 넘어감. 이어서 쓰면 그대로 계속
   const isFinal = value => {
     const n = normalizeAnswer(value);
     return cands.includes(n) && !cands.some(c => c !== n && c.startsWith(n));
@@ -731,10 +734,20 @@ function renderTyping(actions) {
     else answer(true, null);
     return true;
   };
+  const thisQ = q;
+  let pause = null;
   const autoCheck = value => {
+    clearTimeout(pause);
     if (isFinal(value)) return check(value);
+    const right = isRight(value);
     // 확인만 누르면 되는 상태면 확인 버튼을 초록으로
-    document.querySelectorAll('#q-actions .key.enter, #q-actions .btn.primary').forEach(b => b.classList.toggle('ready', isRight(value)));
+    document.querySelectorAll('#q-actions .key.enter, #q-actions .btn.primary').forEach(b => b.classList.toggle('ready', right));
+    if (right) {
+      pause = setTimeout(() => {
+        if (q !== thisQ || q.answered || !q.typing || normalizeAnswer(q.typing.get()) !== normalizeAnswer(value)) return;
+        if (check(value) && document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      }, PAUSE_ACCEPT_MS);
+    }
     return false;
   };
   const notYet = () => toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
