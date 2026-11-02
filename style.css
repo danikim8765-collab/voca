@@ -503,7 +503,4 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 #list .seg button { padding: 8px 2px; font-size: 14px; }
 .day.solo { background: var(--primary-soft); }
 .today-head .btn.small { width: auto; padding: 4px 10px; font-size: 13px; }
-/* DAY만 학습할 때: 문제 방식만 한 줄로 작게 */
-#card-kind.compact { display: flex; align-items: center; gap: 12px; padding-top: 10px; padding-bottom: 10px; }
-#card-kind.compact .label { margin: 0; white-space: nowrap; }
-#card-kind.compact .seg { flex: 1; margin: 0; }
+.dim { opacity: .4; filter: grayscale(1); pointer-events: none; }
