@@ -35,13 +35,13 @@ test('빈칸: 갈라진 숙어', () => {
 });
 
 test('빈칸: 어형 변화 / be동사 / 대소문자', () => {
-  assert.equal(show(makeBlanks('He was convinced of it.', 'be convinced of')), 'He [was convinced of] it.');
+  assert.equal(show(makeBlanks('He was convinced of it.', 'be convinced of')), 'He [was] [convinced] [of] it.');
   assert.equal(show(makeBlanks('Convincing people is hard.', 'convince')), '[Convincing] people is hard.');
-  assert.equal(show(makeBlanks('She made up her mind.', "make up one's mind")), 'She [made up] her [mind].');
+  assert.equal(show(makeBlanks('She made up her mind.', "make up one's mind")), 'She [made] [up] her [mind].');
 });
 
 test('빈칸: 단어 반복, 단어 일부와 혼동하지 않기', () => {
-  assert.equal(show(makeBlanks('Give up? Never give up.', 'give up')), '[Give up]? Never [give up].');
+  assert.equal(show(makeBlanks('Give up? Never give up.', 'give up')), '[Give] [up]? Never [give] [up].');
   assert.equal(show(makeBlanks('The other mother.', 'other')), 'The [other] mother.');
 });
 
@@ -153,9 +153,9 @@ test('실제 데이터에서 놓쳤던 형태', () => {
   assert.equal(show(makeBlanks('He got upset and flung his papers.', 'fling')), 'He got upset and [flung] his papers.');
   assert.equal(show(makeBlanks('He strode confidently into the room.', 'stride')), 'He [strode] confidently into the room.');
   assert.equal(show(makeBlanks('Nonverbal cues are better than verbal cues.', 'cue')), 'Nonverbal [cues] are better than verbal [cues].');
-  assert.equal(show(makeBlanks('They are cutting off projects.', 'cut off')), 'They are [cutting off] projects.');
+  assert.equal(show(makeBlanks('They are cutting off projects.', 'cut off')), 'They are [cutting] [off] projects.');
   assert.equal(show(makeBlanks('He did not want to let his son down.', 'let down')), 'He did not want to [let] his son [down].');
-  assert.equal(show(makeBlanks('Talent to carry this off. / He carried off the prize.', 'carry off')), 'Talent to [carry] this [off]. / He [carried off] the prize.');
+  assert.equal(show(makeBlanks('Talent to carry this off. / He carried off the prize.', 'carry off')), 'Talent to [carry] this [off]. / He [carried] [off] the prize.');
   assert.equal(show(makeBlanks('Convince me of it. / We convinced them of it.', 'convince A of B')), '[Convince] me [of] it. / We [convinced] them [of] it.');
   assert.equal(show(makeBlanks('She altered the alternative plan.', 'alter')), 'She [altered] the alternative plan.');
   assert.equal(show(makeBlanks('The sign was swaying. He preoccupied himself.', 'sway')), 'The sign was [swaying]. He preoccupied himself.');
@@ -215,7 +215,7 @@ test('직접 지정한 해석 강조어', async () => {
 });
 
 test('불규칙 동사: 겹치는 형태, 접두사 붙은 동사', () => {
-  assert.equal(show(makeBlanks("He'd laid by enough money.", 'lay by')), "He'd [laid by] enough money.");
+  assert.equal(show(makeBlanks("He'd laid by enough money.", 'lay by')), "He'd [laid] [by] enough money.");
   assert.equal(show(makeBlanks('The rain lay on the ground.', 'lie')), 'The rain [lay] on the ground.');
   assert.equal(show(makeBlanks('The project overran its budget.', 'overrun')), 'The project [overran] its budget.');
   assert.equal(show(makeBlanks('She was misled by the ad.', 'mislead')), 'She was [misled] by the ad.');
@@ -306,4 +306,17 @@ test('직접 입력: 원형, 예문 형태, 단어장에 적힌 그대로 모두
   assert.ok(isTypedCorrect('convinced of', p, ['convinced', 'of'], null));
   assert.ok(isTypedCorrect('convince A of B', p, ['convinced', 'of'], null));
   assert.ok(!isTypedCorrect('outlawing', w, ['outlawed'], null));
+});
+
+test('숙어는 단어마다 칸, 반복된 숙어는 한 번만 써도 정답', async () => {
+  const { blankUnit, typingHintTarget } = await import('../js/core.js');
+  const b = makeBlanks('He took over the firm. They took over the city.', 'take over');
+  assert.deepEqual(b.blanks, ['took', 'over', 'took', 'over']);
+  assert.deepEqual(blankUnit(b.blanks), ['took', 'over']);
+  assert.deepEqual(blankUnit(['cues', 'cues']), ['cues']);
+  assert.deepEqual(blankUnit(['face', 'to', 'face']), ['face', 'to', 'face']);
+  const w = { word: 'take over', blank: 'take over' };
+  assert.equal(typingHintTarget(w, b.blanks, null), 'took over');
+  assert.ok(isTypedCorrect('take over', w, b.blanks, null));
+  assert.ok(isTypedCorrect('took over', w, b.blanks, null));
 });

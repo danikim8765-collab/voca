@@ -1,14 +1,14 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
-  highlightMeaning, nextLetterHint, typingHintTarget, addDays, gradeMeaning, pickMeaningDistractors,
+  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks,
 } from './core.js';
 import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020027';
+const APP_VERSION = '202611020028';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -710,9 +710,10 @@ function renderChoices(actions) {
 const PAUSE_ACCEPT_MS = 800; // 원형까지 쓰고 이만큼 멈추면 정답
 
 function renderTyping(actions) {
-  const parts = answerParts(q.w.blank).length;
+  // 빈칸 수: 숙어는 단어마다 한 칸 (반복된 숙어는 한 번 분량)
+  const parts = blankUnit((q.b1 && q.b1.blanks.length ? q.b1 : q.b2 || { blanks: [] }).blanks).length || answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
-  const helpText = parts > 1 ? '빈칸 사이는 띄어쓰기로 구분 (예: convinced of)' : '대소문자는 구분하지 않아요';
+  const helpText = parts > 1 ? '칸을 다 채우면 다음 칸으로 넘어가요 (띄어쓰기로도 넘어가요)' : '대소문자는 구분하지 않아요';
   // 정답: 단어 원형(abound)도, 예문 속 형태(abounds)도 인정 — 단어를 외우는 게 우선
   const cands = [...new Set([
     q.w.word, // 단어장에 적힌 그대로 (convince A of B도)
@@ -721,6 +722,15 @@ function renderTyping(actions) {
     typingHintTarget(q.w, q.b2 && q.b2.blanks, null),
   ].map(normalizeAnswer).filter(Boolean))];
   const isRight = value => cands.includes(normalizeAnswer(value));
+  // 칸을 다 채우면 다음 칸으로: 지금 칸에 쓴 단어가 그 칸의 정답 단어이고, 그걸로 시작하는 더 긴 정답 단어가 없을 때
+  const candWords = cands.map(c => c.split(' '));
+  const fillsSlot = value => {
+    const ws = value.toLowerCase().replace(/[’‘]/g, "'").split(' ');
+    const i = ws.length - 1, cur = ws[i], prev = ws.slice(0, i).join(' ');
+    if (!cur) return false;
+    const same = candWords.filter(cw => cw.length > i && cw.slice(0, i).join(' ') === prev);
+    return same.some(cw => cw.length > i + 1 && cw[i] === cur) && !same.some(cw => cw[i] !== cur && cw[i].startsWith(cur));
+  };
   // 더 이어질 정답이 없으면(outlawed, fatal) 쓰는 순간 넘어감.
   // 원형이 예문 형태의 앞부분이면(outlaw → outlawed): 설정에 따라 0.8초 멈추면(또는 확인) 넘어가거나 바로 넘어감
   const isFinal = value => {
@@ -757,8 +767,8 @@ function renderTyping(actions) {
   };
   const notYet = () => toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   if (settings.appKeyboard) {
-    const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 띄어쓰기로 다음 빈칸` : '키보드로 바로 입력하세요';
-    return renderAppKeyboard(actions, kbHelp, check, autoCheck, notYet);
+    const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '키보드로 바로 입력하세요';
+    return renderAppKeyboard(actions, kbHelp, check, autoCheck, notYet, fillsSlot);
   }
 
   const input = el('input', 'type-input');
@@ -785,32 +795,35 @@ function renderTyping(actions) {
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-  input.addEventListener('input', () => { if (autoCheck(input.value)) input.blur(); });
+  input.addEventListener('input', e => {
+    // 칸을 다 채우면 띄어쓰기를 넣어 다음 칸으로 (끝에 이어 쓸 때만)
+    if (e.inputType && e.inputType.startsWith('insert') && input.selectionStart === input.value.length && fillsSlot(input.value)) input.value += ' ';
+    if (autoCheck(input.value)) input.blur();
+  });
   setTimeout(() => input.focus(), 50);
 }
 
 // ---------- 앱 자체 영어 키보드 (폰 키보드 대신) ----------
 // 입력값을 문장의 빈칸들에 나눠 넣기. 같은 단어가 반복된 빈칸(cues … cues)은 모두 같은 값
 function fillBlanks(value, targets) {
-  if (targets.length <= 1 || targets.every(t => t.toLowerCase() === targets[0].toLowerCase())) {
-    return { fill: targets.map(() => value), active: 0 };
-  }
+  // 같은 말이 반복된 빈칸(give up … give up)은 한 번 분량에 나눠 넣고 반복되는 칸에도 똑같이
+  const unit = blankUnit(targets);
   const words = value.split(' ');
-  const fill = [];
+  const uf = [];
   let wi = 0, active = 0;
-  targets.forEach((t, i) => {
-    const n = i === targets.length - 1 ? Infinity : t.trim().split(/\s+/).length;
+  unit.forEach((t, i) => {
+    const n = i === unit.length - 1 ? Infinity : t.trim().split(/\s+/).length;
     const take = words.slice(wi, wi + n);
     if (take.length) active = i;
     wi += take.length;
-    fill.push(take.join(' '));
+    uf.push(take.join(' '));
   });
-  return { fill, active };
+  return { fill: targets.map((_, i) => uf[i % unit.length] || ''), active };
 }
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', "'zxcvbnm⌫"];
 let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
 
-function renderAppKeyboard(actions, helpText, check, autoCheck, notYet) {
+function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlot = () => false) {
   $('#quiz').classList.add('kb-mode');
   const top = el('div', 'kb-top');
   const hintBtn = el('button', 'btn ghost small kb-hint', '💡 힌트');
@@ -853,7 +866,10 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet) {
       if (q.answered) return;
       if (key === 'back') kb.value = kb.value.slice(0, -1);
       else if (key === ' ') { if (kb.value && !kb.value.endsWith(' ')) kb.value += ' '; }
-      else if (kb.value.length < 60) kb.value += key;
+      else if (kb.value.length < 60) {
+        kb.value += key;
+        if (fillsSlot(kb.value)) kb.value += ' '; // 칸을 다 채우면 다음 칸으로
+      }
       render();
       autoCheck(kb.value);
     },

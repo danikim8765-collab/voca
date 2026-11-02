@@ -340,9 +340,19 @@ function build(sent, ranges, preParts) {
   ranges.forEach((r, i) => {
     if (r.start < pos) return;
     if (r.start > pos) segs.push({ t: 'text', v: sent.slice(pos, r.start) });
-    const v = r.pre ? (preParts && preParts[i]) || '' : sent.slice(r.start, r.end);
-    segs.push({ t: 'blank', v, i: blanks.length });
-    blanks.push(v);
+    if (r.pre) {
+      const v = (preParts && preParts[i]) || '';
+      segs.push({ t: 'blank', v, i: blanks.length });
+      blanks.push(v);
+    } else {
+      // 숙어는 단어마다 칸 하나씩 (cutting off → [cutting] [off])
+      for (const piece of sent.slice(r.start, r.end).split(/(\s+)/)) {
+        if (!piece) continue;
+        if (/^\s+$/.test(piece)) { segs.push({ t: 'text', v: piece }); continue; }
+        segs.push({ t: 'blank', v: piece, i: blanks.length });
+        blanks.push(piece);
+      }
+    }
     pos = r.end;
   });
   if (pos < sent.length) segs.push({ t: 'text', v: sent.slice(pos) });
@@ -363,16 +373,13 @@ export function normalizeAnswer(s) {
 export function isTypedCorrect(input, word, blanks1, blanks2) {
   const got = normalizeAnswer(input);
   if (!got) return false;
+  // 같은 말이 여러 번 가려진 경우(give up … give up) 한 번만 입력해도 정답
   const candidates = [
     word.word,
     answerParts(word.blank).join(' '),
-    (blanks1 || []).join(' '),
-    (blanks2 || []).join(' '),
+    blankUnit(blanks1).join(' '),
+    blankUnit(blanks2).join(' '),
   ].map(normalizeAnswer).filter(Boolean);
-  // 한 번만 쓰인 단어가 문장에 여러 번 가려진 경우(같은 단어 반복) 한 번만 입력해도 정답
-  for (const b of [blanks1, blanks2]) {
-    if (b && b.length > 1 && b.every(x => normalizeAnswer(x) === normalizeAnswer(b[0]))) candidates.push(normalizeAnswer(b[0]));
-  }
   return candidates.includes(got);
 }
 
@@ -626,8 +633,17 @@ export function sameStats(x, y) {
 // 마지막 글자는 알려주지 않는다. 더 줄 힌트가 없으면 null.
 export function typingHintTarget(word, blanks1, blanks2) {
   const pick = [blanks1, blanks2].find(b => b && b.length) || answerParts(word.blank);
-  const uniq = pick.every(x => x.toLowerCase() === pick[0].toLowerCase()) ? [pick[0]] : pick;
-  return uniq.join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+  return blankUnit(pick).join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+}
+
+// 같은 말이 문장에 여러 번 가려졌으면(cues … cues, give up … give up) 한 번 분량만: 정답은 그 한 번
+export function blankUnit(blanks) {
+  const b = blanks || [];
+  const low = b.map(x => String(x).toLowerCase());
+  for (let p = 1; p < b.length; p++) {
+    if (b.length % p === 0 && low.every((x, i) => x === low[i % p])) return b.slice(0, p);
+  }
+  return b;
 }
 
 export function nextLetterHint(input, target) {

@@ -27,6 +27,8 @@
 
 ### 빈칸 만드는 방식
 
+숙어는 단어마다 칸이 하나씩 뚫려요(cutting off → [cutting] [off]). 직접 입력에서 한 칸을 다 채우면 다음 칸으로 넘어가요.
+
 `빈칸형태`가 없으면 `단어` 컬럼으로 예문에서 찾아요. 변화형(convinced, studied, stopped, cutting), 불규칙 동사(flung, strode, took over), 떨어진 구동사(let his son down → [let] his son [down])도 찾아요.
 `빈칸형태`를 쓸 땐 예문에 실제로 들어 있는 형태로 적고, 사이에 다른 말이 끼는 숙어는 `~`, `…`, `...`, `A`, `B`, `sb`, `sth`, `one's` 등으로 구분하면 됩니다.
 
