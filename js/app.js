@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020017';
+const APP_VERSION = '202611020018';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -352,9 +352,10 @@ function renderPlan() {
   $('#today-flow').hidden = stage === 'day';
   $('#btn-solo-close').hidden = stage !== 'day';
   $('#stage-day').hidden = stage !== 'day';
-  // DAY만 학습할 땐 정규 학습 범위는 회색으로 (정규 학습으로 돌아가면 다시 켜짐)
-  $('#card-range').classList.toggle('off', stage === 'day');
-  $('#card-range').querySelectorAll('select, button').forEach(x => (x.disabled = stage === 'day'));
+  // DAY만 학습할 땐 정규 학습용 칸(학습 범위, 하루 새 단어 수, 시험일)은 숨기고 문제 방식만. 돌아가면 다시 보임
+  $('#card-range').hidden = stage === 'day';
+  $('#regular-opts').hidden = stage === 'day';
+  $('#card-kind').classList.toggle('compact', stage === 'day');
   document.querySelectorAll('#today-flow span').forEach(sp => {
     const i = order.indexOf(sp.dataset.s), cur = order.indexOf(stage);
     sp.className = i < cur ? 'done' : i === cur ? 'on' : '';
