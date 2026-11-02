@@ -533,3 +533,23 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 @keyframes ready-pop { 0% { transform: scale(1); } 55% { transform: scale(1.12); } 100% { transform: scale(1); } }
 @keyframes ready-glow { to { box-shadow: 0 0 0 5px rgba(var(--ok-glow), .3), 0 0 30px 10px rgba(var(--ok-glow), .7); } }
 @keyframes ready-fill { to { transform: scaleX(1); } }
+
+/* 직접 입력 오답 풀이 말풍선: 철자(노랑) · 비슷함(초록) · 다른 말(빨강) */
+:root { --spell: #d9a700; --spell-soft: #fff5bf; }
+@media (prefers-color-scheme: dark) { :root { --spell: #d9b440; --spell-soft: #3a3215; } }
+.coach {
+  display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin-bottom: 8px;
+  border: 2px solid; border-radius: 14px; color: var(--text); font-size: 15px; line-height: 1.5;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .14); animation: coach-in .22s ease-out;
+  pointer-events: none; transition: opacity .3s ease, transform .3s ease; /* 눌러도 아래(키보드·문장)가 그대로 눌림 */
+}
+.kb-mode .coach { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); margin: 0; }
+.coach.spell { background: var(--spell-soft); border-color: var(--spell); }
+.coach.near { background: var(--ok-soft); border-color: var(--ok); }
+.coach.off { background: var(--bad-soft); border-color: var(--bad); }
+.coach-ic { font-size: 18px; line-height: 1.35; flex: none; }
+.coach-msg { flex: 1; min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
+.coach-diff { font-weight: 700; letter-spacing: .03em; }
+.coach-diff b { color: var(--bad); font-weight: 800; }
+@keyframes coach-in { from { opacity: 0; transform: translateY(6px); } }
+.coach.out { opacity: 0; transform: translateY(6px); }

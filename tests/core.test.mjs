@@ -35,13 +35,13 @@ test('빈칸: 갈라진 숙어', () => {
 });
 
 test('빈칸: 어형 변화 / be동사 / 대소문자', () => {
-  assert.equal(show(makeBlanks('He was convinced of it.', 'be convinced of')), 'He [was convinced of] it.');
+  assert.equal(show(makeBlanks('He was convinced of it.', 'be convinced of')), 'He [was] [convinced] [of] it.');
   assert.equal(show(makeBlanks('Convincing people is hard.', 'convince')), '[Convincing] people is hard.');
-  assert.equal(show(makeBlanks('She made up her mind.', "make up one's mind")), 'She [made up] her [mind].');
+  assert.equal(show(makeBlanks('She made up her mind.', "make up one's mind")), 'She [made] [up] her [mind].');
 });
 
 test('빈칸: 단어 반복, 단어 일부와 혼동하지 않기', () => {
-  assert.equal(show(makeBlanks('Give up? Never give up.', 'give up')), '[Give up]? Never [give up].');
+  assert.equal(show(makeBlanks('Give up? Never give up.', 'give up')), '[Give] [up]? Never [give] [up].');
   assert.equal(show(makeBlanks('The other mother.', 'other')), 'The [other] mother.');
 });
 
@@ -153,9 +153,9 @@ test('실제 데이터에서 놓쳤던 형태', () => {
   assert.equal(show(makeBlanks('He got upset and flung his papers.', 'fling')), 'He got upset and [flung] his papers.');
   assert.equal(show(makeBlanks('He strode confidently into the room.', 'stride')), 'He [strode] confidently into the room.');
   assert.equal(show(makeBlanks('Nonverbal cues are better than verbal cues.', 'cue')), 'Nonverbal [cues] are better than verbal [cues].');
-  assert.equal(show(makeBlanks('They are cutting off projects.', 'cut off')), 'They are [cutting off] projects.');
+  assert.equal(show(makeBlanks('They are cutting off projects.', 'cut off')), 'They are [cutting] [off] projects.');
   assert.equal(show(makeBlanks('He did not want to let his son down.', 'let down')), 'He did not want to [let] his son [down].');
-  assert.equal(show(makeBlanks('Talent to carry this off. / He carried off the prize.', 'carry off')), 'Talent to [carry] this [off]. / He [carried off] the prize.');
+  assert.equal(show(makeBlanks('Talent to carry this off. / He carried off the prize.', 'carry off')), 'Talent to [carry] this [off]. / He [carried] [off] the prize.');
   assert.equal(show(makeBlanks('Convince me of it. / We convinced them of it.', 'convince A of B')), '[Convince] me [of] it. / We [convinced] them [of] it.');
   assert.equal(show(makeBlanks('She altered the alternative plan.', 'alter')), 'She [altered] the alternative plan.');
   assert.equal(show(makeBlanks('The sign was swaying. He preoccupied himself.', 'sway')), 'The sign was [swaying]. He preoccupied himself.');
@@ -215,7 +215,7 @@ test('직접 지정한 해석 강조어', async () => {
 });
 
 test('불규칙 동사: 겹치는 형태, 접두사 붙은 동사', () => {
-  assert.equal(show(makeBlanks("He'd laid by enough money.", 'lay by')), "He'd [laid by] enough money.");
+  assert.equal(show(makeBlanks("He'd laid by enough money.", 'lay by')), "He'd [laid] [by] enough money.");
   assert.equal(show(makeBlanks('The rain lay on the ground.', 'lie')), 'The rain [lay] on the ground.');
   assert.equal(show(makeBlanks('The project overran its budget.', 'overrun')), 'The project [overran] its budget.');
   assert.equal(show(makeBlanks('She was misled by the ad.', 'mislead')), 'She was [misled] by the ad.');
@@ -306,4 +306,38 @@ test('직접 입력: 원형, 예문 형태, 단어장에 적힌 그대로 모두
   assert.ok(isTypedCorrect('convinced of', p, ['convinced', 'of'], null));
   assert.ok(isTypedCorrect('convince A of B', p, ['convinced', 'of'], null));
   assert.ok(!isTypedCorrect('outlawing', w, ['outlawed'], null));
+});
+
+test('숙어는 단어마다 칸, 반복된 숙어는 한 번만 써도 정답', async () => {
+  const { blankUnit, typingHintTarget } = await import('../js/core.js');
+  const b = makeBlanks('He took over the firm. They took over the city.', 'take over');
+  assert.deepEqual(b.blanks, ['took', 'over', 'took', 'over']);
+  assert.deepEqual(blankUnit(b.blanks), ['took', 'over']);
+  assert.deepEqual(blankUnit(['cues', 'cues']), ['cues']);
+  assert.deepEqual(blankUnit(['face', 'to', 'face']), ['face', 'to', 'face']);
+  const w = { word: 'take over', blank: 'take over' };
+  assert.equal(typingHintTarget(w, b.blanks, null), 'took over');
+  assert.ok(isTypedCorrect('take over', w, b.blanks, null));
+  assert.ok(isTypedCorrect('took over', w, b.blanks, null));
+});
+
+test('직접 입력 오답 풀이: 철자 · 형태 · 파생어 · 유의어 · 반대말 · 다른 단어', async () => {
+  const { coachFeedback, spellDiff, shortMeaning } = await import('../js/core.js');
+  const fatal = { id: 'f', word: 'fatal', blank: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한',
+    extras: [['유의어', 'deadly, lethal, mortal'], ['반의어', 'harmless'], ['파생어', 'fatality 명 1. 사망자(수) / fatally 부 치명적으로']] };
+  const other = { id: 'o', word: 'abide', meaning: '1. ((~ by)) (규칙 등을) 준수하다' };
+  const opt = { cands: ['fatal'], find: t => (/^abid(e|es|ed|ing)$/.test(t) ? other : null) };
+  const k = s => { const f = coachFeedback(s, fatal, opt); return f && f.kind; };
+  assert.equal(coachFeedback('fatal', fatal, opt), null);
+  assert.equal(k('fatel'), 'spell');
+  assert.deepEqual(spellDiff('fatel', 'fatal').segs.map(x => x.t === 'ok' ? x.v : `[${x.v}]`).join(''), 'fat[e]l');
+  assert.equal(spellDiff('fata', 'fatal').segs.map(x => x.v).join(''), 'fata_');
+  assert.equal(k('fatals'), 'near');
+  assert.match(coachFeedback('fatality', fatal, opt).text, /명사/);
+  assert.match(coachFeedback('deadly', fatal, opt).text, /유의어/);
+  assert.equal(k('harmless'), 'off');
+  assert.match(coachFeedback('abided', fatal, opt).text, /'abide'는 '\(규칙 등을\) 준수하다'라는 뜻이에요\. 찾는 단어는 '치명적인'이라는 뜻이에요\./);
+  assert.ok(!/찾는 단어/.test(coachFeedback('zzzz', fatal, { ...opt, showMeaning: false }).text));
+  assert.equal(shortMeaning('((주로 수동태로)) 사로잡다, 집착하게 하다[집착하다]'), '사로잡다');
+  assert.match(coachFeedback('deprive', { word: 'deprive A of B', blank: 'deprive A of B', meaning: '빼앗다', extras: [] }, { cands: ['deprive a of b', 'deprive of'] }).text, /빈칸이 2곳/);
 });

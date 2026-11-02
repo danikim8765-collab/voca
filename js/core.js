@@ -340,9 +340,19 @@ function build(sent, ranges, preParts) {
   ranges.forEach((r, i) => {
     if (r.start < pos) return;
     if (r.start > pos) segs.push({ t: 'text', v: sent.slice(pos, r.start) });
-    const v = r.pre ? (preParts && preParts[i]) || '' : sent.slice(r.start, r.end);
-    segs.push({ t: 'blank', v, i: blanks.length });
-    blanks.push(v);
+    if (r.pre) {
+      const v = (preParts && preParts[i]) || '';
+      segs.push({ t: 'blank', v, i: blanks.length });
+      blanks.push(v);
+    } else {
+      // 숙어는 단어마다 칸 하나씩 (cutting off → [cutting] [off])
+      for (const piece of sent.slice(r.start, r.end).split(/(\s+)/)) {
+        if (!piece) continue;
+        if (/^\s+$/.test(piece)) { segs.push({ t: 'text', v: piece }); continue; }
+        segs.push({ t: 'blank', v: piece, i: blanks.length });
+        blanks.push(piece);
+      }
+    }
     pos = r.end;
   });
   if (pos < sent.length) segs.push({ t: 'text', v: sent.slice(pos) });
@@ -363,16 +373,13 @@ export function normalizeAnswer(s) {
 export function isTypedCorrect(input, word, blanks1, blanks2) {
   const got = normalizeAnswer(input);
   if (!got) return false;
+  // 같은 말이 여러 번 가려진 경우(give up … give up) 한 번만 입력해도 정답
   const candidates = [
     word.word,
     answerParts(word.blank).join(' '),
-    (blanks1 || []).join(' '),
-    (blanks2 || []).join(' '),
+    blankUnit(blanks1).join(' '),
+    blankUnit(blanks2).join(' '),
   ].map(normalizeAnswer).filter(Boolean);
-  // 한 번만 쓰인 단어가 문장에 여러 번 가려진 경우(같은 단어 반복) 한 번만 입력해도 정답
-  for (const b of [blanks1, blanks2]) {
-    if (b && b.length > 1 && b.every(x => normalizeAnswer(x) === normalizeAnswer(b[0]))) candidates.push(normalizeAnswer(b[0]));
-  }
   return candidates.includes(got);
 }
 
@@ -626,8 +633,17 @@ export function sameStats(x, y) {
 // 마지막 글자는 알려주지 않는다. 더 줄 힌트가 없으면 null.
 export function typingHintTarget(word, blanks1, blanks2) {
   const pick = [blanks1, blanks2].find(b => b && b.length) || answerParts(word.blank);
-  const uniq = pick.every(x => x.toLowerCase() === pick[0].toLowerCase()) ? [pick[0]] : pick;
-  return uniq.join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+  return blankUnit(pick).join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+}
+
+// 같은 말이 문장에 여러 번 가려졌으면(cues … cues, give up … give up) 한 번 분량만: 정답은 그 한 번
+export function blankUnit(blanks) {
+  const b = blanks || [];
+  const low = b.map(x => String(x).toLowerCase());
+  for (let p = 1; p < b.length; p++) {
+    if (b.length % p === 0 && low.every((x, i) => x === low[i % p])) return b.slice(0, p);
+  }
+  return b;
 }
 
 export function nextLetterHint(input, target) {
@@ -741,4 +757,123 @@ export function synAnt(extras) {
   const pick = re => (extras || []).filter(([k]) => re.test(k)).map(([, v]) => v).join(', ');
   const SYN = /유의어|동의어|synonym/i, ANT = /반의어|반대말|antonym/i;
   return { syn: pick(SYN), ant: pick(ANT), rest: (extras || []).filter(([k]) => !SYN.test(k) && !ANT.test(k)) };
+}
+
+// ---------- 직접 입력 오답 풀이 (말풍선) ----------
+// 틀린 답이 왜 틀렸는지 단어 데이터(뜻·유의어·반의어·파생어)만으로 짐작해서 알려줌. 서버 없이 동작
+const POS_KO = { 명: '명사', 형: '형용사', 부: '부사', 동: '동사', 전: '전치사', 접: '접속사' };
+
+// 단어(숙어)의 모든 변화형과 통째로 맞는지: outlaws ↔ outlaw, took ↔ take, convinced of ↔ convince A of B
+function formRegex(text) {
+  const parts = answerParts(text);
+  if (!parts.length) return null;
+  const body = parts.join(' ').split(/\s+/).filter(Boolean).map((w, i) => wordPattern(w, i === 0)).join('\\s+');
+  return new RegExp(`^(?:${body})$`, 'i');
+}
+const isFormOf = (typed, text) => { const re = formRegex(text); return !!(re && re.test(typed)); };
+
+// "1. obey, follow, comply with / 2. tolerate" → ['obey', 'follow', 'comply with', 'tolerate']
+function listWords(s) {
+  return String(s || '').split(/[,/;]/).map(x => x.replace(/^\s*\d+\.\s*/, '').replace(/\([^)]*\)/g, '').trim()).filter(x => /^[A-Za-z][A-Za-z' -]*$/.test(x));
+}
+// "fatality 명 1. 사망자(수) / fatally 부 치명적으로" → [{ word, pos, meaning }]
+function derivatives(s) {
+  return String(s || '').split(/\s\/\s/).map(x => x.trim().match(/^([A-Za-z][A-Za-z' -]*?)\s+(명|형|부|동|전|접)\s*(.*)$/))
+    .filter(Boolean).map(m => ({ word: m[1], pos: POS_KO[m[2]], meaning: shortMeaning(m[3]) }));
+}
+// 받침 있으면 '이라는', 없으면 '라는': 명확한 → 명확한이라는, 치명적인 → 치명적인이라는, 사로잡다 → 사로잡다라는
+const iraneun = ko => { const c = ko.charCodeAt(ko.length - 1); return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? '이라는' : '라는'; };
+
+// 뜻의 첫 번째 의미만 짧게: "((주로 수동태로)) 사로잡다, 집착하게 하다" → "사로잡다"
+export function shortMeaning(m) {
+  const first = String(m || '').replace(/\(\([^)]*\)\)/g, '').split(/\s*\d+\.\s*/).map(x => x.trim()).find(Boolean) || '';
+  return first.split(/[,;]/)[0].replace(/\[[^\]]*\]/g, '').trim();
+}
+
+// 철자 차이: 맞는 글자 / 틀린 글자 / 빠진 글자(_) 조각과 다른 글자 수
+export function spellDiff(typed, answer) {
+  const a = typed, b = answer, n = a.length, m = b.length;
+  const d = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, (_, j) => (i ? (j ? 0 : i) : j)));
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  const segs = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i && j && a[i - 1] === b[j - 1] && d[i][j] === d[i - 1][j - 1]) { segs.push({ t: 'ok', v: a[--i] }); j--; }
+    else if (i && j && d[i][j] === d[i - 1][j - 1] + 1) { segs.push({ t: 'bad', v: a[--i] }); j--; }
+    else if (j && d[i][j] === d[i][j - 1] + 1) { segs.push({ t: 'miss', v: '_' }); j--; }
+    else { segs.push({ t: 'bad', v: a[--i] }); }
+  }
+  return { segs: segs.reverse(), dist: d[n][m] };
+}
+
+/**
+ * 오답 풀이: { kind: 'spell'|'near'|'off', text, diff? }
+ *  spell(노랑) 철자가 조금 다름 · 빈칸을 덜 채움
+ *  near(초록) 같은 단어의 다른 형태 · 같은 뿌리의 다른 품사 · 유의어
+ *  off(빨강) 반대말 · 다른 단어 · 모르는 말
+ * cands: 정답으로 인정하는 말(정규화된 것), find(text): 그 말이 단어장의 다른 단어면 그 단어, showMeaning: 찾는 단어의 뜻을 알려줘도 되는지
+ */
+export function coachFeedback(input, w, { cands = [], find = () => null, showMeaning = true } = {}) {
+  const typed = normalizeAnswer(input);
+  if (!typed || cands.includes(typed)) return null;
+  const words = typed.split(' ');
+  const wm = shortMeaning(w.meaning);
+  const want = showMeaning && wm ? ` 찾는 단어는 '${wm}'${iraneun(wm)} 뜻이에요.` : '';
+
+  // 빈칸을 덜 채움: deprive → deprive of
+  const short = cands.filter(c => { const cw = c.split(' '); return cw.length > words.length && cw.slice(0, words.length).join(' ') === typed; })
+    .sort((a, b) => a.split(' ').length - b.split(' ').length)[0];
+  if (short) {
+    const n = short.split(' ').length;
+    return { kind: 'spell', text: `빈칸이 ${n}곳이에요. 나머지 ${n - words.length}곳도 채워 주세요.` };
+  }
+  // 같은 단어의 다른 형태: outlaws
+  if (isFormOf(typed, w.word) || isFormOf(typed, w.blank)) {
+    return { kind: 'near', text: `'${typed}'는 형태만 달라요. 원형이나 예문 속 형태로 써 보세요.` };
+  }
+  const { syn, ant } = synAnt(w.extras);
+  const der = derivatives((w.extras.find(([k]) => /파생어/.test(k)) || [])[1]);
+  const d = der.find(x => isFormOf(typed, x.word));
+  if (d) {
+    return { kind: 'near', text: `'${d.word}'는 같은 뿌리의 ${d.pos || '다른 품사'}예요${d.meaning ? `('${d.meaning}')` : ''}. 예문 자리에 맞는 품사로 바꿔 보세요.` };
+  }
+  const other = find(typed);
+  const om = other ? shortMeaning(other.meaning) : '';
+  const sy = listWords(syn).find(x => isFormOf(typed, x));
+  if (sy) {
+    return { kind: 'near', text: `'${typed}'는 뜻이 비슷한 말(유의어)이에요${om ? `('${om}')` : ''}. 예문에 쓰인 바로 그 단어를 찾아보세요.` };
+  }
+  const an = listWords(ant).find(x => isFormOf(typed, x));
+  if (an) return { kind: 'off', text: `'${typed}'는 반대 뜻이에요${om ? `('${om}')` : ''}. 예문 뜻을 다시 읽어 보세요.${want}` };
+
+  // 철자 비교는 정답 중 가장 가까운 것과
+  let best = null;
+  for (const c of cands) {
+    const r = spellDiff(typed, c);
+    if (!best || r.dist < best.dist) best = { ...r, c };
+  }
+  const near = best && best.dist <= (best.c.length <= 4 ? 1 : best.c.length <= 8 ? 2 : 3);
+  if (other) {
+    return { kind: 'off', text: `'${other.word}'는 '${om}'${iraneun(om)} 뜻이에요.${near ? ' 철자가 비슷한 다른 단어예요.' : ''}${want}` };
+  }
+  if (near) {
+    return { kind: 'spell', diff: best.segs, text: `정답과 ${best.dist === 1 ? '한' : best.dist === 2 ? '두' : '세'} 글자 달라요` };
+  }
+  return { kind: 'off', text: `단어장에 없는 말이에요.${want || ' 예문 해석을 보고 다시 떠올려 보세요.'} 모르면 💡 힌트를 눌러 보세요.` };
+}
+
+// 단어장 전체에서 그 말(변화형 포함)인 단어 찾기
+export function makeWordFinder(words) {
+  const cache = new Map();
+  return (typed, exceptId) => {
+    for (const w of words) {
+      if (w.id === exceptId) continue;
+      let re = cache.get(w.id);
+      if (re === undefined) { re = formRegex(w.word); cache.set(w.id, re); }
+      if (re && re.test(typed)) return w;
+    }
+    return null;
+  };
 }
