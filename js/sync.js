@@ -2,12 +2,14 @@
 import { mergeProgress, sameStats, samePrefs } from './core.js';
 
 const API = 'https://api.github.com';
-const FILE = 'voca-progress.json';
-const KEY = 'voca.sync.v1';
+// 예문 모드 진도는 voca-progress.json, 단어 모드는 같은 Gist의 voca-word-progress.json
+const FILES = ['voca-progress.json', 'voca-word-progress.json'];
+const KEY = 'voca.sync.v1'; // 토큰·Gist는 두 모드가 같이 씀
 
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 
-export function createSync({ getLocal, applyMerged, onStatus }) {
+export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0] }) {
+  const FILE = file;
   let conf = load(); // { token, gistId, login, last }
   let running = null;
   let again = false;
@@ -33,11 +35,11 @@ export function createSync({ getLocal, applyMerged, onStatus }) {
   async function findOrCreateGist() {
     for (let page = 1; page <= 10; page++) {
       const list = await gh(`/gists?per_page=100&page=${page}`);
-      const g = list.find(x => x.files && x.files[FILE]);
+      const g = list.find(x => x.files && FILES.some(f => x.files[f]));
       if (g) return g.id;
       if (list.length < 100) break;
     }
-    const body = { description: 'VOCA 빈칸 암기 진도 (자동 동기화용, 지우지 마세요)', public: false, files: { [FILE]: { content: JSON.stringify(getLocal()) } } };
+    const body = { description: 'VOCA 진도 (자동 동기화용, 지우지 마세요)', public: false, files: { [FILE]: { content: JSON.stringify(getLocal()) } } };
     return (await gh('/gists', { method: 'POST', body: JSON.stringify(body) })).id;
   }
 

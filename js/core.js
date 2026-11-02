@@ -618,3 +618,82 @@ export function nextLetterHint(input, target) {
   if (target[i] === ' ') i++; // 다음 단어로 넘어가는 띄어쓰기는 같이 채움
   return target.slice(0, i);
 }
+
+// ---------- 단어 모드: 뜻 채점과 뜻 보기 고르기 ----------
+// 한글 뜻 정리: 괄호·번호·문장부호·띄어쓰기를 빼고 흔한 어미(하다/되다/한/…)를 뗌
+export function normKo(s) {
+  let t = String(s).toLowerCase();
+  for (let k = 0; k < 4; k++) t = t.replace(/\([^()]*\)/g, '').replace(/\[[^\[\]]*\]/g, '');
+  t = t.replace(/[()\[\]{}]/g, '')
+    .replace(/~\s*[을를이가에의로와과]?/g, '')
+    .replace(/\d+\./g, '')
+    .replace(/[\s·:;,.\-—_'"“”‘’!?]/g, '');
+  const cut = t.replace(/(하다|되다|시키다|스럽다|롭다|하는|되는|한|함|된|임|이다|다)$/, '');
+  return cut.length >= 2 ? cut : t;
+}
+function lev(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j), cur = new Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    cur[0] = i;
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+// 오타 조금, 한쪽이 다른 쪽을 포함하면 같은 뜻으로 봄
+function nearKo(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length < 2 || b.length < 2) return false;
+  if (b.includes(a) || a.includes(b)) return true;
+  return lev(a, b) <= Math.max(1, Math.floor(Math.max(a.length, b.length) * 0.34));
+}
+// "1. 치명적인 2. 결정적인, 중대한 / 명사 뜻" → 뜻 갈래마다 [같은 뜻 표현들]
+export function meaningSenses(ans) {
+  const out = [];
+  String(ans || '').split(/[\/;]/).forEach(block => {
+    block.split(/\s*\d+\.\s*/).map(s => s.trim()).filter(Boolean).forEach(p => {
+      const alts = p.split(/[,、]/).map(normKo).filter(Boolean);
+      if (alts.length) out.push(alts);
+    });
+  });
+  return out;
+}
+/**
+ * 직접 쓴 뜻 채점. strict: 'easy'(하나만 맞아도) | 'mid'(갈래가 여럿인 품사/뜻이면 절반 이상) | 'hard'(전부)
+ * 반환 { score: 2 맞음 | 1 부분 | 0 틀림, missing: 빠진 갈래 수 }
+ */
+export function gradeMeaning(user, answer, strict = 'mid') {
+  const chunks = String(user || '').split(/[\s,;\/、]+/).map(normKo).filter(Boolean);
+  const gs = meaningSenses(answer);
+  if (!chunks.length || !gs.length) return { score: 0, missing: gs.length };
+  const hit = gs.filter(alts => alts.some(a => chunks.some(c => nearKo(c, a)))).length;
+  const groups = String(answer).split(/[\/;]/).map(s => s.trim()).filter(Boolean).length;
+  const need = strict === 'easy' ? 1 : strict === 'hard' ? gs.length : groups <= 1 ? 1 : Math.max(1, Math.ceil(gs.length / 2));
+  return { score: hit === 0 ? 0 : hit >= need ? 2 : 1, missing: gs.length - hit };
+}
+// 두 뜻이 겹치는지 (오답 보기로 비슷한 뜻을 내지 않게)
+export function meaningsClash(a, b) {
+  const A = meaningSenses(a), B = meaningSenses(b);
+  return A.some(x => B.some(y => x.some(p => y.some(q => nearKo(p, q)))));
+}
+// 오답 뜻 보기 n개: 같은 범위에서, 정답·서로와 뜻이 겹치지 않게
+export function pickMeaningDistractors(target, all, n = 3, rand = Math.random) {
+  const cands = shuffle(all.filter(w => w.word !== target.word && w.meaning && w.meaning !== target.meaning), rand);
+  const out = [];
+  for (const w of cands) {
+    if (out.length >= n) break;
+    if (out.some(o => o.meaning === w.meaning || meaningsClash(o.meaning, w.meaning))) continue;
+    if (meaningsClash(target.meaning, w.meaning)) continue;
+    out.push(w);
+  }
+  for (const w of cands) { // 모자라면 서로 겹침만 허용
+    if (out.length >= n) break;
+    if (out.includes(w) || out.some(o => o.meaning === w.meaning) || meaningsClash(target.meaning, w.meaning)) continue;
+    out.push(w);
+  }
+  return out;
+}

@@ -220,3 +220,29 @@ test('불규칙 동사: 겹치는 형태, 접두사 붙은 동사', () => {
   assert.equal(show(makeBlanks('The project overran its budget.', 'overrun')), 'The project [overran] its budget.');
   assert.equal(show(makeBlanks('She was misled by the ad.', 'mislead')), 'She was [misled] by the ad.');
 });
+
+test('단어 모드: 뜻 채점 (오타·어미·갈래 수)', async () => {
+  const { gradeMeaning } = await import('../js/core.js');
+  const fatal = '1. 치명적인 2. 결정적인, 중대한';
+  assert.equal(gradeMeaning('치명적인', fatal, 'easy').score, 2);
+  assert.equal(gradeMeaning('치명적', fatal, 'mid').score, 2);       // 같은 갈래 묶음(/ 없음)은 하나만 써도 정답
+  assert.equal(gradeMeaning('치명적인', fatal, 'hard').score, 1);    // 엄격: 전부 써야
+  assert.equal(gradeMeaning('치명적인, 결정적인', fatal, 'hard').score, 2);
+  assert.equal(gradeMeaning('행복한', fatal, 'mid').score, 0);
+  const premium = '보험료 / 고급의 / 할증금';
+  assert.equal(gradeMeaning('보험료', premium, 'mid').score, 1);      // 품사가 다른 갈래는 절반 이상
+  assert.equal(gradeMeaning('보험료 고급', premium, 'mid').score, 2);
+  assert.equal(gradeMeaning('보험료', '보험료 / 고급의', 'mid').score, 2); // 2갈래면 1개가 절반
+  assert.equal(gradeMeaning('', fatal, 'easy').score, 0);
+});
+
+test('단어 모드: 뜻 보기는 정답·서로와 겹치지 않게', async () => {
+  const { pickMeaningDistractors, meaningsClash } = await import('../js/core.js');
+  const t = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인' };
+  const all = [t, { word: 'lethal', meaning: '치명적인' }, { word: 'a', meaning: '행복한' }, { word: 'b', meaning: '슬픈' },
+    { word: 'c', meaning: '빠른' }, { word: 'd', meaning: '빠른, 신속한' }];
+  const out = pickMeaningDistractors(t, all, 3, () => 0.5);
+  assert.equal(out.length, 3);
+  assert.ok(!out.some(w => w.word === 'lethal' || w.word === 'fatal'));
+  assert.ok(!out.some((x, i) => out.some((y, j) => i !== j && meaningsClash(x.meaning, y.meaning))));
+});
