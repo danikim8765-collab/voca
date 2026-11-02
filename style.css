@@ -8,6 +8,8 @@
   --primary-soft: #e6ecf5;
   --on-primary: #ffffff;
   /* 라이트: 아래쪽에 옅은 피치 → 위로 갈수록 바탕색 (키보드·선지 쪽이 중심) */
+  --mark-bg: var(--blank);   /* 해석 뜻 부분 형광펜 */
+  --mark-top: 58%;
   --glow-0: #f7e2d1;
   --glow-1: #f9ece3;
   --ok: #12b886;
@@ -29,6 +31,8 @@
     --primary: #f1ebe2;
     --primary-soft: #162238;
     --on-primary: #0e1626;
+    --mark-bg: rgba(110, 225, 170, .5);   /* 다크: 민트 형광펜 (네이비 위에서 잘 보이게) */
+    --mark-top: 50%;
     --glow-0: #0e1626;
     --glow-1: #0e1626;
     --ok: #38d9a9;
@@ -146,7 +150,7 @@ button { cursor: pointer; }
 .sent .ko { font-size: 15px; color: var(--muted); margin-top: 8px; }
 .ko-mark {
   color: var(--text); font-weight: 800;
-  background: linear-gradient(transparent 58%, var(--blank) 58%); border-radius: 2px; padding: 0 1px;
+  background: linear-gradient(transparent var(--mark-top), var(--mark-bg) var(--mark-top)); border-radius: 2px; padding: 0 1px;
 }
 .sent .ko.hide { filter: blur(5px); user-select: none; }
 .sent .num { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: .05em; }
