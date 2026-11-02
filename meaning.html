@@ -8,11 +8,15 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="VOCA 뜻">
 <title>VOCA 뜻 퀴즈</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="favicon-32.png?v=4" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=4" sizes="180x180">
 <style>
 /* 모양은 VOCA 빈칸 암기(style.css)와 같고, 색은 예전 뜻 퀴즈 색 (종이색 바탕 · 먹색 버튼) */
 :root{
   --bg:#f7f6f1; --card:#fff; --text:#1a1a17; --muted:#8f8e85; --line:#e4e2d9;
   --primary:#1a1a17; --primary-soft:#efeee7; --on-primary:#f7f6f1;
+  --danger:#d9342b; --danger-soft:#fbe6e3;
   --ok:#166f4a; --ok-soft:#e2f1e9; --bad:#a8352d; --bad-soft:#fbe6e3;
   --warn:#8d6009; --warn-soft:#faefd4;
   --shadow:0 1px 2px rgba(26,26,23,.04);
@@ -21,6 +25,7 @@
   :root{
     --bg:#17171a; --card:#1f1f23; --text:#f0efe9; --muted:#87857c; --line:#33333a;
     --primary:#f0efe9; --primary-soft:#2a2a30; --on-primary:#17171a;
+    --danger:#e5484d; --danger-soft:#3a1c1c;
     --ok:#63c99b; --ok-soft:#14281f; --bad:#f08c82; --bad-soft:#2e1815;
     --warn:#e0b45c; --warn-soft:#2b2312; --shadow:none;
   }
@@ -93,7 +98,8 @@ button{cursor:pointer}
 .day .weak{color:var(--bad)}
 
 .resume{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--line)}
-.resume .btn{margin:0}
+.resume .btn{margin:0;white-space:nowrap}
+.resume>div:first-child{min-width:0}
 
 /* 퀴즈 시작 카드 (빈칸 암기의 '오늘의 학습'과 같은 모양) */
 .today{border:2px solid var(--line)}
@@ -235,12 +241,21 @@ button{cursor:pointer}
   ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*){animation:none!important}
 }
 .gear-space{width:40px;height:40px;flex:none}
-/* 되돌리기 버튼이 있는 알림 */
-.toast.has-act{display:flex;align-items:center;gap:14px;text-align:left;padding:8px 8px 8px 16px;white-space:nowrap}
-.toast.has-act[hidden]{display:none}
-.toast-act{border:1px solid color-mix(in srgb,currentColor 40%,transparent);background:color-mix(in srgb,currentColor 10%,transparent);
-  color:inherit;font-size:13px;font-weight:700;border-radius:999px;padding:6px 12px;flex:none}
-.toast-act:active{background:color-mix(in srgb,currentColor 22%,transparent)}
+/* 확인 창 (정말 지울까요?) */
+.dialog{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(10,10,8,.42);animation:dlg-fade .18s ease-out}
+.dialog-card{width:100%;max-width:320px;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:22px;padding:24px 18px 16px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.25);animation:dlg-pop .24s cubic-bezier(.2,.9,.3,1.15)}
+.dlg-icon{width:52px;height:52px;margin:0 auto 12px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--danger);background:var(--danger-soft)}
+.dlg-icon svg{width:26px;height:26px}
+.dlg-title{font-size:18px;font-weight:800}
+.dlg-body{font-size:14.5px;color:var(--muted);margin-top:6px;line-height:1.55;white-space:pre-line}
+.dlg-actions{display:flex;gap:8px;margin-top:20px}
+.dlg-actions .btn{flex:1;margin:0;padding:13px 10px}
+.dlg-cancel{background:var(--primary-soft);color:var(--text)}
+.dlg-ok{background:var(--primary);color:var(--on-primary)}
+.dlg-ok.danger{background:var(--danger);color:#fff}
+@keyframes dlg-fade{from{opacity:0}}
+@keyframes dlg-pop{from{opacity:0;transform:translateY(6px) scale(.95)}}
+@media (prefers-reduced-motion:reduce){.dialog,.dialog-card{animation:none}}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 90px);transform:translateX(-50%);
   background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:90vw;text-align:center;
   box-shadow:0 6px 20px rgba(0,0,0,.18)}
@@ -369,15 +384,28 @@ function showResume(){
   r.hidden=false;
 }
 
-// action = {label, fn}: 알림 안에 버튼(예: 되돌리기). 화면이 바뀌면 같이 사라짐
-function toast(t,ms,action){const el=$('toast');el.textContent=t;el.classList.toggle('has-act',!!action);
-  if(action){const b=document.createElement('button');b.className='toast-act';b.textContent=action.label;
-    b.onclick=()=>{clearTimeout(el._t);el.hidden=true;action.fn()};el.appendChild(b)}
-  el.hidden=false;clearTimeout(el._t);el._t=setTimeout(()=>el.hidden=true,ms||2200)}
+function toast(t){const el=$('toast');el.textContent=t;el.hidden=false;
+  clearTimeout(el._t);el._t=setTimeout(()=>el.hidden=true,2200)}
+
+/* 확인 창: await ask({title, body, ok:'지우기', danger:true}) → 누르면 true, 취소·바깥·Esc는 false */
+function ask({title,body='',ok='확인',cancel='취소',danger=false}){
+  const d=$('dialog'),okb=$('dlg-ok'),nob=$('dlg-cancel');
+  $('dlg-title').textContent=title;$('dlg-body').textContent=body;$('dlg-body').hidden=!body;
+  $('dlg-icon').hidden=!danger;okb.textContent=ok;okb.classList.toggle('danger',danger);nob.textContent=cancel;
+  const prev=document.activeElement;
+  d.hidden=false;nob.focus();   // 실수로 Enter를 눌러도 지워지지 않게 취소에 먼저
+  return new Promise(resolve=>{
+    const key=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();done(false)}};
+    const done=v=>{d.hidden=true;okb.onclick=nob.onclick=d.onclick=null;
+      document.removeEventListener('keydown',key,true);if(prev&&prev.focus)prev.focus();resolve(v)};
+    okb.onclick=()=>done(true);nob.onclick=()=>done(false);
+    d.onclick=e=>{if(e.target===d)done(false)};
+    document.addEventListener('keydown',key,true);
+  });
+}
 
 function go(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id===id));
-  if($('toast').classList.contains('has-act'))$('toast').hidden=true;   // 되돌리기 알림은 그 화면에서만
   window.scrollTo(0,0);
 }
 
@@ -657,13 +685,9 @@ $('btn-resume').onclick=()=>{
   sess=null;$('resume-card').hidden=true;
   go('quiz');draw();
 };
-/* 버리기: 바로 지우고, 4초 동안 되돌리기 가능 */
-$('btn-resume-drop').onclick=()=>{
-  const saved=sess;
-  sess=null;STORE.del(K_SESS);showResume();
-  toast('이어하던 퀴즈를 버렸어요',4000,{label:'되돌리기',fn:()=>{
-    if(!saved)return;sess=saved;STORE.set(K_SESS,saved);showResume();
-  }});
+$('btn-resume-drop').onclick=async()=>{
+  if(!(await ask({title:'정말 지울까요?',body:'이어하던 퀴즈 기록이 지워져요.\n지운 기록은 되돌릴 수 없어요.',ok:'지우기',danger:true})))return;
+  sess=null;STORE.del(K_SESS);showResume();toast('지웠어요');
 };
 
 /* ===== 약한 단어 목록 ===== */
@@ -1109,6 +1133,18 @@ if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceW
   </div>
 </section>
 
+<!-- 확인 창 (지우기 등) -->
+<div class="dialog" id="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-body" hidden>
+  <div class="dialog-card">
+    <div class="dlg-icon" id="dlg-icon" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/></svg></div>
+    <div class="dlg-title" id="dlg-title"></div>
+    <div class="dlg-body" id="dlg-body"></div>
+    <div class="dlg-actions">
+      <button class="btn dlg-cancel" id="dlg-cancel">취소</button>
+      <button class="btn dlg-ok" id="dlg-ok">확인</button>
+    </div>
+  </div>
+</div>
 <div id="toast" class="toast" hidden></div>
 
 <script nomodule>document.getElementById('load-status').textContent='이 브라우저는 너무 오래돼서 열 수 없어요. 최신 Chrome이나 Safari로 열어보세요.';</script>

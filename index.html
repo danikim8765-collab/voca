@@ -10,8 +10,8 @@
   <meta name="apple-mobile-web-app-title" content="VOCA">
   <title>VOCA 빈칸 암기</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="favicon-32.png?v=3" type="image/png" sizes="32x32">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=3" sizes="180x180">
+  <link rel="icon" href="favicon-32.png?v=4" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=4" sizes="180x180">
   <link rel="stylesheet" href="style.css">
   <!-- 화면을 다 그릴 준비가 될 때까지 첫 화면을 미룸 → 모드 전환 때 "불러오는 중"이 깜빡이지 않음 -->
   <script type="module" src="js/app.js" blocking="render"></script>
@@ -228,6 +228,18 @@
     </div>
   </section>
 
+  <!-- 확인 창 (지우기 등) -->
+  <div class="dialog" id="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-body" hidden>
+    <div class="dialog-card">
+      <div class="dlg-icon" id="dlg-icon" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/></svg></div>
+      <div class="dlg-title" id="dlg-title"></div>
+      <div class="dlg-body" id="dlg-body"></div>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="dlg-cancel">취소</button>
+        <button class="btn dlg-ok" id="dlg-ok">확인</button>
+      </div>
+    </div>
+  </div>
   <div id="toast" class="toast" hidden></div>
 
   <!-- 앱이 안 뜨는 폰에서 이유를 보여줌 (오래된 브라우저, 오류) -->
