@@ -161,7 +161,7 @@ const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const BE_FORMS = '(?:be|am|is|are|was|were|been|being|\'m|\'s|\'re)';
 
 // 자주 쓰는 불규칙 동사 (단어는 원형, 예문은 과거형일 때 대비)
-const IRREGULAR = Object.fromEntries(`
+const IRREGULAR_LIST = `
 make:made take:took:taken give:gave:given come:came go:went:gone:goes get:got:gotten have:had:has
 do:did:done:does keep:kept bring:brought think:thought hold:held run:ran break:broke:broken find:found
 stand:stood lead:led fall:fell:fallen feel:felt leave:left lay:laid lie:lay:lain see:saw:seen say:said
@@ -179,7 +179,23 @@ withstand:withstood uphold:upheld arise:arose:arisen awake:awoke:awoken feed:fed
 steal:stole:stolen freeze:froze:frozen shine:shone shoot:shot light:lit spit:spat string:strung wring:wrung
 wind:wound dwell:dwelt lend:lent bend:bent sling:slung stink:stank:stunk bind:bound grind:ground
 breed:bred bleed:bled flee:fled forsake:forsook:forsaken overhear:overheard override:overrode:overridden
-`.trim().split(/\s+/).flatMap(e => { const f = e.split(':'); return f.map(x => [x, f]); }));
+`;
+// 형태별로 묶음을 합침 (lay는 lay:laid와 lie:lay:lain 둘 다에 속함)
+const IRREGULAR = {};
+for (const e of IRREGULAR_LIST.trim().split(/\s+/)) {
+  const f = e.split(':');
+  for (const x of f) IRREGULAR[x] = [...new Set([...(IRREGULAR[x] || []), ...f])];
+}
+// over·under·out 등이 붙은 불규칙 동사: overrun → overran, mislead → misled
+const IRREG_PREFIX = ['over', 'under', 'out', 'with', 'fore', 'mis', 'up', 'be', 're'];
+function irregularForms(lw) {
+  if (IRREGULAR[lw]) return IRREGULAR[lw];
+  for (const p of IRREG_PREFIX) {
+    const rest = lw.slice(p.length);
+    if (lw.startsWith(p) && rest.length >= 2 && IRREGULAR[rest]) return IRREGULAR[rest].map(f => p + f);
+  }
+  return null;
+}
 
 // 숙어 안의 전치사·부사는 형태가 변하지 않음
 const PARTICLES = new Set(`of to in on at for with from into onto up down out off over away back through about
@@ -205,7 +221,8 @@ function wordPattern(w, head) {
   if (lw === 'be') return BE_FORMS;
   if (!/^[a-z]+$/.test(lw) || (PARTICLES.has(lw) && !head)) return escapeRe(w);
   const alts = [inflect(lw)];
-  if (IRREGULAR[lw]) for (const f of IRREGULAR[lw]) if (f !== lw) alts.push(inflect(f));
+  const irr = irregularForms(lw);
+  if (irr) for (const f of irr) if (f !== lw) alts.push(inflect(f));
   return alts.length > 1 ? `(?:${alts.join('|')})` : alts[0];
 }
 

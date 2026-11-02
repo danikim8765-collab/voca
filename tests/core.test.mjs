@@ -213,3 +213,10 @@ test('직접 지정한 해석 강조어', async () => {
   assert.equal(hl('모닥불에서 열기가 발산되어 주위에', '내뿜다, 방출하다', '발산되어'), '모닥불에서 열기가 [발산되어] 주위에');
   assert.equal(hl('절대 꿈을 포기하지 마.', '포기하다', '없는말'), '절대 꿈을 [포기하지] 마.'); // 없으면 자동 찾기
 });
+
+test('불규칙 동사: 겹치는 형태, 접두사 붙은 동사', () => {
+  assert.equal(show(makeBlanks("He'd laid by enough money.", 'lay by')), "He'd [laid by] enough money.");
+  assert.equal(show(makeBlanks('The rain lay on the ground.', 'lie')), 'The rain [lay] on the ground.');
+  assert.equal(show(makeBlanks('The project overran its budget.', 'overrun')), 'The project [overran] its budget.');
+  assert.equal(show(makeBlanks('She was misled by the ad.', 'mislead')), 'She was [misled] by the ad.');
+});
