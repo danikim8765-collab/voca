@@ -51,6 +51,13 @@
 - 폰·아이패드 진도 자동 동기화: 설정에서 `gist` 권한 GitHub 토큰을 기기마다 한 번 넣으면, 내 계정의 비밀 Gist(`voca-progress.json`)를 통해 단어별 최신 기록으로 합쳐짐 (앱 열 때, 답한 뒤 몇 초 후, 학습 끝날 때, 앱에서 나갈 때)
 - 홈 화면에 추가하면 앱처럼 실행, 오프라인에서도 마지막으로 받은 데이터로 동작
 
+## 뜻 퀴즈 (`meaning.html`)
+
+예전에 만든 뜻 맞히기 퀴즈를 이 앱과 같은 화면 스타일로 옮긴 파일이에요. 단어 데이터가 파일 안에 들어 있어서 파일 하나만 열어도 돼요(`https://<계정>.github.io/voca/meaning.html`).
+
+- DAY 범위 · 문제 범위(전부 / 약한 단어만) · 문항 수 · 4지선다 / 직접 쓰기(채점 AI, 안 되면 간이 채점)
+- 틀린 단어는 '약한 단어'에 쌓이고 두 번 연속 맞히면 빠짐. 진도는 브라우저(localStorage)에 저장
+
 ## 배포 (GitHub Pages)
 
 Settings → Pages → Build and deployment → Source: **Deploy from a branch**, Branch: **main** / **(root)** → Save.
