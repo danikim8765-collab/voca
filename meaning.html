@@ -3,26 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#6c5ce7">
+<meta name="theme-color" content="#f7f6f1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="VOCA 뜻">
 <title>VOCA 뜻 퀴즈</title>
 <style>
-/* 색·카드·버튼은 VOCA 빈칸 암기(style.css)와 같은 값 */
+/* 모양은 VOCA 빈칸 암기(style.css)와 같고, 색은 예전 뜻 퀴즈 색 (종이색 바탕 · 먹색 버튼) */
 :root{
-  --bg:#f4f3fb; --card:#fff; --text:#1e1b2e; --muted:#7a7790; --line:#e6e4f2;
-  --primary:#6c5ce7; --primary-soft:#ece9fd;
-  --ok:#12b886; --ok-soft:#e3f8f1; --bad:#fa5252; --bad-soft:#ffeceb;
-  --warn:#f59f00; --warn-soft:#fff4dc;
-  --shadow:0 2px 10px rgba(40,30,110,.06);
+  --bg:#f7f6f1; --card:#fff; --text:#1a1a17; --muted:#8f8e85; --line:#e4e2d9;
+  --primary:#1a1a17; --primary-soft:#efeee7; --on-primary:#f7f6f1;
+  --ok:#166f4a; --ok-soft:#e2f1e9; --bad:#a8352d; --bad-soft:#fbe6e3;
+  --warn:#8d6009; --warn-soft:#faefd4;
+  --shadow:0 1px 2px rgba(26,26,23,.04);
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --bg:#14131c; --card:#1f1d2b; --text:#eceaf6; --muted:#9a97b0; --line:#2f2c40;
-    --primary:#8e80ff; --primary-soft:#2b2650;
-    --ok:#38d9a9; --ok-soft:#133b31; --bad:#ff6b6b; --bad-soft:#43201f;
-    --warn-soft:#3a2c0e; --shadow:none;
+    --bg:#17171a; --card:#1f1f23; --text:#f0efe9; --muted:#87857c; --line:#33333a;
+    --primary:#f0efe9; --primary-soft:#2a2a30; --on-primary:#17171a;
+    --ok:#63c99b; --ok-soft:#14281f; --bad:#f08c82; --bad-soft:#2e1815;
+    --warn:#e0b45c; --warn-soft:#2b2312; --shadow:none;
   }
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -45,6 +45,10 @@ button{cursor:pointer}
 
 .card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:var(--shadow)}
 .card.center{text-align:center}
+/* 예전 뜻 퀴즈처럼 카드에 얇은 테두리 */
+.card,.sent,.item,.choice{border:1px solid var(--line)}
+.choice{border-width:2px}
+.fb-pane .sent,.fb-card{border:0}
 .label{font-size:13px;font-weight:700;color:var(--muted);margin:4px 0 8px}
 .label.mt{margin-top:20px}
 .muted{color:var(--muted);font-size:13px;font-weight:400}
@@ -73,26 +77,26 @@ button{cursor:pointer}
 .btn{border:0;border-radius:14px;padding:13px 16px;font-weight:700;width:100%;margin-bottom:8px}
 .btn.big{padding:17px;font-size:18px}
 .btn.small{padding:9px 14px;font-size:14px;width:auto}
-.btn.primary{background:var(--primary);color:#fff}
+.btn.primary{background:var(--primary);color:var(--on-primary)}
 .btn.secondary{background:var(--primary-soft);color:var(--primary)}
 .btn.ghost{background:transparent;color:var(--muted)}
 .btn:active{transform:scale(.98)}
 .btn:disabled{opacity:.45}
-.pill{background:var(--primary);color:#fff;font-size:12px;border-radius:99px;padding:0 7px;margin-left:4px}
+.pill{background:var(--primary);color:var(--on-primary);font-size:12px;border-radius:99px;padding:0 7px;margin-left:4px}
 .pill:empty{display:none}
 
 .days{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
-.day{background:var(--card);border:2px solid transparent;border-radius:14px;padding:10px;text-align:left;box-shadow:var(--shadow)}
+.day{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:10px;text-align:left;box-shadow:var(--shadow)}
 .day.sel{border-color:var(--primary)}
 .day b{display:block;font-size:15px}
 .day .muted{font-size:12px}
 .day .weak{color:var(--bad)}
 
-.resume{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--primary-soft)}
+.resume{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--line)}
 .resume .btn{margin:0}
 
 /* 퀴즈 시작 카드 (빈칸 암기의 '오늘의 학습'과 같은 모양) */
-.today{border:2px solid var(--primary-soft)}
+.today{border:2px solid var(--line)}
 .plan{display:flex;gap:8px;margin:6px 0 12px}
 .plan>div{flex:1;background:var(--bg);border-radius:12px;padding:10px 8px;text-align:center;font-size:13px;color:var(--muted)}
 .plan b{display:block;font-size:22px;color:var(--text)}
@@ -150,7 +154,7 @@ button{cursor:pointer}
 .sheet{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:flex-end;z-index:10}
 .sheet-inner{width:100%;max-width:560px;margin:0 auto;background:var(--card);border-radius:24px 24px 0 0;
   padding:10px 18px calc(env(safe-area-inset-bottom) + 16px);max-height:62dvh;
-  display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -10px 30px rgba(30,20,80,.15);
+  display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -10px 30px rgba(0,0,0,.12);
   animation:up .5s cubic-bezier(.22,1,.36,1)}
 @keyframes up{from{transform:translateY(100%)}}
 .sheet-inner>*{flex:none}
@@ -182,9 +186,9 @@ button{cursor:pointer}
 .speak-btn:active{transform:scale(.95)}
 .tag.fb-head{font-size:13px;padding:3px 10px;animation:tag-in .35s ease-out}
 @keyframes tag-in{from{opacity:0;transform:translateY(4px)}}
-.tag.fb-head.ok{color:#fff;background:var(--ok)}
-.tag.fb-head.half{color:#fff;background:var(--warn)}
-.tag.fb-head.bad{color:#fff;background:var(--bad)}
+.tag.fb-head.ok{color:var(--bg);background:var(--ok)}
+.tag.fb-head.half{color:var(--bg);background:var(--warn)}
+.tag.fb-head.bad{color:var(--bg);background:var(--bad)}
 /* 시트가 문제를 가리지 않게 아래 여백 */
 #quiz.sheet-open{padding-bottom:64dvh}
 
@@ -213,12 +217,12 @@ button{cursor:pointer}
 .head-right{display:flex;align-items:center;gap:6px}
 .mode-switch{display:flex;gap:2px;padding:3px;background:var(--line);border-radius:12px;flex:none}
 .mode-switch a{display:flex;align-items:center;justify-content:center;width:40px;height:32px;border-radius:9px;color:var(--muted)}
-.mode-switch a.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(30,20,80,.14)}
+.mode-switch a.on{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .mode-switch a:not(.on):active{background:var(--primary-soft)}
 .mode-switch svg{width:20px;height:20px}
-@media (prefers-color-scheme:dark){.mode-switch a.on{background:#3a3654}}
+@media (prefers-color-scheme:dark){.mode-switch a.on{background:#3a3a42}}
 .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 90px);transform:translateX(-50%);
-  background:#2b2840;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:90vw;text-align:center}
+  background:var(--text);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;z-index:30;max-width:90vw;text-align:center}
 
 /* 아이패드 등 큰 화면 */
 @media (min-width:700px){
