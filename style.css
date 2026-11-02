@@ -47,7 +47,11 @@ html { background: var(--bg); }
 body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: linear-gradient(to top, var(--glow-0) 0, var(--glow-1) 300px, var(--bg) 72vh);
+  transition: opacity .35s ease;
 }
+/* 홈 화면은 단색 (퀴즈로 들어가면 그라데이션이 서서히 나타남) */
+body:has(#home.active)::before { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { body::before { transition: none; } }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
   font-size: 16px;
