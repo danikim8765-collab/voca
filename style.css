@@ -25,22 +25,23 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: var(--black);
-    --card: #1B212C;
+    color-scheme: dark;     /* 달력 아이콘 등 기본 입력칸도 어두운 바탕에 맞게 */
+    --bg: var(--navy);      /* 표지 위쪽처럼 네이비 바탕 */
+    --card: #2D3F62;
     --text: var(--white);
-    --muted: #9EA4AE;
-    --line: #2C3444;
+    --muted: #AEB7C7;
+    --line: #3E5179;
     --primary: var(--peach);
     --on-primary: var(--black);
-    --primary-soft: var(--navy);
-    --ok: #38C99B;
-    --ok-soft: #12352B;
-    --bad: #FF6B6B;
-    --bad-soft: #43201F;
-    --blank: #4A3C33;
-    --toast: #2E3F63;
+    --primary-soft: #1A2740;
+    --ok: #4BD3A7;
+    --ok-soft: #1E4A4A;
+    --bad: #FF7B7B;
+    --bad-soft: #4E2E3C;
+    --blank: #5C4E50;
+    --toast: var(--black);
     --shadow: none;
-    --shadow-up: 0 -10px 30px rgba(0, 0, 0, .4);
+    --shadow-up: 0 -10px 30px rgba(0, 0, 0, .35);
   }
 }
 

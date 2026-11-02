@@ -1,6 +1,6 @@
 {
-  "name": "VOCA 빈칸 암기",
-  "short_name": "VOCA",
+  "name": "능률보카 수능 고난도",
+  "short_name": "능률보카",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
