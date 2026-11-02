@@ -277,3 +277,22 @@ test('시험 대비 몫에는 복습일이 된 단어도 들어감', () => {
   assert.deepEqual(p.final.map(w => w.id), ['w0']);
   assert.equal(p.review.length, 3);
 });
+
+test('모름 표시: 기기끼리 더 최근에 바꾼 쪽으로', async () => {
+  const { mergeMarks, sameMarks } = await import('../js/core.js');
+  const a = { x: { on: 1, t: 5 }, y: { on: 1, t: 1 } };
+  const b = { y: { on: 0, t: 3 }, z: { on: 1, t: 2 } };
+  const m = mergeMarks(a, b);
+  assert.deepEqual(m, { x: { on: 1, t: 5 }, y: { on: 0, t: 3 }, z: { on: 1, t: 2 } });
+  assert.ok(sameMarks(m, mergeMarks(b, a)));
+  assert.ok(!sameMarks(m, a));
+});
+
+test('유의어·반의어 골라내기', async () => {
+  const { synAnt } = await import('../js/core.js');
+  const r = synAnt([['유의어', 'preoccupy'], ['반의어', 'ignore'], ['파생어', 'obsession']]);
+  assert.equal(r.syn, 'preoccupy');
+  assert.equal(r.ant, 'ignore');
+  assert.deepEqual(r.rest, [['파생어', 'obsession']]);
+  assert.deepEqual(synAnt([]), { syn: '', ant: '', rest: [] });
+});

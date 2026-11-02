@@ -1,15 +1,18 @@
 // 기기 간 진도 동기화: 내 GitHub 계정의 비밀 Gist 하나(voca-progress.json)에 진도를 저장하고 합친다.
-import { mergeProgress, sameStats, samePrefs } from './core.js';
+import { mergeProgress, sameStats, samePrefs, mergeMarks, sameMarks } from './core.js';
 
 const API = 'https://api.github.com';
 // 예문 모드 진도는 voca-progress.json, 단어 모드는 같은 Gist의 voca-word-progress.json
 const FILES = ['voca-progress.json', 'voca-word-progress.json'];
+const MARKS = 'voca-marks.json'; // 단어장 '모름' 표시: 두 모드가 같이 씀
 const KEY = 'voca.sync.v1'; // 토큰·Gist는 두 모드가 같이 씀
 
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 
-export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0] }) {
+// marks: { get, set } 모름 표시. other: { get, set } 다른 모드 진도(단어장에서 두 모드 기록을 합쳐 보여 주려고 받아만 둠)
+export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, other = null }) {
   const FILE = file;
+  const OTHER = FILES.find(f => f !== FILE);
   let conf = load(); // { token, gistId, login, last }
   let running = null;
   let again = false;
@@ -35,7 +38,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0] })
   async function findOrCreateGist() {
     for (let page = 1; page <= 10; page++) {
       const list = await gh(`/gists?per_page=100&page=${page}`);
-      const g = list.find(x => x.files && FILES.some(f => x.files[f]));
+      const g = list.find(x => x.files && [...FILES, MARKS].some(f => x.files[f]));
       if (g) return g.id;
       if (list.length < 100) break;
     }
@@ -43,9 +46,8 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0] })
     return (await gh('/gists', { method: 'POST', body: JSON.stringify(body) })).id;
   }
 
-  async function readRemote() {
-    const g = await gh(`/gists/${conf.gistId}`);
-    const f = g.files && g.files[FILE];
+  async function readFile(g, name) {
+    const f = g.files && g.files[name];
     if (!f) return {};
     const text = f.truncated ? await (await fetch(f.raw_url, { cache: 'no-store' })).text() : f.content;
     try { return JSON.parse(text || '{}'); } catch { return {}; }
@@ -55,14 +57,27 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0] })
     setStatus('syncing');
     try {
       if (!conf.gistId) { conf.gistId = await findOrCreateGist(); save(); }
-      const remote = await readRemote();
+      const g = await gh(`/gists/${conf.gistId}`);
+      const remote = await readFile(g, FILE);
       const local = getLocal();
       const merged = mergeProgress(local, remote);
       const differs = x => !sameStats(merged.stats, x.stats || {}) || merged.resetAt !== (x.resetAt || 0) || !samePrefs(merged.prefs, x.prefs);
+      const files = {};
       if (differs(local)) applyMerged(merged);
-      if (differs(remote)) {
-        await gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files: { [FILE]: { content: JSON.stringify(merged) } } }) });
+      if (differs(remote)) files[FILE] = { content: JSON.stringify(merged) };
+      if (marks) {
+        const rm = (await readFile(g, MARKS)).marks || {};
+        const lm = marks.get();
+        const mm = mergeMarks(lm, rm);
+        if (!sameMarks(mm, lm)) marks.set(mm);
+        if (!sameMarks(mm, rm)) files[MARKS] = { content: JSON.stringify({ v: 1, marks: mm }) };
       }
+      if (other && g.files && g.files[OTHER]) {
+        const lo = other.get();
+        const mo = mergeProgress(lo, await readFile(g, OTHER));
+        if (!sameStats(mo.stats, lo.stats || {})) other.set(mo.stats);
+      }
+      if (Object.keys(files).length) await gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) });
       conf.last = Date.now();
       save();
       setStatus('ok');

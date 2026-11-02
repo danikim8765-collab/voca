@@ -2,12 +2,13 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
   highlightMeaning, nextLetterHint, typingHintTarget, addDays, gradeMeaning, pickMeaningDistractors,
+  synAnt, mergeMarks,
 } from './core.js';
 import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020015';
+const APP_VERSION = '202611020016';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -20,6 +21,7 @@ const KEY = {
   session: P + 'session.v1',
   csv: CSV_CACHE_KEY,
   resetAt: P + 'resetAt.v1',
+  marks: 'voca.marks.v1', // 단어장 '모름' 표시: 두 모드가 같이 씀
   day: P + 'day.v1', // 오늘의 복습 단어 목록 {date, review: [id]} (시작할 때 정해서 고정)
 };
 
@@ -55,10 +57,24 @@ const settings = Object.assign({
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
 }, load(KEY.settings, {}));
 let session = null;
+let soloDay = null; // DAY 박스를 누르면 그 DAY만 따로 학습 (정규 카드 자리에 간단히)
 let dataInfo = '';
 
 const saveStats = () => save(KEY.stats, stats);
 let resetAt = load(KEY.resetAt, 0);
+
+// 모름 표시 (두 모드 공용)
+let marks = load(KEY.marks, {});
+const isUnknown = id => !!(marks[id] && marks[id].on);
+function toggleUnknown(id) {
+  marks[id] = { on: isUnknown(id) ? 0 : 1, t: Date.now() };
+  save(KEY.marks, marks);
+  sync.soon();
+  return isUnknown(id);
+}
+// 다른 모드 진도: 단어장에서 두 모드 기록을 합쳐 보여 줌
+const OTHER_P = WORD ? 'voca.' : 'voca.word.';
+const otherProgress = () => ({ resetAt: load(OTHER_P + 'resetAt.v1', 0), stats: load(OTHER_P + 'stats.v1', {}) });
 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
@@ -76,6 +92,11 @@ const sync = createSync({
     if (current === 'home') renderHome();
   },
   onStatus: () => renderSyncStatus(),
+  marks: {
+    get: () => marks,
+    set: m => { marks = m; save(KEY.marks, marks); if (current === 'list') renderList(); },
+  },
+  other: { get: otherProgress, set: st => save(OTHER_P + 'stats.v1', st) },
 });
 const saveSettings = () => save(KEY.settings, settings);
 const saveSession = () => (session ? save(KEY.session, session) : localStorage.removeItem(KEY.session));
@@ -301,7 +322,8 @@ function renderHome() {
     f.style.width = `${(m / dw.length) * 100}%`;
     bar.appendChild(f);
     b.appendChild(bar);
-    b.addEventListener('click', () => setRange(d, d));
+    if (d === soloDay) b.classList.add('solo');
+    b.addEventListener('click', () => { soloDay = d; renderHome(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
     grid.appendChild(b);
   }
 
@@ -315,7 +337,8 @@ function renderHome() {
 
 // 홈의 오늘 카드: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기 순서로 한 카드 안에서 바뀜
 function renderPlan() {
-  const { plan, learnLeft, rv, stage } = flowState();
+  const { plan, learnLeft, rv, stage: regular } = flowState();
+  const stage = soloDay != null && days.includes(soloDay) ? 'day' : regular;
   const fill = (box, items) => {
     box.innerHTML = '';
     for (const [n, l] of items) {
@@ -325,7 +348,10 @@ function renderPlan() {
     }
   };
   const order = ['learn', 'review', 'extra'];
-  $('#today-title').textContent = { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기' }[stage];
+  $('#today-title').textContent = { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기', day: `DAY ${soloDay} 학습` }[stage];
+  $('#today-flow').hidden = stage === 'day';
+  $('#btn-solo-close').hidden = stage !== 'day';
+  $('#stage-day').hidden = stage !== 'day';
   document.querySelectorAll('#today-flow span').forEach(sp => {
     const i = order.indexOf(sp.dataset.s), cur = order.indexOf(stage);
     sp.className = i < cur ? 'done' : i === cur ? 'on' : '';
@@ -333,9 +359,16 @@ function renderPlan() {
   for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
   const left = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
-  dd.hidden = left == null || left < 0;
+  dd.hidden = left == null || left < 0 || stage === 'day';
   if (!dd.hidden) { dd.textContent = left === 0 ? 'D-day' : `시험 D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
   let note = '';
+
+  if (stage === 'day') {
+    const dw = words.filter(w => w.day === soloDay);
+    const seen = dw.filter(w => stats[w.id]).length;
+    $('#btn-day').textContent = `DAY ${soloDay} 학습 시작 (${dw.length})`;
+    note = `${dw.length}단어 중 ${seen}개 배움 · 정규 학습과 기록이 같이 쌓여요`;
+  }
 
   if (stage === 'learn') {
     const items = [[plan.fresh.length, '새 단어']];
@@ -350,7 +383,7 @@ function renderPlan() {
     fill($('#review-info'), [[shown, '복습'], [dueIn, '복습일 된 단어']]);
     $('#btn-review').textContent = `오늘 복습 시작 (${shown})`;
     note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
-  } else {
+  } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n));
     const nNew = extraNew(n).length, nRev = extraReview(n).length;
@@ -403,6 +436,16 @@ function startSession(mode, list) {
     ids = shuffle(extraReview(settings.extraN)).map(w => w.id);
     if (!ids.length) { toast('복습할 단어가 없어요'); return; }
     label = '추가 복습';
+  } else if (mode === 'day') {
+    // 그 DAY만: 안 배운 단어는 교재 순서로 먼저, 배운 단어는 섞어서
+    const dw = words.filter(w => w.day === soloDay);
+    ids = [...dw.filter(w => !stats[w.id]), ...shuffle(dw.filter(w => stats[w.id]))].map(w => w.id);
+    if (!ids.length) return;
+    label = `DAY ${soloDay}`;
+  } else if (mode === 'unknown') {
+    ids = shuffle(rw.filter(w => isUnknown(w.id))).map(w => w.id);
+    if (!ids.length) { toast('모름 표시한 단어가 없어요'); return; }
+    label = '모르는 단어 테스트';
   } else if (list) {
     ids = shuffle(list).map(w => w.id);
     label = '다시 볼 단어';
@@ -959,6 +1002,9 @@ function showFeedback(correct, given, kind, label) {
   $('#fb-word').textContent = w.word;
   $('#fb-pron').textContent = w.pron || '';
   $('#fb-speak').onclick = () => speak(w.word);
+  const fm = $('#fb-mark');
+  fm.classList.toggle('on', isUnknown(w.id));
+  fm.onclick = () => fm.classList.toggle('on', toggleUnknown(w.id));
 
   const mean = $('#fb-mean');
   mean.innerHTML = '';
@@ -1018,7 +1064,8 @@ function finishSession() {
   const list = $('#res-wrong');
   list.innerHTML = '';
   if (!wrong.length) list.appendChild(el('div', 'card center muted', '틀린 단어 없이 다 맞혔어요 👏'));
-  for (const id of wrong) list.appendChild(wordItem(byId.get(id)));
+  const view = bookView();
+  for (const id of wrong) list.appendChild(wordItem(byId.get(id), view));
   // 틀린 게 있으면 그 단어만 한 번 더, 없으면 다음 할 일(오늘의 복습 · 더 하기)로
   const again = $('#btn-res-again');
   const f = flowState();
@@ -1037,19 +1084,54 @@ function finishSession() {
 
 // ---------- 단어장 ----------
 let listFilter = 'all';
-function wordItem(w) {
-  const s = stats[w.id];
+// 단어장 기록은 예문·단어 두 모드를 합쳐서: 틀린 횟수는 더하고, 단계는 더 높은 쪽, 마지막에 틀렸으면(어느 모드든) 오답
+function bookView() {
+  const o = otherProgress().stats;
+  return id => {
+    const a = stats[id], b = normalizeStat(o[id]);
+    return {
+      seen: !!(a || b),
+      w: ((a && a.w) || 0) + ((b && b.w) || 0),
+      st: Math.max((a && a.st) || 0, (b && b.st) || 0),
+      wrong: isWrongNote(a) || isWrongNote(b),
+    };
+  };
+}
+
+function markBtn(id, onChange) {
+  const b = el('button', 'mark-btn' + (isUnknown(id) ? ' on' : ''), '모름');
+  b.setAttribute('aria-pressed', isUnknown(id));
+  b.addEventListener('click', e => {
+    e.stopPropagation();
+    const on = toggleUnknown(id);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+    if (onChange) onChange(on);
+  });
+  return b;
+}
+
+function wordItem(w, view = bookView(), onMark) {
+  const s = view(w.id);
+  const { syn, ant, rest } = synAnt(w.extras);
   const item = el('div', 'item');
   const head = el('div', 'item-head');
   const main = el('div', 'item-main');
   const top = el('div');
   top.appendChild(el('span', 'w', w.word));
-  if (s && s.w) top.append(' ', el('span', 'badge-wrong', `✕${s.w}`));
+  if (s.w) top.append(' ', el('span', 'badge-wrong', `✕${s.w}`));
   main.append(top, el('div', 'm', [w.pos, w.meaning].filter(Boolean).join(' ')));
+  // 유의어(초록) · 반의어(빨강)
+  if (syn || ant) {
+    const rel = el('div', 'rel');
+    if (syn) { const x = el('span', 'syn'); x.append(el('b', null, '유'), syn); rel.appendChild(x); }
+    if (ant) { const x = el('span', 'ant'); x.append(el('b', null, '반'), ant); rel.appendChild(x); }
+    main.appendChild(rel);
+  }
   const dots = el('div', 'dots');
-  for (let i = 1; i <= MAX_STAGE; i++) dots.appendChild(el('i', s && s.st >= i ? 'on' : ''));
+  for (let i = 1; i <= MAX_STAGE; i++) dots.appendChild(el('i', s.st >= i ? 'on' : ''));
   main.appendChild(dots);
-  head.append(main, speakBtn(w.word));
+  head.append(main, markBtn(w.id, onMark), speakBtn(w.word));
   item.appendChild(head);
   item.addEventListener('click', () => {
     if (item.classList.toggle('open')) {
@@ -1059,7 +1141,7 @@ function wordItem(w) {
         const b = makeBlanks(en, w.blank, w.word);
         det.appendChild(sentenceCard(b, ko, i + 1, true, false, w, i ? w.ex2src : w.ex1src));
       });
-      for (const [k, v] of w.extras) {
+      for (const [k, v] of rest) {
         const d = el('div', 'muted');
         d.textContent = `${k}: ${v}`;
         det.appendChild(d);
@@ -1076,19 +1158,29 @@ function renderList() {
   setSeg('#seg-filter', listFilter);
   const box = $('#word-list');
   box.innerHTML = '';
-  const filtered = rangeWords().filter(w => {
-    const s = stats[w.id];
-    if (listFilter === 'wrong') return isWrongNote(s);
-    if (listFilter === 'new') return !s;
-    if (listFilter === 'done') return isMastered(s);
+  const view = bookView();
+  const rw = rangeWords();
+  const filtered = rw.filter(w => {
+    const s = view(w.id);
+    if (listFilter === 'wrong') return s.wrong;
+    if (listFilter === 'new') return !s.seen;
+    if (listFilter === 'done') return s.st >= MAX_STAGE;
+    if (listFilter === 'unknown') return isUnknown(w.id);
     return true;
   });
-  if (!filtered.length) box.appendChild(el('div', 'card center muted', '해당하는 단어가 없어요'));
+  if (!filtered.length) box.appendChild(el('div', 'card center muted', listFilter === 'unknown' ? "단어 옆 '모름'을 누르면 여기 모여요" : '해당하는 단어가 없어요'));
   let lastDay = null;
+  const updateTest = () => {
+    const n = rw.filter(w => isUnknown(w.id)).length;
+    const b = $('#btn-unknown-test');
+    b.disabled = !n;
+    b.textContent = n ? `모르는 단어만 테스트 (${n})` : "'모름' 표시한 단어가 없어요";
+  };
   for (const w of filtered) {
     if (w.day !== lastDay && from !== to) { box.appendChild(el('div', 'label mt', `DAY ${w.day}`)); lastDay = w.day; }
-    box.appendChild(wordItem(w));
+    box.appendChild(wordItem(w, view, updateTest));
   }
+  updateTest();
 }
 
 // ---------- 설정 ----------
@@ -1120,7 +1212,7 @@ function renderSettings() {
 }
 
 function exportProgress() {
-  const data = JSON.stringify({ app: WORD ? 'voca-word' : 'voca', v: 1, at: new Date().toISOString(), stats, settings }, null, 0);
+  const data = JSON.stringify({ app: WORD ? 'voca-word' : 'voca', v: 1, at: new Date().toISOString(), stats, settings, marks }, null, 0);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1142,6 +1234,7 @@ async function importProgress(file) {
     if (!(await ask({ title: '백업으로 덮어쓸까요?', body: '지금 이 기기의 진도가 백업 파일의 진도로 바뀌어요.', ok: '덮어쓰기', danger: true }))) return;
     stats = Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, normalizeStat(v)]));
     saveStats();
+    if (data.marks && typeof data.marks === 'object') { marks = mergeMarks(marks, data.marks); save(KEY.marks, marks); }
     sync.now();
     toast('진도를 불러왔어요');
     renderSettings();
@@ -1205,6 +1298,9 @@ function bind() {
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });
   $('#btn-start').addEventListener('click', () => startSession('today'));
   $('#btn-review').addEventListener('click', () => startSession('review'));
+  $('#btn-day').addEventListener('click', () => startSession('day'));
+  $('#btn-solo-close').addEventListener('click', () => { soloDay = null; renderHome(); });
+  $('#btn-unknown-test').addEventListener('click', () => startSession('unknown'));
   $('#btn-extra-new').addEventListener('click', () => startSession('extraNew'));
   $('#btn-extra-review').addEventListener('click', () => startSession('extraReview'));
   onSeg('#seg-extra', v => { settings.extraN = +v; saveSettings(); renderPlan(); });

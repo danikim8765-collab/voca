@@ -720,3 +720,24 @@ export function pickMeaningDistractors(target, all, n = 3, rand = Math.random) {
   }
   return out;
 }
+
+// ---------- 모름 표시 (예문·단어 모드가 같이 씀) ----------
+// marks: { id: { on: 1|0, t: 바꾼 시각 } } — 끈 것도 남겨서 기기끼리 합칠 때 더 최근에 바꾼 쪽으로
+export function mergeMarks(a, b) {
+  const out = { ...(a || {}) };
+  for (const [id, m] of Object.entries(b || {})) {
+    if (m && (!out[id] || (m.t || 0) > (out[id].t || 0))) out[id] = m;
+  }
+  return out;
+}
+export function sameMarks(x, y) {
+  const kx = Object.keys(x || {}), ky = Object.keys(y || {});
+  return kx.length === ky.length && kx.every(k => y[k] && !!x[k].on === !!y[k].on && x[k].t === y[k].t);
+}
+
+// 단어장 옆에 보여줄 유의어·반의어. 나머지 추가 컬럼은 rest로
+export function synAnt(extras) {
+  const pick = re => (extras || []).filter(([k]) => re.test(k)).map(([, v]) => v).join(', ');
+  const SYN = /유의어|동의어|synonym/i, ANT = /반의어|반대말|antonym/i;
+  return { syn: pick(SYN), ant: pick(ANT), rest: (extras || []).filter(([k]) => !SYN.test(k) && !ANT.test(k)) };
+}
