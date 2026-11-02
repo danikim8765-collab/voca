@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020023';
+const APP_VERSION = '202611020025';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -706,8 +706,6 @@ function renderChoices(actions) {
   });
 }
 
-const PAUSE_ACCEPT_MS = 800; // 원형까지 쓰고 이만큼 멈추면 정답
-
 function renderTyping(actions) {
   const parts = answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
@@ -720,12 +718,7 @@ function renderTyping(actions) {
     typingHintTarget(q.w, q.b2 && q.b2.blanks, null),
   ].map(normalizeAnswer).filter(Boolean))];
   const isRight = value => cands.includes(normalizeAnswer(value));
-  // 더 이어질 정답이 없으면(abounds, fatal) 쓰는 순간 넘어가고,
-  // 원형이 예문 형태의 앞부분이면(abound → abounds) 잠깐 멈추면(또는 확인) 정답으로 넘어감. 이어서 쓰면 그대로 계속
-  const isFinal = value => {
-    const n = normalizeAnswer(value);
-    return cands.includes(n) && !cands.some(c => c !== n && c.startsWith(n));
-  };
+  // 정답 중 하나(원형 outlaw, 예문 형태 outlawed 등)가 되는 순간 바로 넘어감
   // 직접 입력엔 오답이 없음: 정답이 될 때까지 계속 씀.
   // 힌트를 쓴 단어는 외운 걸로 치지 않고 잠시 후 한 번 더 나옴
   const check = value => {
@@ -734,22 +727,7 @@ function renderTyping(actions) {
     else answer(true, null);
     return true;
   };
-  const thisQ = q;
-  let pause = null;
-  const autoCheck = value => {
-    clearTimeout(pause);
-    if (isFinal(value)) return check(value);
-    const right = isRight(value);
-    // 확인만 누르면 되는 상태면 확인 버튼을 초록으로
-    document.querySelectorAll('#q-actions .key.enter, #q-actions .btn.primary').forEach(b => b.classList.toggle('ready', right));
-    if (right) {
-      pause = setTimeout(() => {
-        if (q !== thisQ || q.answered || !q.typing || normalizeAnswer(q.typing.get()) !== normalizeAnswer(value)) return;
-        if (check(value) && document.activeElement && document.activeElement.blur) document.activeElement.blur();
-      }, PAUSE_ACCEPT_MS);
-    }
-    return false;
-  };
+  const autoCheck = value => (isRight(value) ? check(value) : false);
   const notYet = () => toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   if (settings.appKeyboard) {
     const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 띄어쓰기로 다음 빈칸` : '키보드로 바로 입력하세요';

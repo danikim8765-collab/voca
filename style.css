@@ -45,6 +45,9 @@
     --bad-soft: #43201f;
     --blank: #24365a;
     --shadow: none;
+    /* 키보드: 바탕은 민트 그라데이션 그대로, 키를 어둡게 해서 잘 구별되게 */
+    --key-bg: #0f1829;
+    --key-fn: #1f2f4c;
   }
 }
 
@@ -216,11 +219,11 @@ button { cursor: pointer; }
 .kb-row { display: flex; gap: 5px; margin-bottom: 7px; justify-content: center; }
 .kb-row:nth-child(2) { padding: 0 4.5%; }
 .key {
-  flex: 1; height: 46px; border: 0; border-radius: 8px; background: var(--card); color: var(--text);
+  flex: 1; height: 46px; border: 0; border-radius: 8px; background: var(--key-bg, var(--card)); color: var(--text);
   font-size: 21px; font-weight: 500; box-shadow: 0 1px 0 rgba(0, 0, 0, .18); padding: 0; touch-action: manipulation;
 }
 .key:active { background: var(--primary-soft); transform: translateY(1px); }
-.key.fn { background: var(--line); font-size: 18px; }
+.key.fn { background: var(--key-fn, var(--line)); font-size: 18px; }
 .key.wide { flex: 1.5; }
 .key.space { flex: 5; font-size: 15px; color: var(--muted); }
 .key.enter { flex: 2; background: var(--primary); color: var(--on-primary); font-size: 16px; font-weight: 700; }
@@ -426,9 +429,6 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
   .sheet-inner, #q-sentences.answered .sent, #q-sentences.answered .blank.filled, .tag.fb-head { animation: none !important; }
 }
 
-/* 원형까지 맞게 썼을 때: 확인만 누르면 정답 */
-#q-actions .key.enter.ready, #q-actions .btn.primary.ready { background: var(--ok); animation: ready .9s ease-in-out infinite alternate; }
-@keyframes ready { to { box-shadow: 0 0 0 4px rgba(18, 184, 134, .25); } }
 
 /* 예문 ↔ 단어 모드 전환 (index.html · meaning.html 머리에 같은 모양, 같은 자리) */
 .mode-switch{position:relative;display:flex;gap:2px;padding:3px;background:var(--line);border-radius:12px;flex:none}
