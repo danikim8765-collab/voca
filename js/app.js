@@ -4,18 +4,18 @@ import {
   highlightMeaning, nextLetterHint, typingHintTarget,
 } from './core.js';
 import { createSync } from './sync.js';
+import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020001';
+const APP_VERSION = '202611020002';
 
-// 단어 CSV 파일 (저장소 루트). 새 파일이 생기면 여기에 이름만 추가하면 됨.
-const DATA_FILES = ['VOCA_26-37.csv', 'VOCA_38-50.csv'];
+// 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
 const KEY = {
   stats: 'voca.stats.v1',
   settings: 'voca.settings.v1',
   session: 'voca.session.v1',
-  csv: 'voca.csvcache.v1',
+  csv: CSV_CACHE_KEY,
   resetAt: 'voca.resetAt.v1',
 };
 
@@ -133,31 +133,8 @@ function speakBtn(text, big) {
 }
 
 // ---------- 데이터 ----------
-async function fetchCSV(name) {
-  const res = await fetch(encodeURI(name) + '?t=' + Date.now(), { cache: 'no-store' });
-  if (!res.ok) throw new Error(res.status);
-  const buf = await res.arrayBuffer();
-  return new TextDecoder('utf-8').decode(buf); // utf-8-sig의 BOM은 parseCSV에서 제거
-}
-
 async function loadData() {
-  const cached = load(KEY.csv, {});
-  const texts = [];
-  let fromCache = 0, missing = [];
-  await Promise.all(DATA_FILES.map(async name => {
-    try {
-      const text = await fetchCSV(name);
-      cached[name] = text;
-      texts.push({ name, text });
-    } catch {
-      if (cached[name]) { texts.push({ name, text: cached[name] }); fromCache++; } else missing.push(name);
-    }
-  }));
-  for (const name of Object.keys(cached)) {
-    if (name.startsWith('local:') && !texts.some(t => t.name === name)) texts.push({ name, text: cached[name] });
-  }
-  save(KEY.csv, cached);
-  texts.sort((a, b) => a.name.localeCompare(b.name));
+  const { texts, fromCache, missing } = await loadCSVTexts();
   setWords(rowsToWords(texts));
   await applyHighlights();
   dataInfo = `${texts.map(t => t.name.replace('local:', '폰: ')).join(', ') || '없음'}`
