@@ -7,7 +7,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020014';
+const APP_VERSION = '202611020015';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -226,8 +226,9 @@ function flowState() {
   const plan = todayPlan();
   const learnLeft = plan.final.length + plan.fresh.length;
   const rv = reviewState();
-  const learnDone = !learnLeft;
-  return { plan, learnLeft, learnDone, rv, reviewOpen: learnDone || rv.started, extraOpen: learnDone && rv.done };
+  // 복습을 이미 시작했으면(그 사이 하루 새 단어 수를 늘렸어도) 복습부터 마저
+  const stage = learnLeft && !rv.started ? 'learn' : !rv.done ? 'review' : learnLeft ? 'learn' : 'extra';
+  return { plan, learnLeft, rv, stage };
 }
 const extraNew = n => rangeWords().filter(w => !stats[w.id]).slice(0, n);
 const extraReview = n => pickReview(words, stats, { n });
@@ -312,9 +313,9 @@ function renderHome() {
   } else rc.hidden = true;
 }
 
-// 홈의 오늘 카드들: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기
+// 홈의 오늘 카드: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기 순서로 한 카드 안에서 바뀜
 function renderPlan() {
-  const { plan, learnLeft, learnDone, rv, reviewOpen, extraOpen } = flowState();
+  const { plan, learnLeft, rv, stage } = flowState();
   const fill = (box, items) => {
     box.innerHTML = '';
     for (const [n, l] of items) {
@@ -323,36 +324,33 @@ function renderPlan() {
       box.appendChild(d);
     }
   };
-
-  const items = [[plan.fresh.length, '새 단어']];
-  if (plan.examInfo && plan.examInfo.finalDay) items.unshift([plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
-  fill($('#plan-info'), items);
-  const btn = $('#btn-start');
-  btn.textContent = learnLeft ? `오늘 학습 시작 (${learnLeft})` : '오늘 학습 완료 ✓';
-  btn.classList.toggle('done', learnDone);
-  btn.disabled = learnDone;
+  const order = ['learn', 'review', 'extra'];
+  $('#today-title').textContent = { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기' }[stage];
+  document.querySelectorAll('#today-flow span').forEach(sp => {
+    const i = order.indexOf(sp.dataset.s), cur = order.indexOf(stage);
+    sp.className = i < cur ? 'done' : i === cur ? 'on' : '';
+  });
+  for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
   const left = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   dd.hidden = left == null || left < 0;
   if (!dd.hidden) { dd.textContent = left === 0 ? 'D-day' : `시험 D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
-  $('#plan-note').textContent = learnLeft ? '' : '오늘 새 단어는 다 했어요.';
+  let note = '';
 
-  // 오늘의 복습
-  const due = plan.review.length;
-  const shown = rv.left.length;
-  const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
-  fill($('#review-info'), [[shown, '복습'], [dueIn, '복습일 된 단어']]);
-  const rb = $('#btn-review');
-  rb.disabled = rv.done || !reviewOpen;
-  rb.classList.toggle('done', rv.done);
-  rb.textContent = rv.done ? (rv.total ? '오늘 복습 완료 ✓' : '복습할 단어가 아직 없어요') : `오늘 복습 시작 (${shown})`;
-  $('#review-note').textContent = !reviewOpen ? '오늘의 학습을 끝내면 열려요.'
-    : !rv.done && due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습으로 할 수 있어요.`
-    : '';
-
-  // 더 하기 (추가 학습 · 추가 복습)
-  $('#card-extra').hidden = !extraOpen;
-  if (extraOpen) {
+  if (stage === 'learn') {
+    const items = [[plan.fresh.length, '새 단어']];
+    if (plan.examInfo && plan.examInfo.finalDay) items.unshift([plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
+    fill($('#plan-info'), items);
+    $('#btn-start').textContent = `오늘 학습 시작 (${learnLeft})`;
+  } else if (stage === 'review') {
+    // 전에 한 단어 20개: 복습일 된 단어 먼저
+    const due = plan.review.length;
+    const shown = rv.left.length;
+    const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
+    fill($('#review-info'), [[shown, '복습'], [dueIn, '복습일 된 단어']]);
+    $('#btn-review').textContent = `오늘 복습 시작 (${shown})`;
+    note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
+  } else {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n));
     const nNew = extraNew(n).length, nRev = extraReview(n).length;
@@ -361,8 +359,9 @@ function renderPlan() {
     br.textContent = nRev ? `추가 복습 (${nRev})` : '복습할 단어 없음';
     bn.disabled = !nNew;
     br.disabled = !nRev;
-    $('#extra-note').textContent = nNew ? '추가 학습한 단어도 내일부터 복습에 나와요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
+    note = nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
   }
+  $('#today-note').textContent = note;
 }
 
 function setSeg(sel, v) {
@@ -1023,7 +1022,7 @@ function finishSession() {
   // 틀린 게 있으면 그 단어만 한 번 더, 없으면 다음 할 일(오늘의 복습 · 더 하기)로
   const again = $('#btn-res-again');
   const f = flowState();
-  const nextStep = !f.rv.done && f.reviewOpen ? ['오늘의 복습 하기', () => startSession('review')] : null;
+  const nextStep = f.stage === 'review' ? ['오늘의 복습 하기', () => startSession('review')] : null;
   if (wrong.length) {
     again.textContent = '틀린 단어 다시 풀기';
     again.onclick = () => startSession('retry', wrong.map(id => byId.get(id)));
