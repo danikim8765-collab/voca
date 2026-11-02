@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020019';
+const APP_VERSION = '202611020022';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -21,7 +21,7 @@ const KEY = {
   session: P + 'session.v1',
   csv: CSV_CACHE_KEY,
   resetAt: P + 'resetAt.v1',
-  marks: 'voca.marks.v1', // 단어장 '모름' 표시: 두 모드가 같이 씀
+  marks: 'voca.marks.v1', // 단어장 형광펜 표시: 두 모드가 같이 씀
   day: P + 'day.v1', // 오늘의 복습 단어 목록 {date, review: [id]} (시작할 때 정해서 고정)
 };
 
@@ -63,7 +63,7 @@ let dataInfo = '';
 const saveStats = () => save(KEY.stats, stats);
 let resetAt = load(KEY.resetAt, 0);
 
-// 모름 표시 (두 모드 공용)
+// 형광펜 표시 (두 모드 공용)
 let marks = load(KEY.marks, {});
 const isUnknown = id => !!(marks[id] && marks[id].on);
 function toggleUnknown(id) {
@@ -452,9 +452,9 @@ function startSession(mode, list) {
     if (!ids.length) return;
     label = `DAY ${soloDay}`;
   } else if (mode === 'unknown') {
-    ids = shuffle(rw.filter(w => isUnknown(w.id))).map(w => w.id);
-    if (!ids.length) { toast('모름 표시한 단어가 없어요'); return; }
-    label = '모르는 단어 테스트';
+    ids = shuffle(bookWords().filter(w => isUnknown(w.id))).map(w => w.id);
+    if (!ids.length) { toast('형광펜 친 단어가 없어요'); return; }
+    label = '형광펜 단어 테스트';
   } else if (list) {
     ids = shuffle(list).map(w => w.id);
     label = '다시 볼 단어';
@@ -1107,14 +1107,20 @@ function bookView() {
   };
 }
 
+const HL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>';
+
 function markBtn(id, onChange) {
-  const b = el('button', 'mark-btn' + (isUnknown(id) ? ' on' : ''), '모름');
+  const b = el('button', 'mark-btn' + (isUnknown(id) ? ' on' : ''));
+  b.innerHTML = HL_ICON;
+  b.setAttribute('aria-label', '형광펜');
   b.setAttribute('aria-pressed', isUnknown(id));
   b.addEventListener('click', e => {
     e.stopPropagation();
     const on = toggleUnknown(id);
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', on);
+    const item = b.closest('.item');
+    if (item) item.classList.toggle('hl', on);
     if (onChange) onChange(on);
   });
   return b;
@@ -1123,7 +1129,7 @@ function markBtn(id, onChange) {
 function wordItem(w, view = bookView(), onMark) {
   const s = view(w.id);
   const { syn, ant, rest } = synAnt(w.extras);
-  const item = el('div', 'item');
+  const item = el('div', 'item' + (isUnknown(w.id) ? ' hl' : ''));
   const head = el('div', 'item-head');
   const main = el('div', 'item-main');
   const top = el('div');
@@ -1161,15 +1167,48 @@ function wordItem(w, view = bookView(), onMark) {
   return item;
 }
 
-function renderList() {
+// 단어장에서 볼 DAY (여러 개 고르기). 정규 학습 범위와 따로, 처음엔 학습 범위
+function bookDays() {
+  const saved = (settings.bookDays || []).filter(d => days.includes(d));
+  if (saved.length || settings.bookDays) return new Set(saved);
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
-  $('#list-title').textContent = from === to ? `DAY ${from}` : `DAY ${from}~${to}`;
+  return new Set(days.filter(d => d >= from && d <= to));
+}
+const bookWords = () => { const sel = bookDays(); return words.filter(w => sel.has(w.day)); };
+function setBookDays(set) {
+  settings.bookDays = days.filter(d => set.has(d));
+  saveSettings();
+  renderList();
+}
+
+function renderBookDays(scrollToSel) {
+  const box = $('#book-days');
+  const sel = bookDays();
+  const keep = box.scrollLeft;
+  box.innerHTML = '';
+  const all = el('button', 'dp all' + (sel.size === days.length ? ' on' : ''), '전체');
+  all.addEventListener('click', () => setBookDays(sel.size === days.length ? new Set() : new Set(days)));
+  box.appendChild(all);
+  for (const d of days) {
+    const b = el('button', 'dp' + (sel.has(d) ? ' on' : ''), String(d));
+    b.setAttribute('aria-label', `DAY ${d}`);
+    b.addEventListener('click', () => { const n = new Set(sel); n.has(d) ? n.delete(d) : n.add(d); setBookDays(n); });
+    box.appendChild(b);
+  }
+  if (scrollToSel) {
+    const first = box.querySelector('.dp.on:not(.all)');
+    box.scrollLeft = first ? Math.max(0, first.offsetLeft - box.offsetLeft - 60) : 0;
+  } else box.scrollLeft = keep;
+}
+
+function renderList(scrollToSel) {
+  renderBookDays(scrollToSel);
   setSeg('#seg-filter', listFilter);
   const box = $('#word-list');
   box.innerHTML = '';
   const view = bookView();
-  const rw = rangeWords();
-  const filtered = rw.filter(w => {
+  const bw = bookWords();
+  const filtered = bw.filter(w => {
     const s = view(w.id);
     if (listFilter === 'wrong') return s.wrong;
     if (listFilter === 'new') return !s.seen;
@@ -1177,16 +1216,25 @@ function renderList() {
     if (listFilter === 'unknown') return isUnknown(w.id);
     return true;
   });
-  if (!filtered.length) box.appendChild(el('div', 'card center muted', listFilter === 'unknown' ? "단어 옆 '모름'을 누르면 여기 모여요" : '해당하는 단어가 없어요'));
-  let lastDay = null;
+  if (!bw.length) box.appendChild(el('div', 'card center muted', '위에서 볼 DAY를 골라 주세요'));
+  else if (!filtered.length) box.appendChild(el('div', 'card center muted', listFilter === 'unknown' ? '단어 옆 형광펜을 누르면 여기 모여요' : '해당하는 단어가 없어요'));
   const updateTest = () => {
-    const n = rw.filter(w => isUnknown(w.id)).length;
+    const n = bw.filter(w => isUnknown(w.id)).length;
     const b = $('#btn-unknown-test');
     b.disabled = !n;
-    b.textContent = n ? `모르는 단어만 테스트 (${n})` : "'모름' 표시한 단어가 없어요";
+    b.textContent = n ? `형광펜 친 단어만 테스트 (${n})` : '형광펜 친 단어가 없어요';
   };
+  // DAY마다 제목(단어 수)으로 나눠서
+  const count = {};
+  for (const w of filtered) count[w.day] = (count[w.day] || 0) + 1;
+  let lastDay = null;
   for (const w of filtered) {
-    if (w.day !== lastDay && from !== to) { box.appendChild(el('div', 'label mt', `DAY ${w.day}`)); lastDay = w.day; }
+    if (w.day !== lastDay) {
+      const h = el('div', 'day-head');
+      h.append(el('b', null, `DAY ${w.day}`), el('span', null, `${count[w.day]}단어`));
+      box.appendChild(h);
+      lastDay = w.day;
+    }
     box.appendChild(wordItem(w, view, updateTest));
   }
   updateTest();
@@ -1322,7 +1370,7 @@ function bind() {
     renderHome();
     toast('지웠어요');
   });
-  $('#btn-list').addEventListener('click', () => { listFilter = 'all'; renderList(); show('list'); });
+  $('#btn-list').addEventListener('click', () => { listFilter = 'all'; show('list'); renderList(true); });
   $('#btn-list-back').addEventListener('click', () => goHome());
   onSeg('#seg-filter', v => { listFilter = v; renderList(); });
 

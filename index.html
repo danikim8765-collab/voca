@@ -156,7 +156,7 @@
             <div class="w" id="fb-word"></div>
             <div class="muted" id="fb-pron"></div>
           </div>
-          <button class="mark-btn" id="fb-mark" aria-label="모름 표시">모름</button>
+          <button class="mark-btn" id="fb-mark" aria-label="형광펜" title="형광펜"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
         </div>
         <div class="fb-tabs" id="fb-tabs">
           <button data-t="mean" class="on">뜻</button>
@@ -194,17 +194,18 @@
       <h1 id="list-title">단어장</h1>
       <span></span>
     </header>
+    <div class="day-pick" id="book-days" aria-label="볼 DAY 고르기"></div>
     <div class="seg" id="seg-filter">
       <button data-v="all">전체</button>
       <button data-v="wrong">오답</button>
       <button data-v="new">미학습</button>
       <button data-v="done">암기 완료</button>
-      <button data-v="unknown">모름</button>
+      <button data-v="unknown">형광펜</button>
     </div>
     <p class="muted list-note">예문·단어 모드 기록을 합쳐서 보여줘요. <span class="syn-t">유의어</span> · <span class="ant-t">반의어</span></p>
     <div id="word-list" class="list"></div>
     <div class="sticky-bottom">
-      <button class="btn primary" id="btn-unknown-test">모르는 단어만 테스트</button>
+      <button class="btn primary" id="btn-unknown-test">형광펜 친 단어만 테스트</button>
     </div>
   </section>
 
