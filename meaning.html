@@ -99,6 +99,11 @@ button{cursor:pointer}
 
 .resume{display:flex;justify-content:space-between;align-items:center;gap:8px;border:2px solid var(--line)}
 .resume .btn{margin:0;white-space:nowrap}
+/* 이어하기 카드의 지우기(휴지통) — 누르면 빨갛게 */
+.trash-btn{flex:none;width:40px;height:40px;border:0;border-radius:12px;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0}
+.trash-btn svg{width:21px;height:21px}
+.trash-btn:active{color:var(--danger);background:var(--danger-soft)}
+@media (hover:hover){.trash-btn:hover{color:var(--danger)}}
 .resume>div:first-child{min-width:0}
 
 /* 퀴즈 시작 카드 (빈칸 암기의 '오늘의 학습'과 같은 모양) */
@@ -990,7 +995,7 @@ if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceW
       <div class="muted" id="resume-info"></div>
     </div>
     <div class="row">
-      <button class="btn ghost small" id="btn-resume-drop">버리기</button>
+      <button class="trash-btn" id="btn-resume-drop" aria-label="지우기" title="지우기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/></svg></button>
       <button class="btn primary small" id="btn-resume">이어하기</button>
     </div>
   </div>

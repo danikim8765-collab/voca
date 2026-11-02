@@ -140,6 +140,11 @@ button { cursor: pointer; }
 
 .resume { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 2px solid var(--primary-soft); }
 .resume .btn { margin: 0; }
+/* 이어하기 카드의 지우기(휴지통) — 누르면 빨갛게 */
+.trash-btn { flex: none; width: 40px; height: 40px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; padding: 0; }
+.trash-btn svg { width: 21px; height: 21px; }
+.trash-btn:active { color: var(--danger); background: var(--danger-soft); }
+@media (hover: hover) { .trash-btn:hover { color: var(--danger); } }
 
 /* 퀴즈 */
 .quiz-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
