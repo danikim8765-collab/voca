@@ -17,20 +17,20 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    /* 다크: 네이비 바탕 + 연한 피치 */
+    /* 다크: 네이비 바탕 + 아이보리 */
     --bg: #0e1626;
     --card: #1a2640;
     --text: #edf0f6;
     --muted: #aeb7c7;
     --line: #2b3b5c;
-    --primary: #e6cdbb;
-    --primary-soft: #0a111e;
-    --on-primary: #141a26;
+    --primary: #f1ebe2;
+    --primary-soft: #162238;
+    --on-primary: #0e1626;
     --ok: #38d9a9;
     --ok-soft: #133b31;
     --bad: #ff6b6b;
     --bad-soft: #43201f;
-    --blank: #4f4349;
+    --blank: #24365a;
     --shadow: none;
   }
 }
