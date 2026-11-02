@@ -7,7 +7,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020004';
+const APP_VERSION = '202611020005';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -348,7 +348,6 @@ function renderQuestion() {
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = `DAY ${w.day}`;
   $('#q-again').hidden = !session.again[id];
-  $('#q-star').hidden = !w.star;
 
   const box = $('#q-sentences');
   box.innerHTML = '';
@@ -740,7 +739,6 @@ function showFeedback(correct, given, kind, label) {
   const card = el('div', 'fb-card');
   const tags = el('div', 'fb-tags');
   if (w.pos) tags.appendChild(el('span', 'tag', w.pos));
-  if (w.star) tags.appendChild(el('span', 'tag star', '형광'));
   tags.appendChild(el('span', 'tag', `DAY ${w.day}`));
   card.append(tags, el('div', 'fb-meaning', formatMeaning(w.meaning)));
   if (answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
@@ -811,7 +809,6 @@ function wordItem(w) {
   const main = el('div', 'item-main');
   const top = el('div');
   top.appendChild(el('span', 'w', w.word));
-  if (w.star) top.append(' ', el('span', 'tag star', '형광'));
   if (s && s.w) top.append(' ', el('span', 'badge-wrong', `✕${s.w}`));
   main.append(top, el('div', 'm', [w.pos, w.meaning].filter(Boolean).join(' ')));
   const dots = el('div', 'dots');
