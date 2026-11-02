@@ -553,3 +553,4 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .coach-diff b { color: var(--bad); font-weight: 800; }
 @keyframes coach-in { from { opacity: 0; transform: translateY(6px); } }
 .coach.out { opacity: 0; transform: translateY(6px); }
+.app-ver { margin: 0 0 8px; font-size: 15px; }
