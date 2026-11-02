@@ -26,19 +26,19 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;     /* 달력 아이콘 등 기본 입력칸도 어두운 바탕에 맞게 */
-    --bg: #18233A;          /* 표지 네이비를 한 단계 어둡게 */
-    --card: var(--navy);
+    --bg: #0E1626;          /* 표지 네이비를 깊게 가라앉힌 바탕 */
+    --card: #1A2640;
     --text: var(--white);
     --muted: #AEB7C7;
-    --line: #34476E;
+    --line: #2B3B5C;
     --primary: var(--peach);
     --on-primary: var(--black);
-    --primary-soft: #111A2C;
+    --primary-soft: #0A111E;
     --ok: #4BD3A7;
-    --ok-soft: #1A4242;
+    --ok-soft: #143636;
     --bad: #FF7B7B;
-    --bad-soft: #472A37;
-    --blank: #54474B;
+    --bad-soft: #3D2230;
+    --blank: #4A3E44;
     --toast: var(--black);
     --shadow: none;
     --shadow-up: 0 -10px 30px rgba(0, 0, 0, .35);
