@@ -7,7 +7,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020010';
+const APP_VERSION = '202611020011';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -73,26 +73,47 @@ const sync = createSync({
 const saveSettings = () => save(KEY.settings, settings);
 const saveSession = () => (session ? save(KEY.session, session) : localStorage.removeItem(KEY.session));
 
-// action = { label, fn }: 알림 안에 버튼(예: 되돌리기). 화면이 바뀌면 같이 사라짐
-function toast(msg, ms = 2200, action) {
+function toast(msg, ms = 2200) {
   const t = $('#toast');
   t.textContent = msg;
-  t.classList.toggle('has-act', !!action);
-  if (action) {
-    const b = el('button', 'toast-act', action.label);
-    b.addEventListener('click', () => { clearTimeout(toast.timer); t.hidden = true; action.fn(); });
-    t.appendChild(b);
-  }
   t.hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => (t.hidden = true), ms);
+}
+
+// 확인 창: await ask({ title, body, ok: '지우기', danger: true }) → 누르면 true, 취소·바깥·Esc는 false
+function ask({ title, body = '', ok = '확인', cancel = '취소', danger = false }) {
+  const d = $('#dialog'), okb = $('#dlg-ok'), nob = $('#dlg-cancel');
+  $('#dlg-title').textContent = title;
+  $('#dlg-body').textContent = body;
+  $('#dlg-body').hidden = !body;
+  $('#dlg-icon').hidden = !danger;
+  okb.textContent = ok;
+  okb.classList.toggle('danger', danger);
+  nob.textContent = cancel;
+  const prev = document.activeElement;
+  d.hidden = false;
+  nob.focus(); // 실수로 Enter를 눌러도 지워지지 않게 취소에 먼저
+  return new Promise(resolve => {
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } };
+    const done = v => {
+      d.hidden = true;
+      okb.onclick = nob.onclick = d.onclick = null;
+      document.removeEventListener('keydown', key, true);
+      if (prev && prev.focus) prev.focus();
+      resolve(v);
+    };
+    okb.onclick = () => done(true);
+    nob.onclick = () => done(false);
+    d.onclick = e => { if (e.target === d) done(false); };
+    document.addEventListener('keydown', key, true);
+  });
 }
 
 // ---------- 화면 전환 (안드로이드 뒤로가기 지원) ----------
 let current = 'home';
 function show(id, push = true) {
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
-  if ($('#toast').classList.contains('has-act')) $('#toast').hidden = true; // 되돌리기 알림은 그 화면에서만
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
   current = id;
   window.scrollTo(0, 0);
@@ -906,7 +927,7 @@ async function importProgress(file) {
   try {
     const data = JSON.parse(await file.text());
     if (!data || typeof data.stats !== 'object') throw new Error();
-    if (!confirm('백업 파일의 진도로 덮어쓸까요?')) return;
+    if (!(await ask({ title: '백업으로 덮어쓸까요?', body: '지금 이 기기의 진도가 백업 파일의 진도로 바뀌어요.', ok: '덮어쓰기', danger: true }))) return;
     stats = Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, normalizeStat(v)]));
     saveStats();
     sync.now();
@@ -973,15 +994,11 @@ function bind() {
   $('#btn-wrong').addEventListener('click', () => startSession('wrong'));
   $('#btn-order').addEventListener('click', () => startSession('order'));
   $('#btn-resume').addEventListener('click', resumeSession);
-  // 버리기: 바로 지우고, 4초 동안 되돌리기 가능
-  $('#btn-resume-drop').addEventListener('click', () => {
-    const saved = localStorage.getItem(KEY.session);
+  $('#btn-resume-drop').addEventListener('click', async () => {
+    if (!(await ask({ title: '정말 지울까요?', body: '이어하던 학습 기록이 지워져요.\n지운 기록은 되돌릴 수 없어요.', ok: '지우기', danger: true }))) return;
     localStorage.removeItem(KEY.session);
     renderHome();
-    toast('이어하던 학습을 버렸어요', 4000, {
-      label: '되돌리기',
-      fn: () => { if (saved && !localStorage.getItem(KEY.session)) localStorage.setItem(KEY.session, saved); renderHome(); },
-    });
+    toast('지웠어요');
   });
   $('#btn-list').addEventListener('click', () => { listFilter = 'all'; renderList(); show('list'); });
   $('#btn-list-back').addEventListener('click', () => goHome());
@@ -1029,15 +1046,19 @@ function bind() {
     try { await navigator.clipboard.writeText(sync.token); toast('토큰을 복사했어요. 다른 기기의 설정에 붙여넣으세요'); }
     catch { prompt('이 토큰을 복사하세요', sync.token); }
   });
-  $('#btn-sync-off').addEventListener('click', () => {
-    if (!confirm('이 기기의 동기화 연결을 끊을까요? (진도는 이 기기에 그대로 남아요)')) return;
+  $('#btn-sync-off').addEventListener('click', async () => {
+    if (!(await ask({ title: '동기화 연결을 끊을까요?', body: '진도는 이 기기에 그대로 남아요.', ok: '연결 끊기' }))) return;
     sync.disconnect();
     renderSyncStatus();
   });
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', e => { if (e.target.files[0]) importProgress(e.target.files[0]); e.target.value = ''; });
-  $('#btn-reset').addEventListener('click', () => {
-    if (!confirm(sync.enabled ? '모든 학습 진도를 지울까요? 동기화된 다른 기기의 진도도 함께 지워져요. 되돌릴 수 없어요.' : '모든 학습 진도를 지울까요? 되돌릴 수 없어요.')) return;
+  $('#btn-reset').addEventListener('click', async () => {
+    if (!(await ask({
+      title: '정말 모든 진도를 지울까요?',
+      body: (sync.enabled ? '동기화된 다른 기기의 진도도 함께 지워져요.\n' : '') + '지운 진도는 되돌릴 수 없어요.',
+      ok: '모두 지우기', danger: true,
+    }))) return;
     stats = {};
     resetAt = Date.now(); // 다른 기기의 예전 기록도 함께 지워지게
     save(KEY.resetAt, resetAt);

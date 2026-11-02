@@ -7,6 +7,8 @@
   --primary: #1f3a68;
   --primary-soft: #e6ecf5;
   --on-primary: #ffffff;
+  --danger: #e03131;
+  --danger-soft: #ffe8e8;
   /* 라이트: 아래쪽에 옅은 피치 → 위로 갈수록 바탕색 (키보드·선지 쪽이 중심) */
   --mark-bg: var(--blank);   /* 해석 뜻 부분 형광펜 */
   --mark-top: 58%;
@@ -31,6 +33,8 @@
     --primary: #f1ebe2;
     --primary-soft: #162238;
     --on-primary: #0e1626;
+    --danger: #ef4444;
+    --danger-soft: #3a1d26;
     --mark-bg: rgba(110, 225, 170, .5);   /* 다크: 민트 형광펜 (네이비 위에서 잘 보이게) */
     --mark-top: 50%;
     --glow-0: #0e1626;
@@ -273,14 +277,21 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
   box-shadow: 0 6px 20px rgba(10, 20, 40, .18);
   max-width: 90vw; text-align: center;
 }
-/* 되돌리기 버튼이 있는 알림 */
-.toast.has-act { display: flex; align-items: center; gap: 14px; text-align: left; padding: 8px 8px 8px 16px; white-space: nowrap; }
-.toast.has-act[hidden] { display: none; }
-.toast-act {
-  border: 1px solid color-mix(in srgb, currentColor 40%, transparent); background: color-mix(in srgb, currentColor 10%, transparent); color: inherit;
-  font-size: 13px; font-weight: 700; border-radius: 999px; padding: 6px 12px; flex: none;
-}
-.toast-act:active { background: color-mix(in srgb, currentColor 22%, transparent); }
+/* 확인 창 (정말 지울까요?) */
+.dialog { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(8, 14, 30, .45); animation: dlg-fade .18s ease-out; }
+.dialog-card { width: 100%; max-width: 320px; background: var(--card); color: var(--text); border-radius: 22px; padding: 24px 18px 16px; text-align: center; box-shadow: 0 24px 60px rgba(8, 14, 30, .3); animation: dlg-pop .24s cubic-bezier(.2, .9, .3, 1.15); }
+.dlg-icon { width: 52px; height: 52px; margin: 0 auto 12px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--danger); background: var(--danger-soft); }
+.dlg-icon svg { width: 26px; height: 26px; }
+.dlg-title { font-size: 18px; font-weight: 800; }
+.dlg-body { font-size: 14.5px; color: var(--muted); margin-top: 6px; line-height: 1.55; white-space: pre-line; }
+.dlg-actions { display: flex; gap: 8px; margin-top: 20px; }
+.dlg-actions .btn { flex: 1; margin: 0; padding: 13px 10px; }
+.dlg-cancel { background: var(--bg); color: var(--text); }
+.dlg-ok { background: var(--primary); color: var(--on-primary); }
+.dlg-ok.danger { background: var(--danger); color: #fff; }
+@keyframes dlg-fade { from { opacity: 0; } }
+@keyframes dlg-pop { from { opacity: 0; transform: translateY(6px) scale(.95); } }
+@media (prefers-reduced-motion: reduce) { .dialog, .dialog-card { animation: none; } }
 
 /* 아이패드 등 큰 화면 */
 @media (min-width: 700px) {
