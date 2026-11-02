@@ -45,10 +45,9 @@
     --bad-soft: #43201f;
     --blank: #24365a;
     --shadow: none;
-    /* 키보드는 바탕보다 조금 더 어둡게 */
-    --kb-bg: #090f1a;
-    --key-bg: #142035;
-    --key-fn: #1f2d48;
+    /* 키보드: 바탕은 민트 그라데이션 그대로, 키를 어둡게 해서 잘 구별되게 */
+    --key-bg: #0a1220;
+    --key-fn: #1b2a45;
   }
 }
 
@@ -199,7 +198,7 @@ button { cursor: pointer; }
 .type-input:focus { border-color: var(--primary); }
 .kb-mode .quiz-actions {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; max-width: 560px; margin: 0 auto;
-  padding: 8px 6px calc(env(safe-area-inset-bottom) + 6px); background: var(--kb-bg, linear-gradient(to top, var(--glow-0) 0, var(--glow-1) 300px));
+  padding: 8px 6px calc(env(safe-area-inset-bottom) + 6px); background: linear-gradient(to top, var(--glow-0) 0, var(--glow-1) 300px);
   border-top: 1px solid var(--line);
 }
 .kb-top { display: flex; justify-content: space-between; align-items: center; padding: 0 6px; }
