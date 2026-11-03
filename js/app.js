@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611031500';
+const APP_VERSION = '202611031600';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -316,14 +316,19 @@ function renderHome() {
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   for (const d of days) {
     const dw = words.filter(w => w.day === d);
+    const seen = dw.filter(w => stats[w.id]).length;
     const m = dw.filter(w => isMastered(stats[w.id])).length;
     const wr = dw.filter(w => isWrongNote(stats[w.id])).length;
     const b = el('button', 'day' + (d >= from && d <= to ? ' sel' : ''));
-    b.append(el('b', null, `DAY ${d}`), el('span', 'muted', `${m}/${dw.length}` + (wr ? ` · 다시 ${wr}` : '')));
-    const bar = el('div', 'bar');
+    b.append(el('b', null, `DAY ${d}`), el('span', 'muted', `${seen}/${dw.length}` + (wr ? ` · 다시 ${wr}` : '')));
+    b.title = `학습 ${seen} · 암기 완료 ${m} · 다시 볼 것 ${wr}`;
+    // 막대: 학습한 단어는 연하게, 암기 완료(14일 간격까지 올라간 단어)는 진하게
+    const bar = el('div', 'bar two');
+    const fs = el('div', 'bar-fill seen');
+    fs.style.width = `${(seen / dw.length) * 100}%`;
     const f = el('div', 'bar-fill');
     f.style.width = `${(m / dw.length) * 100}%`;
-    bar.appendChild(f);
+    bar.append(fs, f);
     b.appendChild(bar);
     if (d === soloDay) b.classList.add('solo');
     b.addEventListener('click', () => { soloDay = d; renderHome(); window.scrollTo({ top: 0, behavior: 'smooth' }); });

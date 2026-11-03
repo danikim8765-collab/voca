@@ -556,3 +556,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .extra-range { display: flex; align-items: center; gap: 12px; margin: -2px 2px 10px; }
 .extra-range input { flex: 1; margin: 0; }
 .extra-range b { min-width: 44px; text-align: right; font-size: 15px; }
+/* 막대 두 겹: 학습(연하게) 위에 암기 완료(진하게) */
+.bar.two { display: grid; }
+.bar.two > .bar-fill { grid-area: 1 / 1; }
+.bar-fill.seen { opacity: .35; }
