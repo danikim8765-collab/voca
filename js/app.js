@@ -2,13 +2,13 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, pickKey,
+  synAnt, mergeMarks,
 } from './core.js';
 import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611031400';
+const APP_VERSION = '202611031500';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -53,7 +53,6 @@ if (Object.values(stats).some(v => v && v.st == null)) {
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
-  smartKeys: true, // 앱 키보드: 다음 글자 예측으로 경계 근처 터치 보정
   baseAccept: 'pause', // 원형이 예문 형태의 앞부분일 때(outlaw → outlawed): pause = 0.8초 멈추면 정답, instant = 바로
   extraN: 20, // 추가 학습·복습 개수
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
@@ -924,21 +923,27 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
       if (!check(kb.value)) { shake(); notYet(kb.value); }
     },
   };
-  // 키마다 따로 듣지 않고 키보드 전체에서 터치 좌표로 키를 고름
-  // (키 사이 틈도 눌리고, 설정을 켜면 경계 근처는 다음에 올 법한 글자 쪽으로)
-  const keyList = [];
-  const key = (label, cls, fn, ch = '') => {
+  const key = (label, cls, fn) => {
     const b = el('button', 'key' + (cls ? ' ' + cls : ''), label);
     b.type = 'button';
-    keyList.push({ b, fn, ch, fixed: !/^[a-z]$/.test(ch) });
+    // pointerdown으로 바로 반응 (터치 지연 없음), 지우기는 길게 누르면 연속 삭제
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      fn();
+      if (label === '⌫') {
+        clearInterval(kb.repeat);
+        kb.hold = setTimeout(() => { kb.repeat = setInterval(fn, 70); }, 400);
+      }
+      if (navigator.vibrate) navigator.vibrate(8);
+    });
     return b;
   };
   for (const row of KB_ROWS) {
     const r = el('div', 'kb-row');
     for (const ch of row) {
-      if (ch === '⌫') r.appendChild(key('⌫', 'wide fn', () => kb.type('back'), 'back'));
+      if (ch === '⌫') r.appendChild(key('⌫', 'wide fn', () => kb.type('back')));
       else if (ch === "'") r.appendChild(key("'", 'fn', () => kb.type("'")));
-      else r.appendChild(key(ch, '', () => kb.type(ch), ch));
+      else r.appendChild(key(ch, '', () => kb.type(ch)));
     }
     board.appendChild(r);
   }
@@ -949,25 +954,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
     key('확인', 'enter', () => kb.submit()),
   );
   board.appendChild(last);
-  const down = new Map(); // pointerId → 눌린 키 (누른 모양 표시)
-  const release = id => { const k = down.get(id); if (k) { k.b.classList.remove('down'); down.delete(id); } };
-  // pointerdown으로 바로 반응 (터치 지연 없음), 지우기는 길게 누르면 연속 삭제
-  board.addEventListener('pointerdown', e => {
-    e.preventDefault();
-    const keys = keyList.map(k => { const r = k.b.getBoundingClientRect(); return { ...k, x: r.left, y: r.top, w: r.width, h: r.height }; });
-    const k = pickKey(keys, e.clientX, e.clientY, kb.value.slice(-1).toLowerCase(), { smart: settings.smartKeys });
-    if (!k) return;
-    release(e.pointerId);
-    k.b.classList.add('down');
-    down.set(e.pointerId, k);
-    k.fn();
-    if (k.ch === 'back') {
-      clearInterval(kb.repeat);
-      kb.hold = setTimeout(() => { kb.repeat = setInterval(k.fn, 70); }, 400);
-    }
-    if (navigator.vibrate) navigator.vibrate(8);
-  });
-  const stopRepeat = e => { release(e.pointerId); clearTimeout(kb && kb.hold); clearInterval(kb && kb.repeat); };
+  const stopRepeat = () => { clearTimeout(kb && kb.hold); clearInterval(kb && kb.repeat); };
   board.addEventListener('pointerup', stopRepeat);
   board.addEventListener('pointercancel', stopRepeat);
   board.addEventListener('pointerleave', stopRepeat);
@@ -1354,7 +1341,6 @@ function renderSettings() {
   $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
   $('#opt-appkb').checked = settings.appKeyboard;
-  $('#opt-smartkeys').checked = settings.smartKeys;
   setSeg('#seg-base', settings.baseAccept);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
@@ -1489,7 +1475,6 @@ function bind() {
   $('#opt-ko').addEventListener('change', e => { settings.showKo = e.target.checked; saveSettings(); });
   $('#opt-meaning').addEventListener('change', e => { settings.showMeaning = e.target.checked; saveSettings(); });
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
-  $('#opt-smartkeys').addEventListener('change', e => { settings.smartKeys = e.target.checked; saveSettings(); });
   onSeg('#seg-base', v => { settings.baseAccept = v; saveSettings(); });
   $('#btn-test-voice').addEventListener('click', () => speak('I tried to convince him of the danger.'));
   $('#btn-export').addEventListener('click', exportProgress);
