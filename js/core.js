@@ -878,3 +878,15 @@ export function makeWordFinder(words) {
     return null;
   };
 }
+
+// 앱 키보드: 키 사이 틈이나 가장자리를 누르면 가장 가까운 키 (키 테두리까지 거리, maxDist px 안에서만)
+// keys: [{ r: { left, top, right, bottom }, ... }]
+export function nearestKey(keys, x, y, maxDist = 24) {
+  let best = null, bestD = Infinity;
+  for (const k of keys) {
+    const { left, top, right, bottom } = k.r;
+    const d = Math.hypot(Math.max(left - x, 0, x - right), Math.max(top - y, 0, y - bottom));
+    if (d < bestD) { bestD = d; best = k; }
+  }
+  return bestD <= maxDist ? best : null;
+}

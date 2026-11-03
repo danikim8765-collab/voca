@@ -2,13 +2,13 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks,
+  synAnt, mergeMarks, nearestKey,
 } from './core.js';
 import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611040740';
+const APP_VERSION = '202611040900';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -875,7 +875,18 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
   $('#quiz').classList.add('kb-mode');
   const top = el('div', 'kb-top');
   const hintBtn = el('button', 'btn ghost small kb-hint', '💡 힌트');
-  hintBtn.addEventListener('click', useHint);
+  // 힌트는 힌트 버튼에서 누르기 시작한 탭만 (바로 아래 키보드 틈을 누른 탭이 힌트로 잡히지 않게)
+  // (크롬은 버튼 바로 옆 빈 곳을 누른 탭을 버튼으로 옮김 → 실제 터치 위치가 힌트 버튼 아래면 키보드 입력으로 넘김)
+  let hintArmed = false;
+  hintBtn.addEventListener('pointerdown', e => {
+    hintArmed = e.clientY <= hintBtn.getBoundingClientRect().bottom;
+    if (!hintArmed) press(e);
+  });
+  hintBtn.addEventListener('click', e => {
+    if (!hintArmed && e.detail !== 0) return;
+    hintArmed = false;
+    useHint();
+  });
   const help = el('div', 'type-help', helpText);
   top.append(help, hintBtn);
 
@@ -929,19 +940,12 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
       if (!check(kb.value)) { shake(); notYet(kb.value); }
     },
   };
+  // 키마다 따로 듣지 않고 키보드 전체에서 받음: 키 사이 틈·가장자리를 눌러도 가장 가까운 키가 눌림
+  const keyFn = new Map();
   const key = (label, cls, fn) => {
     const b = el('button', 'key' + (cls ? ' ' + cls : ''), label);
     b.type = 'button';
-    // pointerdown으로 바로 반응 (터치 지연 없음), 지우기는 길게 누르면 연속 삭제
-    b.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      fn();
-      if (label === '⌫') {
-        clearInterval(kb.repeat);
-        kb.hold = setTimeout(() => { kb.repeat = setInterval(fn, 70); }, 400);
-      }
-      if (navigator.vibrate) navigator.vibrate(8);
-    });
+    keyFn.set(b, fn);
     return b;
   };
   for (const row of KB_ROWS) {
@@ -960,10 +964,33 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
     key('확인', 'enter', () => kb.submit()),
   );
   board.appendChild(last);
-  const stopRepeat = () => { clearTimeout(kb && kb.hold); clearInterval(kb && kb.repeat); };
+  const down = new Map(); // pointerId → 눌린 키 (누른 모양 표시)
+  const release = id => { const b = down.get(id); if (b) { b.classList.remove('down'); down.delete(id); } };
+  // pointerdown으로 바로 반응 (터치 지연 없음), 지우기는 길게 누르면 연속 삭제
+  const press = e => {
+    e.preventDefault();
+    const hit = e.target.closest && e.target.closest('.key');
+    const b = hit && keyFn.has(hit) ? hit
+      : nearestKey([...keyFn.keys()].map(el => ({ el, r: el.getBoundingClientRect() })), e.clientX, e.clientY)?.el;
+    if (!b) return;
+    const fn = keyFn.get(b);
+    release(e.pointerId);
+    b.classList.add('down');
+    down.set(e.pointerId, b);
+    fn();
+    if (b.textContent === '⌫') {
+      clearInterval(kb.repeat);
+      kb.hold = setTimeout(() => { kb.repeat = setInterval(fn, 70); }, 400);
+    }
+    if (navigator.vibrate) navigator.vibrate(8);
+  };
+  board.addEventListener('pointerdown', press);
+  const stopRepeat = e => { release(e.pointerId); clearTimeout(kb && kb.hold); clearInterval(kb && kb.repeat); };
   board.addEventListener('pointerup', stopRepeat);
   board.addEventListener('pointercancel', stopRepeat);
   board.addEventListener('pointerleave', stopRepeat);
+  hintBtn.addEventListener('pointerup', stopRepeat); // 힌트 버튼 쪽에서 넘어온 키 입력의 손 뗌
+  hintBtn.addEventListener('pointercancel', stopRepeat);
   actions.append(top, board);
   render();
   q.typing = {

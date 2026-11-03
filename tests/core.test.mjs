@@ -346,3 +346,20 @@ test('직접 입력 오답 풀이: 철자·형태(노랑) · 뜻이 통하는 �
   assert.equal(shortMeaning('((주로 수동태로)) 사로잡다, 집착하게 하다[집착하다]'), '사로잡다');
   assert.match(coachFeedback('deprive', { word: 'deprive A of B', blank: 'deprive A of B', meaning: '빼앗다', extras: [] }, { cands: ['deprive a of b', 'deprive of'] }).text, /빈칸이 2곳/);
 });
+
+test('앱 키보드: 키 사이 틈을 눌러도 가장 가까운 키', async () => {
+  const { nearestKey } = await import('../js/core.js');
+  const keys = [
+    { ch: 'a', r: { left: 0, top: 0, right: 33, bottom: 46 } },
+    { ch: 's', r: { left: 38, top: 0, right: 71, bottom: 46 } },
+    { ch: 'z', r: { left: 19, top: 53, right: 52, bottom: 99 } },
+  ];
+  const at = (x, y) => nearestKey(keys, x, y)?.ch;
+  assert.equal(at(10, 20), 'a'); // 키 안
+  assert.equal(at(34, 20), 'a'); // 틈에서 a 쪽
+  assert.equal(at(37, 20), 's'); // 틈에서 s 쪽
+  assert.equal(at(30, 48), 'a'); // 줄 사이 틈에서 위쪽
+  assert.equal(at(30, 52), 'z'); // 줄 사이 틈에서 아래쪽
+  assert.equal(at(-10, 20), 'a'); // 가장자리 여백
+  assert.equal(at(-100, 20), undefined); // 키보드 밖 멀리
+});
