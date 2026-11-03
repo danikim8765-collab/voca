@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020030';
+const APP_VERSION = '202611020031';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -1319,6 +1319,7 @@ function renderSyncStatus() {
 }
 
 function renderSettings() {
+  renderVersion();
   setSeg('#seg-accent', settings.accent);
   $('#rate').value = settings.rate;
   $('#rate-val').textContent = `${settings.rate}x`;
@@ -1511,6 +1512,14 @@ function bind() {
     toast(`단어 ${words.length}개 · DAY ${days[0]}~${days[days.length - 1]}`);
   });
   $('#btn-local-csv').addEventListener('click', () => $('#csv-file').click());
+  $('#btn-update').addEventListener('click', async () => {
+    try {
+      const v = await latestVersion();
+      if (v && v !== APP_VERSION) { location.reload(); return; }
+      toast('최신 버전이에요');
+      renderVersion();
+    } catch { toast('인터넷 연결을 확인해 주세요'); }
+  });
   $('#csv-file').addEventListener('change', e => { if (e.target.files.length) importLocalCSV([...e.target.files]); e.target.value = ''; });
 
   // 키보드 (PC에서 테스트할 때)
@@ -1556,18 +1565,36 @@ document.addEventListener('visibilitychange', () => {
   if (words.length) sync.now();
 });
 
-// 홈 화면 앱은 계속 켜져 있어서 새 버전이 안 보일 수 있음 → 앱으로 돌아올 때 확인
+// 홈 화면 앱은 계속 켜져 있어서 새 버전이 안 보일 수 있음 → 앱을 열 때·앱으로 돌아올 때 확인
 let updateReady = false;
+async function latestVersion() {
+  const res = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+  return res.ok ? (await res.text()).trim() : '';
+}
 async function checkUpdate() {
   try {
-    const res = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
-    if (!res.ok) return;
-    const v = (await res.text()).trim();
+    const v = await latestVersion();
     if (v && v !== APP_VERSION) {
+      // 같은 새 버전으로는 한 번만 자동 새로고침 (혹시 옛 파일이 계속 오면 무한 새로고침 방지)
+      try { if (sessionStorage.getItem('voca.reloadFor') === v) return; sessionStorage.setItem('voca.reloadFor', v); } catch {}
       updateReady = true;
       if (current !== 'quiz') location.reload(); // 퀴즈 중이면 끝나고 홈으로 갈 때 새로고침
     }
   } catch {}
+}
+checkUpdate();
+
+// 설정의 앱 버전: 이 폰에서 돌아가는 버전과 서버의 최신 버전
+const fmtVer = v => (/^\d{12}$/.test(v) ? `${v.slice(0, 4)}.${v.slice(4, 6)}.${v.slice(6, 8)}-${v.slice(8)}` : v);
+async function renderVersion() {
+  $('#app-ver').textContent = fmtVer(APP_VERSION);
+  const st = $('#app-ver-state');
+  st.textContent = '확인 중…';
+  try {
+    const v = await latestVersion();
+    st.textContent = !v ? '' : v === APP_VERSION ? '· 최신 버전이에요' : `· 새 버전이 있어요 (${fmtVer(v)})`;
+    $('#btn-update').textContent = v && v !== APP_VERSION ? '지금 새 버전으로' : '새 버전 확인';
+  } catch { st.textContent = '· 인터넷 연결을 확인해 주세요'; }
 }
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
