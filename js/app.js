@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611031300';
+const APP_VERSION = '202611031400';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -714,7 +714,7 @@ function renderChoices(actions) {
 
 // 오답 풀이 말풍선: 키보드 바로 위(앱 키보드) 또는 입력칸 위(폰 키보드).
 // 문제 푸는 걸 막지 않게: 잠깐(글 길이에 따라 2.5~4.5초) 보였다가 저절로 사라지고, 다시 쓰기 시작해도 바로 사라짐. 눌러도 아래가 그대로 눌림
-const COACH_ICON = { spell: '✏️', near: '🌱', off: '🤔' };
+const COACH_ICON = { spell: '✏️', near: '🌱' };
 function showCoach(actions, f) {
   hideCoach();
   const box = el('div', `coach ${f.kind}`);
@@ -801,10 +801,10 @@ function renderTyping(actions) {
     }
     return false;
   };
-  // 틀린 답을 내면 왜 틀렸는지 말풍선으로 (철자 노랑 · 비슷함 초록 · 다른 말 빨강)
+  // 틀린 답이 아깝거나 비슷하면 말풍선으로 (철자·형태 노랑 · 뜻이 통하는 말 초록). 상관없는 말엔 안 띄움
   const notYet = (value, auto) => {
     clearTimeout(coachIdle);
-    const f = coachFeedback(value, q.w, { cands, find: t => findWord(t, q.w.id), showMeaning: settings.showKo || settings.showMeaning });
+    const f = coachFeedback(value, q.w, { cands, find: t => findWord(t, q.w.id) });
     if (f) showCoach(actions, f);
     else if (!auto) toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   };
