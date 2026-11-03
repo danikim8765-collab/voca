@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#1f3a68">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -18,6 +18,18 @@
         document.title = 'VOCA 단어 암기';
         document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f7f6f1');
       }
+    })();
+  </script>
+  <script>
+    // 확대 막기: iOS Safari는 user-scalable=no를 무시하므로 핀치 제스처를 직접 막음
+    (function () {
+      function stop(e) { e.preventDefault(); }
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
+        document.addEventListener(t, stop, { passive: false });
+      });
+      document.addEventListener('touchmove', function (e) {
+        if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault();
+      }, { passive: false });
     })();
   </script>
   <link rel="manifest" href="manifest.webmanifest">
