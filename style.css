@@ -505,7 +505,15 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .item.hl .w { background: linear-gradient(transparent var(--mark-top), var(--mark-bg) var(--mark-top)); border-radius: 2px; padding: 0 2px; }
 .list-note { font-size: 12px; margin: -4px 2px 10px; }
 #list .seg button { padding: 8px 2px; font-size: 14px; }
-.day.solo { background: var(--primary-soft); }
+/* DAY 단독 학습: 고른 DAY 박스와 위 카드의 시작 버튼을 같은 주황으로 묶어서 특별하게 */
+:root { --solo: #f76707; --solo-soft: #fff0e3; --on-solo: #ffffff; --solo-glow: rgba(247, 103, 7, .35); }
+@media (prefers-color-scheme: dark) { :root { --solo: #ff9f43; --solo-soft: #3a2614; --on-solo: #1a1006; --solo-glow: rgba(255, 159, 67, .3); } }
+.day.solo { border-color: var(--solo); background: var(--solo-soft); box-shadow: 0 4px 14px var(--solo-glow); }
+.day.solo b { color: var(--solo); }
+.day.solo .bar-fill { background: var(--solo); }
+#card-today.solo-mode { border-color: var(--solo); }
+#card-today.solo-mode #today-title { color: var(--solo); }
+#btn-day { background: var(--solo); color: var(--on-solo); box-shadow: 0 6px 18px var(--solo-glow); }
 .today-head .btn.small { width: auto; padding: 4px 10px; font-size: 13px; }
 .dim { opacity: .4; filter: grayscale(1); pointer-events: none; }
 /* 단어장: 볼 DAY 고르기 (가로로 넘기는 한 줄) · DAY 제목 */

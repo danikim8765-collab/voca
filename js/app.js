@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611031600';
+const APP_VERSION = '202611031700';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -360,6 +360,7 @@ function renderPlan() {
   $('#today-flow').hidden = stage === 'day';
   $('#btn-solo-close').hidden = stage !== 'day';
   $('#stage-day').hidden = stage !== 'day';
+  $('#card-today').classList.toggle('solo-mode', stage === 'day'); // DAY 단독 학습: 고른 DAY 박스와 같은 주황으로
   // DAY만 학습할 땐 정규 학습용(학습 범위, 하루 새 단어 수, 시험일, 범위 연습 버튼)은 회색으로. 문제 방식만 그대로
   for (const sel of ['#card-range', '#regular-opts', '#range-practice']) {
     const box = $(sel);
