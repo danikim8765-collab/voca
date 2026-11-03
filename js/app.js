@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611020031';
+const APP_VERSION = '202611020032';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -397,7 +397,9 @@ function renderPlan() {
     note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
   } else if (stage === 'extra') {
     const n = settings.extraN;
-    setSeg('#seg-extra', String(n));
+    setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
+    $('#extra-range').value = n;
+    $('#extra-n').textContent = `${n}개`;
     const nNew = extraNew(n).length, nRev = extraReview(n).length;
     const bn = $('#btn-extra-new'), br = $('#btn-extra-review');
     bn.textContent = nNew ? `추가 학습 (${nNew})` : '새 단어 없음';
@@ -1427,6 +1429,8 @@ function bind() {
   $('#btn-extra-new').addEventListener('click', () => startSession('extraNew'));
   $('#btn-extra-review').addEventListener('click', () => startSession('extraReview'));
   onSeg('#seg-extra', v => { settings.extraN = +v; saveSettings(); renderPlan(); });
+  // 슬라이더: 5개 단위로 5~100개
+  $('#extra-range').addEventListener('input', e => { settings.extraN = +e.target.value; saveSettings(); renderPlan(); });
   $('#btn-wrong').addEventListener('click', () => startSession('wrong'));
   $('#btn-order').addEventListener('click', () => startSession('order'));
   $('#btn-resume').addEventListener('click', resumeSession);
