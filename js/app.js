@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611031200';
+const APP_VERSION = '202611031300';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -732,7 +732,8 @@ function showCoach(actions, f) {
 }
 function hideCoach() { clearTimeout(hideCoach.timer); document.querySelectorAll('.coach').forEach(c => c.remove()); }
 
-const PAUSE_ACCEPT_MS = 800; // 원형까지 쓰고 이만큼 멈추면 정답
+const PAUSE_ACCEPT_MS = 800;
+const COACH_IDLE_MS = 1200; // 정답에서 벗어난 채로 이만큼 멈추면 말풍선 // 원형까지 쓰고 이만큼 멈추면 정답
 
 function renderTyping(actions) {
   // 빈칸 수: 숙어는 단어마다 한 칸 (반복된 숙어는 한 번 분량)
@@ -777,9 +778,19 @@ function renderTyping(actions) {
     b.classList.remove('ready');
     if (on) { void b.offsetWidth; b.style.setProperty('--pause', `${PAUSE_ACCEPT_MS}ms`); b.classList.add('ready'); }
   });
+  let coachIdle = null;
   const autoCheck = value => {
     clearTimeout(pause);
+    clearTimeout(coachIdle);
     const right = isRight(value);
+    // 정답에서 벗어난 채로 잠깐 멈추면 확인을 안 눌러도 말풍선이 자동으로 (정답 쪽으로 쓰는 중이면 안 나옴)
+    const n = normalizeAnswer(value);
+    if (n && !right && !q.revealed && !cands.some(c => c.startsWith(n))) {
+      coachIdle = setTimeout(() => {
+        if (q !== thisQ || q.answered || !q.typing || normalizeAnswer(q.typing.get()) !== n) return;
+        notYet(value, true);
+      }, COACH_IDLE_MS);
+    }
     if (right && (settings.baseAccept === 'instant' || isFinal(value))) return check(value);
     setReady(right);
     if (right) {
@@ -791,10 +802,11 @@ function renderTyping(actions) {
     return false;
   };
   // 틀린 답을 내면 왜 틀렸는지 말풍선으로 (철자 노랑 · 비슷함 초록 · 다른 말 빨강)
-  const notYet = value => {
+  const notYet = (value, auto) => {
+    clearTimeout(coachIdle);
     const f = coachFeedback(value, q.w, { cands, find: t => findWord(t, q.w.id), showMeaning: settings.showKo || settings.showMeaning });
     if (f) showCoach(actions, f);
-    else toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
+    else if (!auto) toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   };
   if (settings.appKeyboard) {
     const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '키보드로 바로 입력하세요';
