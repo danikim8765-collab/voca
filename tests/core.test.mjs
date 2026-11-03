@@ -321,23 +321,28 @@ test('숙어는 단어마다 칸, 반복된 숙어는 한 번만 써도 정답',
   assert.ok(isTypedCorrect('took over', w, b.blanks, null));
 });
 
-test('직접 입력 오답 풀이: 철자 · 형태 · 파생어 · 유의어 · 반대말 · 다른 단어', async () => {
-  const { coachFeedback, spellDiff, shortMeaning } = await import('../js/core.js');
+test('직접 입력 오답 풀이: 철자·형태(노랑) · 뜻이 통하는 말(초록) · 상관없는 말은 없음', async () => {
+  const { coachFeedback, spellDiff, shortMeaning, sameSense } = await import('../js/core.js');
   const fatal = { id: 'f', word: 'fatal', blank: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한',
     extras: [['유의어', 'deadly, lethal, mortal'], ['반의어', 'harmless'], ['파생어', 'fatality 명 1. 사망자(수) / fatally 부 치명적으로']] };
-  const other = { id: 'o', word: 'abide', meaning: '1. ((~ by)) (규칙 등을) 준수하다' };
-  const opt = { cands: ['fatal'], find: t => (/^abid(e|es|ed|ing)$/.test(t) ? other : null) };
+  const decisive = { id: 'd', word: 'decisive', meaning: '1. 결정적인 2. 결단력 있는' };
+  const abide = { id: 'a', word: 'abide', meaning: '1. ((~ by)) (규칙 등을) 준수하다' };
+  const opt = { cands: ['fatal'], find: t => (t === 'decisive' ? decisive : /^abid(e|es|ed|ing)$/.test(t) ? abide : null) };
   const k = s => { const f = coachFeedback(s, fatal, opt); return f && f.kind; };
   assert.equal(coachFeedback('fatal', fatal, opt), null);
   assert.equal(k('fatel'), 'spell');
-  assert.deepEqual(spellDiff('fatel', 'fatal').segs.map(x => x.t === 'ok' ? x.v : `[${x.v}]`).join(''), 'fat[e]l');
+  assert.equal(spellDiff('fatel', 'fatal').segs.map(x => x.t === 'ok' ? x.v : `[${x.v}]`).join(''), 'fat[e]l');
   assert.equal(spellDiff('fata', 'fatal').segs.map(x => x.v).join(''), 'fata_');
-  assert.equal(k('fatals'), 'near');
+  assert.equal(k('fatals'), 'spell');
   assert.match(coachFeedback('fatality', fatal, opt).text, /명사/);
-  assert.match(coachFeedback('deadly', fatal, opt).text, /유의어/);
-  assert.equal(k('harmless'), 'off');
-  assert.match(coachFeedback('abided', fatal, opt).text, /'abide'는 '\(규칙 등을\) 준수하다'라는 뜻이에요\. 찾는 단어는 '치명적인'이라는 뜻이에요\./);
-  assert.ok(!/찾는 단어/.test(coachFeedback('zzzz', fatal, { ...opt, showMeaning: false }).text));
+  assert.match(coachFeedback('deadly', fatal, opt).text, /뉘앙스/);
+  assert.equal(k('deadly'), 'near');
+  assert.match(coachFeedback('decisive', fatal, opt).text, /다른 단어는 없을까요\? 첫 글자는 'f'예요/);
+  assert.equal(k('harmless'), null); // 반대말
+  assert.equal(k('abide'), null);    // 상관없는 단어
+  assert.equal(k('zzzz'), null);     // 모르는 말
+  assert.ok(sameSense(fatal.meaning, decisive.meaning));
+  assert.ok(!sameSense(fatal.meaning, abide.meaning));
   assert.equal(shortMeaning('((주로 수동태로)) 사로잡다, 집착하게 하다[집착하다]'), '사로잡다');
   assert.match(coachFeedback('deprive', { word: 'deprive A of B', blank: 'deprive A of B', meaning: '빼앗다', extras: [] }, { cands: ['deprive a of b', 'deprive of'] }).text, /빈칸이 2곳/);
 });

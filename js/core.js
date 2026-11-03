@@ -781,9 +781,6 @@ function derivatives(s) {
   return String(s || '').split(/\s\/\s/).map(x => x.trim().match(/^([A-Za-z][A-Za-z' -]*?)\s+(명|형|부|동|전|접)\s*(.*)$/))
     .filter(Boolean).map(m => ({ word: m[1], pos: POS_KO[m[2]], meaning: shortMeaning(m[3]) }));
 }
-// 받침 있으면 '이라는', 없으면 '라는': 명확한 → 명확한이라는, 치명적인 → 치명적인이라는, 사로잡다 → 사로잡다라는
-const iraneun = ko => { const c = ko.charCodeAt(ko.length - 1); return c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28 ? '이라는' : '라는'; };
-
 // 뜻의 첫 번째 의미만 짧게: "((주로 수동태로)) 사로잡다, 집착하게 하다" → "사로잡다"
 export function shortMeaning(m) {
   const first = String(m || '').replace(/\(\([^)]*\)\)/g, '').split(/\s*\d+\.\s*/).map(x => x.trim()).find(Boolean) || '';
@@ -809,18 +806,17 @@ export function spellDiff(typed, answer) {
 }
 
 /**
- * 오답 풀이: { kind: 'spell'|'near'|'off', text, diff? }
- *  spell(노랑) 철자가 조금 다름 · 빈칸을 덜 채움
- *  near(초록) 같은 단어의 다른 형태 · 같은 뿌리의 다른 품사 · 유의어
- *  off(빨강) 반대말 · 다른 단어 · 모르는 말
- * cands: 정답으로 인정하는 말(정규화된 것), find(text): 그 말이 단어장의 다른 단어면 그 단어, showMeaning: 찾는 단어의 뜻을 알려줘도 되는지
+ * 오답 풀이: { kind: 'spell'|'near', text, diff? } — 해당이 없으면 null (말풍선 안 띄움)
+ *  spell(노랑) 철자가 조금 다름 · 빈칸을 덜 채움 · 같은 단어의 다른 형태 · 같은 뿌리의 다른 품사
+ *  near(초록)  유의어: 뜻은 통하지만 문장에 더 맞는 말이 있음(뉘앙스)
+ *              뜻이 겹치는 단어장의 다른 단어: 그것도 좋은데 다른 단어는? + 첫 글자
+ * 반대말·상관없는 말·모르는 말은 말풍선 없음
+ * cands: 정답으로 인정하는 말(정규화된 것), find(text): 그 말이 단어장의 다른 단어면 그 단어
  */
-export function coachFeedback(input, w, { cands = [], find = () => null, showMeaning = true } = {}) {
+export function coachFeedback(input, w, { cands = [], find = () => null } = {}) {
   const typed = normalizeAnswer(input);
   if (!typed || cands.includes(typed)) return null;
   const words = typed.split(' ');
-  const wm = shortMeaning(w.meaning);
-  const want = showMeaning && wm ? ` 찾는 단어는 '${wm}'${iraneun(wm)} 뜻이에요.` : '';
 
   // 빈칸을 덜 채움: deprive → deprive of
   const short = cands.filter(c => { const cw = c.split(' '); return cw.length > words.length && cw.slice(0, words.length).join(' ') === typed; })
@@ -831,37 +827,42 @@ export function coachFeedback(input, w, { cands = [], find = () => null, showMea
   }
   // 같은 단어의 다른 형태: outlaws
   if (isFormOf(typed, w.word) || isFormOf(typed, w.blank)) {
-    return { kind: 'near', text: `'${typed}'는 형태만 달라요. 원형이나 예문 속 형태로 써 보세요.` };
+    return { kind: 'spell', text: `'${typed}'는 형태만 달라요. 원형이나 예문 속 형태로 써 보세요.` };
   }
-  const { syn, ant } = synAnt(w.extras);
+  const { syn } = synAnt(w.extras);
   const der = derivatives((w.extras.find(([k]) => /파생어/.test(k)) || [])[1]);
   const d = der.find(x => isFormOf(typed, x.word));
   if (d) {
-    return { kind: 'near', text: `'${d.word}'는 같은 뿌리의 ${d.pos || '다른 품사'}예요${d.meaning ? `('${d.meaning}')` : ''}. 예문 자리에 맞는 품사로 바꿔 보세요.` };
+    return { kind: 'spell', text: `'${d.word}'는 같은 뿌리의 ${d.pos || '다른 품사'}예요. 예문 자리에 맞는 품사로 바꿔 보세요.` };
   }
-  const other = find(typed);
-  const om = other ? shortMeaning(other.meaning) : '';
+  // 유의어: 뜻은 통하지만 이 문장에 더 맞는 말이 있음
   const sy = listWords(syn).find(x => isFormOf(typed, x));
   if (sy) {
-    return { kind: 'near', text: `'${typed}'는 뜻이 비슷한 말(유의어)이에요${om ? `('${om}')` : ''}. 예문에 쓰인 바로 그 단어를 찾아보세요.` };
+    return { kind: 'near', text: `'${typed}'도 뜻은 통해요. 그런데 이 문장에 더 딱 맞는 단어가 있어요. 뉘앙스를 생각해 보세요.` };
   }
-  const an = listWords(ant).find(x => isFormOf(typed, x));
-  if (an) return { kind: 'off', text: `'${typed}'는 반대 뜻이에요${om ? `('${om}')` : ''}. 예문 뜻을 다시 읽어 보세요.${want}` };
-
+  // 뜻이 겹치는 단어장의 다른 단어: 그것도 좋은데 다른 단어는? (첫 글자)
+  const other = find(typed);
+  if (other && sameSense(other.meaning, w.meaning)) {
+    const first = (answerParts(w.blank)[0] || w.word).trim()[0] || '';
+    return { kind: 'near', text: `'${other.word}'도 좋아요. 그런데 다른 단어는 없을까요? 첫 글자는 '${first.toLowerCase()}'예요.` };
+  }
   // 철자 비교는 정답 중 가장 가까운 것과
   let best = null;
   for (const c of cands) {
     const r = spellDiff(typed, c);
     if (!best || r.dist < best.dist) best = { ...r, c };
   }
-  const near = best && best.dist <= (best.c.length <= 4 ? 1 : best.c.length <= 8 ? 2 : 3);
-  if (other) {
-    return { kind: 'off', text: `'${other.word}'는 '${om}'${iraneun(om)} 뜻이에요.${near ? ' 철자가 비슷한 다른 단어예요.' : ''}${want}` };
-  }
-  if (near) {
+  if (best && best.dist <= (best.c.length <= 4 ? 1 : best.c.length <= 8 ? 2 : 3)) {
     return { kind: 'spell', diff: best.segs, text: `정답과 ${best.dist === 1 ? '한' : best.dist === 2 ? '두' : '세'} 글자 달라요` };
   }
-  return { kind: 'off', text: `단어장에 없는 말이에요.${want || ' 예문 해석을 보고 다시 떠올려 보세요.'} 모르면 💡 힌트를 눌러 보세요.` };
+  return null;
+}
+
+// 두 단어가 같은 뜻 하나를 공유하는지 (방해하다 ↔ 방해하다, 결정적인 ↔ 결정적인). 오답 보기용 meaningsClash보다 엄격하게
+export function sameSense(a, b) {
+  const flat = m => new Set(meaningSenses(m).flat().filter(x => x.length >= 2));
+  const A = flat(a), B = flat(b);
+  return [...A].some(x => B.has(x));
 }
 
 // 단어장 전체에서 그 말(변화형 포함)인 단어 찾기
