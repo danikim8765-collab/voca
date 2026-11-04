@@ -630,3 +630,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .day-head .day-del { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 2px 4px; text-decoration: underline; }
 .day-head .day-del:hover { color: var(--danger); }
 .day-head span { margin-left: 8px; }
+.num-row { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; }
+.num-row input { width: 110px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); font-size: 16px; color: var(--text); }
+.num-row span { color: var(--muted); font-size: 14px; }
+#seg-new button[data-v="custom"], #seg-rev button[data-v="custom"] { flex: 1.4; white-space: nowrap; }
