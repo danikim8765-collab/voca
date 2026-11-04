@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -145,4 +145,17 @@ test('스위치를 끄면 키가 있어도 AI를 안 부름', async () => {
   assert.equal(aiEnabled(), false);
   assert.equal(await aiGradeMeaning(Q), null);
   assert.equal(calls.length, 0);
+});
+
+test('왜 틀렸어?: 글자로 받고 마크다운 기호는 뺌, 실패면 null', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '**치명적인**은 목숨을 잃게 하는 거예요.' } }] });
+  assert.equal(await aiExplainWrong({ word: 'fatal', meaning: '치명적인', user: '명확한', how: 'choice' }), '치명적인은 목숨을 잃게 하는 거예요.');
+  const body = JSON.parse(calls.at(-1).opts.body);
+  assert.equal(body.response_format, undefined);
+  assert.match(body.messages[1].content, /고른 보기/);
+  reply = () => json({ error: {} }, 429);
+  assert.equal(await aiExplainWrong({ word: 'fatal', meaning: '치명적인', user: 'x' }), null);
+  store.set('voca.ai.on.v1', '0');
+  assert.equal(await aiExplainWrong({ word: 'fatal', meaning: '치명적인', user: 'x' }), null);
 });

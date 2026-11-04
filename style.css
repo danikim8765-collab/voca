@@ -697,3 +697,8 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 @keyframes ready-glow-hint { to { box-shadow: 0 0 0 5px rgba(var(--hint-glow), .3), 0 0 30px 10px rgba(var(--hint-glow), .7); } }
 #q-sentences .sent.ready.hinted { box-shadow: 0 0 0 3px rgba(var(--hint-glow), .2), 0 0 18px 2px rgba(var(--hint-glow), .3); }
 #q-sentences .sent.ready.hinted::after { background: conic-gradient(from 0deg, var(--hint-c) var(--sweep), transparent 0); }
+
+/* 단어 모드 '왜 틀렸어?' AI 설명 */
+.fb-card.explain .btn { width: 100%; }
+.fb-card.explain b { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+.explain-text { line-height: 1.6; white-space: pre-line; }

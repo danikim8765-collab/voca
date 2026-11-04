@@ -5,11 +5,11 @@ import {
   synAnt, mergeMarks, nearestKey,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050100';
+const APP_VERSION = '202611050130';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -768,6 +768,8 @@ function renderMeaningChoices(actions) {
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
       q.answered = true;
+      q.userAnswer = c.meaning; // '왜 틀렸어?'에 씀
+      q.how = 'choice';
       if (ok && q.usedHint) answer(false, null, 'hint');
       else answer(ok, ok ? null : c.meaning);
     });
@@ -790,6 +792,8 @@ function renderMeaningTyping(actions) {
     const v = input.value.trim();
     if (!v) { toast('뜻을 먼저 써 주세요'); input.focus(); return; }
     const cur = q;
+    cur.userAnswer = v; // '왜 틀렸어?'에 씀
+    cur.how = 'type';
     input.blur();
     // 규칙 채점으로 바로. 정답이 아닐 때만(오답·부분 정답) 인터넷이 되면 AI가 다시 봄. AI가 실패하면 규칙 결과 그대로
     let res = gradeMeaning(v, cur.w.meaning, settings.strict);
@@ -1324,6 +1328,7 @@ function showFeedback(correct, given, kind, label) {
   card.append(tags, el('div', 'fb-meaning', formatMeaning(w.meaning)));
   if (!WORD && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
   mean.appendChild(card);
+  if (WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline()) mean.appendChild(explainBox(q));
   if (w.extras.length) {
     const ex = el('div', 'fb-card extras');
     for (const [k, v] of w.extras) {
@@ -1347,6 +1352,25 @@ function showFeedback(correct, given, kind, label) {
   if (!wideDesk()) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
   $('#fb-mean').scrollTop = 0;
   if (settings.autoSpeak) speak(w.word);
+}
+
+// 단어 모드 오답: 누르면 AI가 왜 틀렸는지 설명 (AI 사용 스위치가 켜져 있고 인터넷이 될 때만 보임)
+function explainBox(cur) {
+  const box = el('div', 'fb-card explain');
+  const btn = el('button', 'btn secondary small', `🤖 왜 틀렸어?`);
+  box.appendChild(btn);
+  const showText = t => { box.innerHTML = ''; box.append(el('b', null, `${aiName()} 설명`), el('div', 'explain-text', t)); };
+  if (cur.explain) { showText(cur.explain); return box; }
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = `${aiName()}가 설명 쓰는 중…`;
+    const t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
+    if (t) { cur.explain = t; showText(t); return; }
+    btn.disabled = false;
+    btn.textContent = '🤖 다시 시도';
+    toast('설명을 받지 못했어요. 인터넷이나 무료 한도를 확인해 주세요', 3000);
+  });
+  return box;
 }
 
 function setFbTab(t) {
