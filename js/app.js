@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611042100';
+const APP_VERSION = '202611042200';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -919,6 +919,7 @@ function renderTyping(actions) {
   // 확인 버튼과 예문 박스 테두리에 0.8초 게이지 (컴퓨터처럼 확인 버튼이 안 보여도 언제 넘어가는지 보이게)
   const setReady = on => document.querySelectorAll('#q-actions .key.enter, #q-actions .btn.primary, #q-sentences .sent').forEach(b => {
     b.classList.remove('ready');
+    b.classList.toggle('hinted', !!(on && q && q.usedHint)); // 힌트를 썼으면 노랑 게이지 (외운 걸로 안 침)
     if (on) { void b.offsetWidth; b.style.setProperty('--pause', `${PAUSE_ACCEPT_MS}ms`); b.classList.add('ready'); }
   });
   let coachIdle = null;

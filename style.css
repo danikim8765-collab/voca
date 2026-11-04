@@ -666,3 +666,13 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 }
 @keyframes sent-sweep { to { --sweep: 360deg; } }
 @media (prefers-reduced-motion: reduce) { #q-sentences .sent.ready::after { animation: none; --sweep: 360deg; } }
+/* 힌트를 쓴 단어는 게이지를 노랑으로 (정답 화면의 '힌트 사용' 표시와 같은 색) */
+:root { --hint-c: #f59f00; --hint-glow: 245, 159, 0; }
+#q-actions .key.enter.ready.hinted, #q-actions .btn.primary.ready.hinted {
+  background: var(--hint-c); color: #fff;
+  box-shadow: 0 0 0 3px rgba(var(--hint-glow), .45), 0 0 22px 6px rgba(var(--hint-glow), .55);
+  animation: ready-pop .28s cubic-bezier(.3, 1.6, .5, 1), ready-glow-hint .5s ease-in-out .28s infinite alternate;
+}
+@keyframes ready-glow-hint { to { box-shadow: 0 0 0 5px rgba(var(--hint-glow), .3), 0 0 30px 10px rgba(var(--hint-glow), .7); } }
+#q-sentences .sent.ready.hinted { box-shadow: 0 0 0 3px rgba(var(--hint-glow), .2), 0 0 18px 2px rgba(var(--hint-glow), .3); }
+#q-sentences .sent.ready.hinted::after { background: conic-gradient(from 0deg, var(--hint-c) var(--sweep), transparent 0); }
