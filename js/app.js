@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041500';
+const APP_VERSION = '202611041600';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -46,12 +46,18 @@ const save = (k, v) => {
 let words = [];
 let byId = new Map();
 let days = [];
-let stats = load(KEY.stats, {});
+// 진도: stats(살아 있는 기록)와 tombs(DAY별로 지운 기록 표시 { del: 1, s }). 저장·동기화는 둘을 합쳐서
+let stats = {}, tombs = {};
+function setAllStats(all) {
+  stats = {}; tombs = {};
+  for (const [k, v] of Object.entries(all || {})) { if (v && v.del) tombs[k] = v; else if (v) stats[k] = v; }
+}
+setAllStats(load(KEY.stats, {}));
 // 예전 형식(단계 0~6, 복습 시각)을 새 형식(단계 0~4, 복습일)으로. 원본은 따로 보관
 if (Object.values(stats).some(v => v && v.st == null)) {
   save('voca.stats.backup-before-v2', stats);
   stats = Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, normalizeStat(v)]));
-  save(KEY.stats, stats);
+  save(KEY.stats, { ...stats, ...tombs });
 }
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
@@ -66,7 +72,8 @@ let session = null;
 let soloDay = null; // DAY 박스를 누르면 그 DAY만 따로 학습 (정규 카드 자리에 간단히)
 let dataInfo = '';
 
-const saveStats = () => save(KEY.stats, stats);
+const allStats = () => ({ ...stats, ...tombs });
+const saveStats = () => save(KEY.stats, allStats());
 let resetAt = load(KEY.resetAt, 0);
 
 // 형광펜 표시 (두 모드 공용)
@@ -85,9 +92,9 @@ const otherProgress = () => ({ resetAt: load(OTHER_P + 'resetAt.v1', 0), stats: 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats, prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
-    stats = m.stats;
+    setAllStats(m.stats);
     resetAt = m.resetAt;
     saveStats();
     save(KEY.resetAt, resetAt);
@@ -247,10 +254,11 @@ const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
 const deadline = (today = dateStr()) => (srsOn() && today < settings.goal ? settings.goal : settings.exam);
 const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
 const isWrongNote = s => s && s.st === 0;          // 마지막에 틀린 단어 (0단계)
-const todayPlan = () => buildPlan(words, rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam, srs: srsOn() ? { goal: settings.goal, exam: settings.exam } : null });
+// 복습도 학습 범위 안의 단어에서만 (범위 밖 DAY를 실수로 풀어도 복습에 안 섞이게)
+const todayPlan = () => buildPlan(rangeWords(), rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam, srs: srsOn() ? { goal: settings.goal, exam: settings.exam } : null });
 // 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서)
-const srsPick = () => pickSrsReview(words, rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: settings.reviewLimit });
-const pickToday = () => (srsOn() ? srsPick().words : pickReview(words, stats));
+const srsPick = () => pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: settings.reviewLimit });
+const pickToday = () => (srsOn() ? srsPick().words : pickReview(rangeWords(), stats));
 const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
 
@@ -273,7 +281,7 @@ function flowState() {
   return { plan, learnLeft, rv, stage };
 }
 const extraNew = n => rangeWords().filter(w => !stats[w.id]).slice(0, n);
-const extraReview = n => pickReview(words, stats, { n });
+const extraReview = n => pickReview(rangeWords(), stats, { n });
 
 function fillDaySelects() {
   for (const sel of [$('#day-from'), $('#day-to')]) {
@@ -1094,6 +1102,7 @@ function answer(correct, given, kind) {
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
   const retry = session.wrong.includes(id);
   const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
+  delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
   stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
 
   let label;
@@ -1238,7 +1247,7 @@ let listFilter = 'all';
 function bookView() {
   const o = otherProgress().stats;
   return id => {
-    const a = stats[id], b = normalizeStat(o[id]);
+    const a = stats[id], b = o[id] && !o[id].del ? normalizeStat(o[id]) : null;
     return {
       seen: !!(a || b),
       w: ((a && a.w) || 0) + ((b && b.w) || 0),
@@ -1308,6 +1317,26 @@ function wordItem(w, view = bookView(), onMark) {
   return item;
 }
 
+// 그 DAY 단어들의 학습 기록(이 모드)을 지움. 동기화돼도 되살아나지 않게 지운 표시를 남김. 형광펜은 그대로
+async function deleteDayRecords(d) {
+  const ids = words.filter(w => w.day === d && stats[w.id]).map(w => w.id);
+  if (!ids.length) return;
+  if (!(await ask({
+    title: `DAY ${d} 기록을 지울까요?`,
+    body: `${WORD ? '단어' : '예문'} 모드에서 DAY ${d} 단어 ${ids.length}개의 학습 기록(맞힌·틀린 횟수, 복습 일정)이 지워져요.` + (sync.enabled ? ' 동기화된 다른 기기에서도 지워져요.' : '') + '\n형광펜 표시는 그대로예요. 지운 기록은 되돌릴 수 없어요.',
+    ok: '지우기', danger: true,
+  }))) return;
+  const now = Date.now();
+  for (const id of ids) { delete stats[id]; tombs[id] = { del: 1, s: now }; }
+  saveStats();
+  // 오늘의 복습 목록에서도 빼기
+  const day = loadDay();
+  if (Array.isArray(day.review)) { day.review = day.review.filter(id => !ids.includes(id)); save(KEY.day, day); }
+  sync.soon();
+  renderList();
+  toast(`DAY ${d} 기록을 지웠어요`);
+}
+
 // 단어장에서 볼 DAY (여러 개 고르기). 정규 학습 범위와 따로, 처음엔 학습 범위
 function bookDays() {
   const saved = (settings.bookDays || []).filter(d => days.includes(d));
@@ -1373,6 +1402,12 @@ function renderList(scrollToSel) {
     if (w.day !== lastDay) {
       const h = el('div', 'day-head');
       h.append(el('b', null, `DAY ${w.day}`), el('span', null, `${count[w.day]}단어`));
+      const d = w.day;
+      if (words.some(x => x.day === d && stats[x.id])) {
+        const del = el('button', 'day-del', '기록 지우기');
+        del.addEventListener('click', () => deleteDayRecords(d));
+        h.appendChild(del);
+      }
       box.appendChild(h);
       lastDay = w.day;
     }
@@ -1487,7 +1522,7 @@ async function importProgress(file) {
       return;
     }
     if (!(await ask({ title: '백업으로 덮어쓸까요?', body: '지금 이 기기의 진도가 백업 파일의 진도로 바뀌어요.', ok: '덮어쓰기', danger: true }))) return;
-    stats = Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, normalizeStat(v)]));
+    setAllStats(Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, v && v.del ? v : normalizeStat(v)])));
     saveStats();
     if (data.marks && typeof data.marks === 'object') { marks = mergeMarks(marks, data.marks); save(KEY.marks, marks); }
     sync.now();
@@ -1631,7 +1666,7 @@ function bind() {
       body: (sync.enabled ? '동기화된 다른 기기의 진도도 함께 지워져요.\n' : '') + '지운 진도는 되돌릴 수 없어요.',
       ok: '모두 지우기', danger: true,
     }))) return;
-    stats = {};
+    stats = {}; tombs = {};
     resetAt = Date.now(); // 다른 기기의 예전 기록도 함께 지워지게
     save(KEY.resetAt, resetAt);
     saveStats();
