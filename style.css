@@ -278,6 +278,20 @@ button { cursor: pointer; }
 
 .toggle { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 15px; }
 .toggle input { width: 20px; height: 20px; accent-color: var(--primary); }
+/* 켜고 끄는 스위치 (글자 왼쪽, 스위치 오른쪽) */
+.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 15px; cursor: pointer; }
+.switch {
+  appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: pointer;
+  position: relative; width: 50px; height: 30px; border-radius: 99px; background: var(--line); transition: background .2s;
+}
+.switch::before {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .2s, background .2s;
+}
+.switch:checked { background: var(--primary); }
+.switch:checked::before { transform: translateX(20px); background: var(--on-primary); }
+.switch:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch::before { transition: none; } }
 input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8px; }
 
 .toast {
