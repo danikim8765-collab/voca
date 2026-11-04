@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611042210';
+const APP_VERSION = '202611042230';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -69,6 +69,25 @@ const settings = Object.assign({
   extraN: 20, // 추가 학습·복습 개수
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
 }, load(KEY.settings, {}));
+// 화면 설정 (기기마다, 예문·단어 모드가 같이 씀)
+const UI_KEY = 'voca.ui.v1';
+const ui = Object.assign({
+  simpleHome: true, // 홈 간단히 보기: 학습 범위·문제 방식을 '학습 계획' 화면으로. 끄면 예전처럼 홈에
+}, load(UI_KEY, {}));
+// 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
+function applyHomeLayout() {
+  const range = $('#card-range'), kind = $('#card-kind'), prog = $('#range-progress'), sum = $('#plan-sum-card');
+  if (ui.simpleHome) {
+    $('#plan > header').after(range);
+    sum.appendChild(prog);
+  } else {
+    $('#card-today').after(range);
+    range.appendChild(prog);
+  }
+  range.after(kind);
+  sum.hidden = !ui.simpleHome;
+}
+applyHomeLayout();
 let session = null;
 let soloDay = null; // DAY 박스를 누르면 그 DAY만 따로 학습 (정규 카드 자리에 간단히)
 let dataInfo = '';
@@ -1623,6 +1642,7 @@ function renderSettings() {
   $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
   $('#opt-appkb').checked = settings.appKeyboard;
+  $('#opt-simplehome').checked = ui.simpleHome;
   setSeg('#seg-base', settings.baseAccept);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
@@ -1763,6 +1783,7 @@ function bind() {
   $('#opt-ko').addEventListener('change', e => { settings.showKo = e.target.checked; saveSettings(); });
   $('#opt-meaning').addEventListener('change', e => { settings.showMeaning = e.target.checked; saveSettings(); });
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
+  $('#opt-simplehome').addEventListener('change', e => { ui.simpleHome = e.target.checked; save(UI_KEY, ui); applyHomeLayout(); });
   onSeg('#seg-base', v => { settings.baseAccept = v; saveSettings(); });
   $('#btn-test-voice').addEventListener('click', () => speak('I tried to convince him of the danger.'));
   $('#btn-export').addEventListener('click', exportProgress);

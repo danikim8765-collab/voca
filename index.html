@@ -110,8 +110,10 @@
           <button class="btn ghost small plan-go" id="btn-plan">바꾸기 ›</button>
         </div>
         <div class="plan-sum-text" id="plan-sum"></div>
-        <div class="stats" id="range-stats"></div>
-        <div class="bar"><div class="bar-fill" id="range-bar"></div></div>
+        <div id="range-progress">
+          <div class="stats" id="range-stats"></div>
+          <div class="bar"><div class="bar-fill" id="range-bar"></div></div>
+        </div>
       </div>
 
       <div class="row two" id="range-practice">
@@ -128,7 +130,8 @@
     </div>
   </section>
 
-  <!-- 학습 계획: 자주 안 바꾸는 것(범위, 문제 방식, 하루 개수, 시험일) -->
+  <!-- 학습 계획: 자주 안 바꾸는 것(범위, 문제 방식, 하루 개수, 시험일).
+       설정에서 '홈 간단히 보기'를 끄면 이 카드들이 예전처럼 홈으로 옮겨짐 (applyHomeLayout) -->
   <section id="plan" class="screen">
     <header class="top">
       <button class="icon-btn" id="btn-plan-back" aria-label="뒤로">←</button>
@@ -149,7 +152,7 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="card-kind">
       <div class="label">문제 방식</div>
       <div class="seg" id="seg-kind">
         <button data-v="choice">4지선다</button>
@@ -316,6 +319,11 @@
         <button data-v="hard">엄격</button>
       </div>
       <p class="muted" id="strict-desc"></p>
+    </div>
+    <div class="card">
+      <div class="label">화면</div>
+      <label class="toggle"><input type="checkbox" id="opt-simplehome"> 홈 간단히 보기</label>
+      <p class="muted srs-desc">학습 범위·문제 방식은 '학습 계획' 화면에서 바꿔요. 끄면 예전처럼 홈에 모두 보여요.</p>
     </div>
     <div class="card">
       <div class="label">발음</div>
