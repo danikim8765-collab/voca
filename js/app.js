@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
+  applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey,
 } from './core.js';
@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041600';
+const APP_VERSION = '202611041800';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -63,6 +63,7 @@ const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
   // 주기 복습 (설정에서 켬, 목표일·시험일 둘 다 있어야 동작): 복습 간격 다섯 가지, 목표일, 오늘의 복습 개수(0 = 제한 없음)
   srs: false, srsPreset: 'm', goal: '', reviewLimit: 0,
+  reviewSize: 20, // 오늘의 복습 수 (기본 방식, 주기 복습에서 '개수 제한'을 켰을 때도)
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
   baseAccept: 'pause', // 원형이 예문 형태의 앞부분일 때(outlaw → outlawed): pause = 0.8초 멈추면 정답, instant = 바로
   extraN: 20, // 추가 학습·복습 개수
@@ -92,7 +93,7 @@ const otherProgress = () => ({ resetAt: load(OTHER_P + 'resetAt.v1', 0), stats: 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -102,6 +103,7 @@ const sync = createSync({
       const p = m.prefs;
       Object.assign(settings, { exam: p.exam || '', newPerDay: p.newPerDay || 20, prefsAt: p.at });
       if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
+      if (p.reviewSize) settings.reviewSize = p.reviewSize;
       // 학습 범위도 기기끼리 맞춤 (없는 DAY면 renderHome이 맞춰 줌)
       if (p.from != null && p.to != null) Object.assign(settings, { from: p.from, to: p.to });
       saveSettings();
@@ -257,8 +259,8 @@ const isWrongNote = s => s && s.st === 0;          // 마지막에 틀린 단어
 // 복습도 학습 범위 안의 단어에서만 (범위 밖 DAY를 실수로 풀어도 복습에 안 섞이게)
 const todayPlan = () => buildPlan(rangeWords(), rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam, srs: srsOn() ? { goal: settings.goal, exam: settings.exam } : null });
 // 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서)
-const srsPick = () => pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: settings.reviewLimit });
-const pickToday = () => (srsOn() ? srsPick().words : pickReview(rangeWords(), stats));
+const srsPick = () => pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: settings.reviewLimit ? settings.reviewSize : 0 });
+const pickToday = () => (srsOn() ? srsPick().words : pickReview(rangeWords(), stats, { n: settings.reviewSize }));
 const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
 
@@ -316,7 +318,7 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
-  setSeg('#seg-new', String(settings.newPerDay));
+  setSeg('#seg-new', String(settings.newPerDay)); // 10·20·30·40이 아니면(맨 위 카드에서 직접 정한 값) 아무것도 안 켜짐
   $('#exam-date').value = settings.exam || '';
   renderPlan();
 
@@ -375,11 +377,13 @@ function renderHome() {
 function renderPlan() {
   const { plan, learnLeft, rv, stage: regular } = flowState();
   const stage = soloDay != null && days.includes(soloDay) ? 'day' : regular;
+  // items: [숫자, 이름, 누르면 할 일(있으면 눌러서 직접 정하기)]
   const fill = (box, items) => {
     box.innerHTML = '';
-    for (const [n, l] of items) {
-      const d = el('div');
+    for (const [n, l, onEdit] of items) {
+      const d = el(onEdit ? 'button' : 'div', onEdit ? 'editable' : null);
       d.append(el('b', null, n), l);
+      if (onEdit) { d.title = '눌러서 개수 정하기'; d.appendChild(el('i', 'edit-ic', '✎')); d.addEventListener('click', onEdit); }
       box.appendChild(d);
     }
   };
@@ -419,7 +423,7 @@ function renderPlan() {
   }
 
   if (stage === 'learn') {
-    const items = [[plan.fresh.length, '새 단어']];
+    const items = [[plan.fresh.length, '새 단어', editNewPerDay]];
     if (plan.examInfo && plan.examInfo.finalDay) items.unshift([plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
     fill($('#plan-info'), items);
     $('#btn-start').textContent = `오늘 학습 시작 (${learnLeft})`;
@@ -428,15 +432,15 @@ function renderPlan() {
     const due = plan.review.length;
     const shown = rv.left.length;
     const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
-    fill($('#review-info'), [[shown, '복습'], [dueIn, '복습일 된 단어']]);
+    fill($('#review-info'), [[shown, '복습', editReviewSize], [dueIn, '복습일 된 단어']]);
     $('#btn-review').textContent = `오늘 복습 시작 (${shown})`;
     if (srsOn()) {
       const sp = srsPick();
-      const cap = settings.reviewLimit;
+      const cap = settings.reviewLimit ? settings.reviewSize : 0;
       note = sp.phase === 'final' ? `목표일부터 시험 전까지 학습 범위 ${rangeWords().length}단어를 ${sp.days}일에 나눠 전부 복습해요 (하루 ${sp.size}개쯤).`
         : cap && due > cap ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${cap}개만 해요. 설정에서 '제한 없음'으로 바꿀 수 있어요.`
           : '주기 복습: 오늘 복습일이 된 단어예요.';
-    } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
+    } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${settings.reviewSize}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
   } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
@@ -451,6 +455,78 @@ function renderPlan() {
     note = nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
   }
   $('#today-note').textContent = note;
+}
+
+// 숫자 키패드 (앱 안): await askNumber({ title, value, extra }) → 숫자, 또는 extra를 고르면 extra.value, 취소면 null
+// 폰·패드는 시스템 키보드 없이 이 키패드로, 컴퓨터는 키패드는 숨기고 실제 키보드의 숫자·Backspace·Enter·Esc로
+function askNumber({ title, value, hint = '', extra = null, min = 1, max = 300 }) {
+  const d = $('#numpad');
+  $('#np-title').textContent = title;
+  $('#np-hint').textContent = hint;
+  let cur = String(value || ''), fresh = true; // 처음 누르는 숫자는 새로 쓰기
+  const show = () => { $('#np-val').textContent = cur || '0'; $('#np-ok').disabled = !(+cur >= min); };
+  return new Promise(resolve => {
+    const done = v => { d.hidden = true; document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const press = k => {
+      if (k === 'back') { cur = fresh ? '' : cur.slice(0, -1); fresh = false; }
+      else if (/^\d$/.test(k)) { cur = fresh ? k : (cur + k).replace(/^0+/, ''); fresh = false; if (+cur > max) cur = String(max); }
+      show();
+    };
+    const ok = () => { if (+cur >= min) done(Math.min(max, +cur)); };
+    const onKey = e => {
+      if (/^\d$/.test(e.key)) press(e.key);
+      else if (e.key === 'Backspace') press('back');
+      else if (e.key === 'Enter') ok();
+      else if (e.key === 'Escape') done(null);
+      else return;
+      e.preventDefault(); e.stopPropagation();
+    };
+    const keys = $('#np-keys');
+    keys.innerHTML = '';
+    for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back']) {
+      const b = el('button', 'np-key' + (k === 'back' ? ' fn' : ''), k === 'back' ? '⌫' : k);
+      if (!k) { b.disabled = true; b.classList.add('blank-key'); }
+      else b.addEventListener('click', () => press(k));
+      keys.appendChild(b);
+    }
+    const chips = $('#np-chips');
+    chips.innerHTML = '';
+    for (const n of [10, 20, 30, 40]) {
+      const c = el('button', 'chip', String(n));
+      c.addEventListener('click', () => { cur = String(n); fresh = true; show(); });
+      chips.appendChild(c);
+    }
+    if (extra) { const c = el('button', 'chip', extra.label); c.addEventListener('click', () => done(extra.value)); chips.appendChild(c); }
+    $('#np-ok').onclick = ok;
+    $('#np-cancel').onclick = () => done(null);
+    d.onclick = e => { if (e.target === d) done(null); };
+    document.addEventListener('keydown', onKey, true);
+    show();
+    d.hidden = false;
+  });
+}
+
+// 맨 위 카드의 숫자를 눌러 하루 새 단어 수·오늘의 복습 수를 직접 정하기
+async function editNewPerDay() {
+  const n = await askNumber({ title: '하루 새 단어 수', value: settings.newPerDay, hint: '오늘부터 하루에 배울 새 단어 수' });
+  if (n == null) return;
+  settings.newPerDay = n; settings.prefsAt = Date.now(); saveSettings(); setSeg('#seg-new', String(n)); renderPlan(); sync.soon();
+}
+async function editReviewSize() {
+  const srs = srsOn();
+  const n = await askNumber({
+    title: '오늘의 복습 수', value: settings.reviewSize,
+    hint: srs ? '주기 복습: 복습일이 된 단어를 이 수까지만 (제한 없음도 고를 수 있어요)' : '전에 배운 단어 중 오늘 복습할 수',
+    extra: srs ? { label: '제한 없음', value: 0 } : null,
+  });
+  if (n == null) return;
+  if (srs) settings.reviewLimit = n ? 1 : 0;
+  if (n) settings.reviewSize = n;
+  settings.prefsAt = Date.now(); saveSettings();
+  // 오늘 복습을 아직 시작 안 했으면 새 개수로 다시 고르게
+  const day = loadDay();
+  if (Array.isArray(day.review) && !day.review.some(id => seenToday(id))) { delete day.review; save(KEY.day, day); }
+  renderPlan(); sync.soon();
 }
 
 function setSeg(sel, v) {
@@ -1459,7 +1535,8 @@ function renderSrs() {
     box.appendChild(b);
   }
   renderSrsGraph(PRESETS[settings.srsPreset] || PRESETS.m);
-  setSeg('#seg-limit', String(settings.reviewLimit || 0));
+  setSeg('#seg-limit', settings.reviewLimit ? '1' : '0');
+  $('#limit-n').textContent = `${settings.reviewSize}개까지`;
 }
 
 // 기억 유지 그래프 (0~30일): 고른 주기대로 복습했을 때(초록) / 안 했을 때(회색). 간단한 망각 곡선 모형

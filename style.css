@@ -630,3 +630,21 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .day-head .day-del { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 2px 4px; text-decoration: underline; }
 .day-head .day-del:hover { color: var(--danger); }
 .day-head span { margin-left: 8px; }
+
+/* 맨 위 카드: 누르면 개수를 정하는 숫자 */
+.plan > .editable { position: relative; flex: 1; background: var(--bg); border-radius: 12px; padding: 10px 8px; text-align: center; font-size: 13px; color: var(--muted); border: 1.5px dashed var(--line); cursor: pointer; }
+.plan > .editable:active { transform: scale(.98); }
+.plan > .editable .edit-ic { position: absolute; top: 6px; right: 8px; font-style: normal; font-size: 12px; color: var(--muted); opacity: .7; }
+/* 앱 안 숫자 키패드 */
+.numpad-card { max-width: 340px; }
+.np-display { display: flex; align-items: baseline; justify-content: center; gap: 4px; margin: 6px 0 2px; }
+.np-display b { font-size: 44px; font-weight: 800; letter-spacing: .02em; min-width: 1ch; }
+.np-display span { color: var(--muted); }
+.np-hint { font-size: 12px; margin-bottom: 10px; }
+.np-chips { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.np-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.np-key { height: 52px; border: 0; border-radius: 12px; background: var(--bg); color: var(--text); font-size: 22px; font-weight: 600; }
+.np-key:active { background: var(--primary-soft); }
+.np-key.fn { font-size: 18px; }
+.np-key.blank-key { visibility: hidden; }
+.desk .np-keys { display: none; } /* 컴퓨터는 실제 키보드로 */

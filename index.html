@@ -279,7 +279,7 @@
         <div class="label mt">오늘의 복습 개수</div>
         <div class="seg" id="seg-limit">
           <button data-v="0">제한 없음</button>
-          <button data-v="20">20개까지</button>
+          <button data-v="1" id="limit-n">20개까지</button>
         </div>
       </div>
     </div>
@@ -338,6 +338,21 @@
   </section>
 
   <!-- 확인 창 (지우기 등) -->
+  <!-- 숫자 키패드: 맨 위 카드의 새 단어·복습 수를 누르면. 폰·패드는 시스템 키보드 대신 이 키패드, 컴퓨터는 키패드 없이 숫자 치고 Enter -->
+  <div class="dialog numpad" id="numpad" role="dialog" aria-modal="true" aria-labelledby="np-title" hidden>
+    <div class="dialog-card numpad-card">
+      <div class="dlg-title" id="np-title"></div>
+      <div class="np-display"><b id="np-val"></b><span>개</span></div>
+      <div class="np-hint muted" id="np-hint"></div>
+      <div class="np-chips" id="np-chips"></div>
+      <div class="np-keys" id="np-keys"></div>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="np-cancel">취소</button>
+        <button class="btn dlg-ok" id="np-ok">확인</button>
+      </div>
+    </div>
+  </div>
+
   <div class="dialog" id="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-body" hidden>
     <div class="dialog-card">
       <div class="dlg-icon" id="dlg-icon" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/></svg></div>
