@@ -653,3 +653,16 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 #btn-start:disabled, #btn-review:disabled { opacity: .55; }
 .day-reset { display: block; margin: 2px auto 0; border: 0; background: transparent; color: var(--muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; padding: 4px 8px; }
 .day-reset:hover { color: var(--danger); }
+
+/* 원형까지 맞게 썼을 때 예문 박스 테두리도 0.8초 동안 초록 게이지가 한 바퀴 차오름 */
+@property --sweep { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+#q-sentences .sent.ready { position: relative; box-shadow: 0 0 0 3px rgba(var(--ok-glow), .18), 0 0 18px 2px rgba(var(--ok-glow), .25); }
+#q-sentences .sent.ready::after {
+  content: ""; position: absolute; inset: -2px; border-radius: 20px; padding: 3px; pointer-events: none;
+  background: conic-gradient(from 0deg, var(--ok) var(--sweep), transparent 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: sent-sweep var(--pause, 800ms) linear forwards;
+}
+@keyframes sent-sweep { to { --sweep: 360deg; } }
+@media (prefers-reduced-motion: reduce) { #q-sentences .sent.ready::after { animation: none; --sweep: 360deg; } }
