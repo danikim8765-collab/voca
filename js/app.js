@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041800';
+const APP_VERSION = '202611041900';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -257,7 +257,10 @@ const deadline = (today = dateStr()) => (srsOn() && today < settings.goal ? sett
 const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
 const isWrongNote = s => s && s.st === 0;          // 마지막에 틀린 단어 (0단계)
 // 복습도 학습 범위 안의 단어에서만 (범위 밖 DAY를 실수로 풀어도 복습에 안 섞이게)
-const todayPlan = () => buildPlan(rangeWords(), rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam, srs: srsOn() ? { goal: settings.goal, exam: settings.exam } : null });
+// 오늘 배울 새 단어 총수: 맨 위 숫자로 오늘만 바꿨으면 그 값, 아니면 하루 새 단어 수
+const newToday = () => Object.values(stats).filter(s => s && s.f === dateStr()).length;
+const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : settings.newPerDay; };
+const todayPlan = () => buildPlan(rangeWords(), rangeWords(), stats, { today: dateStr(), newPerDay: todayNewTarget(), exam: settings.exam, srs: srsOn() ? { goal: settings.goal, exam: settings.exam } : null });
 // 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서)
 const srsPick = () => pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: settings.reviewLimit ? settings.reviewSize : 0 });
 const pickToday = () => (srsOn() ? srsPick().words : pickReview(rangeWords(), stats, { n: settings.reviewSize }));
@@ -318,7 +321,8 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
-  setSeg('#seg-new', String(settings.newPerDay)); // 10·20·30·40이 아니면(맨 위 카드에서 직접 정한 값) 아무것도 안 켜짐
+  setSeg('#seg-new', String(settings.newPerDay));
+  setSeg('#seg-rev', String(settings.reviewSize));
   $('#exam-date').value = settings.exam || '';
   renderPlan();
 
@@ -374,9 +378,13 @@ function renderHome() {
 }
 
 // 홈의 오늘 카드: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기 순서로 한 카드 안에서 바뀜
+let viewStage = null; // 학습 › 복습 › 더 하기를 눌러 직접 본 단계 (세션을 시작하면 다시 자동)
 function renderPlan() {
   const { plan, learnLeft, rv, stage: regular } = flowState();
-  const stage = soloDay != null && days.includes(soloDay) ? 'day' : regular;
+  // 눌러서 갈 수 있는 단계: 학습은 언제나, 복습은 학습을 끝냈거나 이미 시작했으면, 더 하기는 둘 다 끝냈으면
+  const can = { learn: true, review: !learnLeft || rv.started, extra: !learnLeft && rv.done };
+  if (viewStage && !can[viewStage]) viewStage = null;
+  const stage = soloDay != null && days.includes(soloDay) ? 'day' : viewStage || regular;
   // items: [숫자, 이름, 누르면 할 일(있으면 눌러서 직접 정하기)]
   const fill = (box, items) => {
     box.innerHTML = '';
@@ -402,9 +410,10 @@ function renderPlan() {
       else if (x.id !== 'btn-wrong') x.disabled = false; // 다시 볼 단어는 renderHome이 개수로 정함
     });
   }
+  const finished = { learn: !learnLeft, review: !learnLeft && rv.done, extra: false };
   document.querySelectorAll('#today-flow span').forEach(sp => {
-    const i = order.indexOf(sp.dataset.s), cur = order.indexOf(stage);
-    sp.className = i < cur ? 'done' : i === cur ? 'on' : '';
+    const k = sp.dataset.s;
+    sp.className = [finished[k] ? 'done' : '', k === stage ? 'on' : '', can[k] && k !== stage ? 'link' : ''].filter(Boolean).join(' ');
   });
   for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
@@ -423,24 +432,27 @@ function renderPlan() {
   }
 
   if (stage === 'learn') {
-    const items = [[plan.fresh.length, '새 단어', editNewPerDay]];
+    const items = [[plan.fresh.length, '새 단어', editNewToday]];
     if (plan.examInfo && plan.examInfo.finalDay) items.unshift([plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
     fill($('#plan-info'), items);
-    $('#btn-start').textContent = `오늘 학습 시작 (${learnLeft})`;
+    $('#btn-start').textContent = learnLeft ? `오늘 학습 시작 (${learnLeft})` : '오늘 학습 완료 ✓';
+    $('#btn-start').disabled = !learnLeft;
+    note = learnLeft ? '' : '숫자를 누르면 오늘 더 배울 수 있어요.';
   } else if (stage === 'review') {
     // 기본: 전에 한 단어 20개(복습일 된 단어 먼저) · 주기 복습: 알고리즘이 고른 단어
     const due = plan.review.length;
     const shown = rv.left.length;
     const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
-    fill($('#review-info'), [[shown, '복습', editReviewSize], [dueIn, '복습일 된 단어']]);
-    $('#btn-review').textContent = `오늘 복습 시작 (${shown})`;
+    fill($('#review-info'), [[shown, '복습', editReviewToday], [dueIn, '복습일 된 단어']]);
+    $('#btn-review').textContent = shown ? `오늘 복습 시작 (${shown})` : '오늘 복습 완료 ✓';
+    $('#btn-review').disabled = !shown;
     if (srsOn()) {
       const sp = srsPick();
       const cap = settings.reviewLimit ? settings.reviewSize : 0;
       note = sp.phase === 'final' ? `목표일부터 시험 전까지 학습 범위 ${rangeWords().length}단어를 ${sp.days}일에 나눠 전부 복습해요 (하루 ${sp.size}개쯤).`
         : cap && due > cap ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${cap}개만 해요. 설정에서 '제한 없음'으로 바꿀 수 있어요.`
           : '주기 복습: 오늘 복습일이 된 단어예요.';
-    } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${settings.reviewSize}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
+    } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 오늘은 밀린 것부터 ${shown}개 해요. 나머지는 추가 복습에서 나와요.` : '';
   } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
@@ -506,27 +518,38 @@ function askNumber({ title, value, hint = '', extra = null, min = 1, max = 300 }
   });
 }
 
-// 맨 위 카드의 숫자를 눌러 하루 새 단어 수·오늘의 복습 수를 직접 정하기
-async function editNewPerDay() {
-  const n = await askNumber({ title: '하루 새 단어 수', value: settings.newPerDay, hint: '오늘부터 하루에 배울 새 단어 수' });
+// 맨 위 카드의 숫자를 눌러 '오늘' 남은 새 단어·복습 개수를 바꿈 (오늘만. 매일 개수는 문제 방식 카드의 버튼으로)
+async function editNewToday() {
+  const left = todayPlan().fresh.length;
+  const n = await askNumber({ title: '오늘 더 배울 새 단어', value: left, min: 0, hint: '오늘만 바뀌어요 · 매일 개수는 아래 \'하루 새 단어 수\'' });
   if (n == null) return;
-  settings.newPerDay = n; settings.prefsAt = Date.now(); saveSettings(); setSeg('#seg-new', String(n)); renderPlan(); sync.soon();
+  const day = loadDay();
+  day.newTarget = newToday() + n; // 오늘 이미 배운 수 + 더 배울 수
+  save(KEY.day, day);
+  viewStage = 'learn';
+  renderPlan();
 }
-async function editReviewSize() {
+async function editReviewToday() {
   const srs = srsOn();
+  const left = reviewState().left.length;
   const n = await askNumber({
-    title: '오늘의 복습 수', value: settings.reviewSize,
-    hint: srs ? '주기 복습: 복습일이 된 단어를 이 수까지만 (제한 없음도 고를 수 있어요)' : '전에 배운 단어 중 오늘 복습할 수',
-    extra: srs ? { label: '제한 없음', value: 0 } : null,
+    title: '오늘 복습할 단어', value: left, min: 0,
+    hint: srs ? '오늘만 바뀌어요 · 주기 복습: 복습일이 된 단어에서' : '오늘만 바뀌어요 · 매일 개수는 아래 \'하루 복습 수\'',
+    extra: srs ? { label: '전부(제한 없음)', value: -1 } : null,
   });
   if (n == null) return;
-  if (srs) settings.reviewLimit = n ? 1 : 0;
-  if (n) settings.reviewSize = n;
-  settings.prefsAt = Date.now(); saveSettings();
-  // 오늘 복습을 아직 시작 안 했으면 새 개수로 다시 고르게
+  // 오늘 이미 복습한 단어는 두고, 남은 단어를 n개(전부면 다)로 다시 고름
   const day = loadDay();
-  if (Array.isArray(day.review) && !day.review.some(id => seenToday(id))) { delete day.review; save(KEY.day, day); }
-  renderPlan(); sync.soon();
+  const done = Array.isArray(day.review) ? day.review.filter(id => byId.has(id) && seenToday(id)) : [];
+  const want = n < 0 ? 0 : n;
+  const picked = srs
+    ? pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: want }).words
+    : pickReview(rangeWords(), stats, { n: want });
+  const rest = picked.map(w => w.id).filter(id => !done.includes(id));
+  day.review = [...done, ...(n < 0 ? rest : rest.slice(0, want))];
+  save(KEY.day, day);
+  viewStage = 'review';
+  renderPlan();
 }
 
 function setSeg(sel, v) {
@@ -543,6 +566,7 @@ function onSeg(sel, fn) {
 
 // ---------- 학습 세션 ----------
 function startSession(mode, list) {
+  viewStage = null;
   const rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   const range = from === to ? `DAY ${from}` : `DAY ${from}~${to}`;
@@ -1660,6 +1684,9 @@ function bind() {
   });
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
+  onSeg('#seg-rev', v => { settings.reviewSize = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
+  // 학습 › 복습 › 더 하기를 눌러 그 단계로
+  $('#today-flow').addEventListener('click', e => { const sp = e.target.closest('span[data-s]'); if (sp && sp.classList.contains('link')) { viewStage = sp.dataset.s; renderPlan(); } });
   const setExam = v => { settings.exam = v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); };
   $('#exam-date').addEventListener('change', e => setExam(e.target.value));
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });

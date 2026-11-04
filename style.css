@@ -648,3 +648,6 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .np-key.fn { font-size: 18px; }
 .np-key.blank-key { visibility: hidden; }
 .desk .np-keys { display: none; } /* 컴퓨터는 실제 키보드로 */
+.flow span.link { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+.flow span.link:hover { color: var(--primary); }
+#btn-start:disabled, #btn-review:disabled { opacity: .55; }
