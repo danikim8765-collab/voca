@@ -5,11 +5,11 @@ import {
   synAnt, mergeMarks, nearestKey,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050130';
+const APP_VERSION = '202611050145';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -784,7 +784,7 @@ function renderMeaningTyping(actions) {
   input.placeholder = '뜻 입력 (여러 뜻은 쉼표로)';
   const ok = el('button', 'btn primary', '확인');
   const level = { easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통';
-  const grader = aiOnline() ? `${level} · 오답이면 ${aiName()} 재확인` : aiEnabled() ? `${level} (오프라인)` : level;
+  const grader = aiOnline() ? `${level} · 오답이면 AI 재확인` : aiEnabled() ? `${level} (오프라인)` : level;
   actions.append(input, el('div', 'type-help', `채점: ${grader} · 설정에서 바꿀 수 있어요`), ok);
   let busy = false;
   const submit = async () => {
@@ -800,7 +800,7 @@ function renderMeaningTyping(actions) {
     if (res.score < 2 && aiOnline()) {
       busy = true;
       input.disabled = ok.disabled = true;
-      ok.textContent = `${aiName()} 확인 중…`;
+      ok.textContent = `AI 확인 중…`;
       const ai = await aiGradeMeaning({ word: cur.w.word, meaning: cur.w.meaning, user: v, strict: settings.strict });
       busy = false;
       if (q !== cur || cur.answered) return; // 채점 중에 다른 화면으로 나갔으면 버림
@@ -1359,11 +1359,11 @@ function explainBox(cur) {
   const box = el('div', 'fb-card explain');
   const btn = el('button', 'btn secondary small', `🤖 왜 틀렸어?`);
   box.appendChild(btn);
-  const showText = t => { box.innerHTML = ''; box.append(el('b', null, `${aiName()} 설명`), el('div', 'explain-text', t)); };
+  const showText = t => { box.innerHTML = ''; box.append(el('b', null, `AI 설명`), el('div', 'explain-text', t)); };
   if (cur.explain) { showText(cur.explain); return box; }
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    btn.textContent = `${aiName()}가 설명 쓰는 중…`;
+    btn.textContent = `AI가 설명 쓰는 중…`;
     const t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
     if (t) { cur.explain = t; showText(t); return; }
     btn.disabled = false;
@@ -1700,7 +1700,7 @@ function renderAiStatus() {
   $('#ai-box').hidden = !sw;
   $('#ai-off').hidden = key;
   $('#ai-on').hidden = !key;
-  if (key) $('#ai-info').textContent = navigator.onLine === false ? `${aiName()} 연결됨 · 지금은 오프라인이라 규칙대로 채점해요` : `${aiName()} 연결됨 · 규칙 채점에서 오답이 나오면 ${aiName()}가 다시 확인해요`;
+  if (key) $('#ai-info').textContent = navigator.onLine === false ? `AI 연결됨 · 지금은 오프라인이라 규칙대로 채점해요` : `AI 연결됨 · 규칙 채점에서 오답이 나오면 AI가 다시 확인해요`;
 }
 
 function exportProgress() {
@@ -1867,7 +1867,7 @@ function bind() {
     try {
       await aiConnect(key);
       $('#ai-key').value = '';
-      toast(`${aiName()} 재확인을 켰어요`);
+      toast(`AI 재확인을 켰어요`);
     } catch (e) {
       toast(e.status === 404 ? '지금 쓸 수 있는 무료 모델을 찾지 못했어요' : e.status === 401 || e.status === 403 ? 'API 키가 맞지 않아요. gsk_로 시작하는 키를 다시 복사해서 붙여넣어 주세요' : '확인하지 못했어요. 인터넷과 API 키를 확인해 주세요', 3500);
     }
