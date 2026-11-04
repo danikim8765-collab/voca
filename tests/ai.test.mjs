@@ -65,3 +65,37 @@ test('거절·오류·잘못된 응답·네트워크 실패는 null', async () =
   reply = () => { throw new TypeError('Failed to fetch'); };
   assert.equal(await aiGradeMeaning(Q), null);
 });
+
+test('Gemini 키: 연결, 채점 요청 모양, 응답 읽기', async () => {
+  reply = url => json({ name: 'models/gemini-flash-lite-latest' });
+  await aiConnect('AIzaTEST');
+  assert.equal(JSON.parse(store.get('voca.ai.v1')).provider, 'gemini');
+  assert.equal(calls[0].opts.headers['x-goog-api-key'], 'AIzaTEST');
+  reply = () => json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'thinking…', thought: true }, { text: '{"score":2,"missing":0,"note":""}' }] } }] });
+  assert.deepEqual(await aiGradeMeaning(Q), { score: 2, missing: 0, note: '' });
+  const last = calls.at(-1);
+  assert.match(last.url, /models\/gemini-flash-lite-latest:generateContent$/);
+  const body = JSON.parse(last.opts.body);
+  assert.equal(body.generationConfig.responseMimeType, 'application/json');
+  assert.match(body.contents[0].parts[0].text, /죽음을 부르는/);
+});
+
+test('Gemini: 모델 이름이 없으면 목록에서 flash-lite를 고름, 틀린 키(400)는 401로', async () => {
+  reply = url => /models\?/.test(url)
+    ? json({ models: [{ name: 'models/gemini-9-pro', supportedGenerationMethods: ['generateContent'] }, { name: 'models/gemini-9-flash-lite', supportedGenerationMethods: ['generateContent'] }] })
+    : json({}, 404);
+  await aiConnect('AIzaX');
+  assert.equal(JSON.parse(store.get('voca.ai.v1')).model, 'gemini-9-flash-lite');
+  store.clear();
+  reply = () => json({ error: { status: 'INVALID_ARGUMENT' } }, 400);
+  await assert.rejects(aiConnect('AIzaBAD'), e => e.status === 401);
+  assert.equal(aiEnabled(), false);
+});
+
+test('Gemini: 무료 한도 초과(429)·중간에 끊긴 응답은 null', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'AIza', provider: 'gemini', model: 'm' }));
+  reply = () => json({ error: {} }, 429);
+  assert.equal(await aiGradeMeaning(Q), null);
+  reply = () => json({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: '{"sco' }] } }] });
+  assert.equal(await aiGradeMeaning(Q), null);
+});
