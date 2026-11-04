@@ -255,6 +255,28 @@
         <button class="btn ghost small" id="btn-sync-off">연결 끊기</button>
       </div>
     </div>
+    <div class="card" id="srs-card">
+      <div class="label">복습 방식</div>
+      <label class="toggle"><input type="checkbox" id="opt-srs"> 주기 복습 켜기 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></label>
+      <p class="muted srs-desc">고른 주기대로 복습일이 된 단어를 목표일까지 계속 복습하고, 목표일부터 시험 전날까지는 학습 범위 전부를 남은 날에 나눠 한 번씩 복습해요.</p>
+      <div class="srs-dates">
+        <label>목표일<input type="date" id="goal-date" class="date-input"></label>
+        <label>시험일<input type="date" id="srs-exam-date" class="date-input"></label>
+      </div>
+      <p class="srs-warn" id="srs-warn" hidden></p>
+      <div id="srs-opts">
+        <div class="label mt">기억 유지 그래프</div>
+        <div class="srs-graph" id="srs-graph"></div>
+        <div class="label">복습 주기</div>
+        <div class="srs-presets" id="srs-presets" role="radiogroup" aria-label="복습 주기"></div>
+        <p class="muted srs-desc">새로 학습·복습하는 단어부터 바뀐 주기가 적용돼요.</p>
+        <div class="label mt">오늘의 복습 개수</div>
+        <div class="seg" id="seg-limit">
+          <button data-v="0">제한 없음</button>
+          <button data-v="20">20개까지</button>
+        </div>
+      </div>
+    </div>
     <div class="card" data-only="word">
       <div class="label">직접 입력 채점</div>
       <div class="seg" id="seg-strict">
