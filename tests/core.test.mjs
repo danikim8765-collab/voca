@@ -405,3 +405,12 @@ test('주기 복습: 간격 프리셋, 목표일까지 맞춤, 목표일부터 �
   assert.ok(c.none[c.none.length - 1][1] < 0.01);
   assert.ok(c.before[3][1] > c.before[0][1]);
 });
+
+test('지운 기록은 동기화해도 되살아나지 않고, 다시 풀면 새 기록이 이김', async () => {
+  const { mergeProgress } = await import('../js/core.js');
+  const old = { st: 2, due: '2026-11-05', c: 2, w: 1, s: 100, f: '2026-11-01' };
+  const m1 = mergeProgress({ stats: { a: { del: 1, s: 200 } } }, { stats: { a: old } });
+  assert.deepEqual(m1.stats.a, { del: 1, s: 200 });
+  const again = { st: 1, due: '2026-11-06', c: 1, w: 0, s: 300, f: '2026-11-05' };
+  assert.equal(mergeProgress({ stats: { a: again } }, m1).stats.a.s, 300);
+});

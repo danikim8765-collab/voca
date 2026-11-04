@@ -627,3 +627,6 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
   .desk .quiz-actions { max-width: none; }
 }
 @keyframes fb-in { from { opacity: 0; transform: translateX(12px); } }
+.day-head .day-del { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 2px 4px; text-decoration: underline; }
+.day-head .day-del:hover { color: var(--danger); }
+.day-head span { margin-left: 8px; }

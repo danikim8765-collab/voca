@@ -675,7 +675,8 @@ export function mergeProgress(a, b) {
   for (const src of [(a && a.stats) || {}, (b && b.stats) || {}]) {
     for (const [id, s] of Object.entries(src)) {
       if (!s || (s.s || 0) < resetAt) continue;
-      if (!out[id] || (s.s || 0) > (out[id].s || 0)) out[id] = normalizeStat(s);
+      // 지운 기록은 { del: 1, s: 지운 시각 }로 남겨서 다른 기기의 예전 기록이 되살아나지 않게
+      if (!out[id] || (s.s || 0) > (out[id].s || 0)) out[id] = s.del ? { del: 1, s: s.s } : normalizeStat(s);
     }
   }
   // 시험일·하루 새 단어 수 같은 설정도 더 최근에 바꾼 쪽으로
