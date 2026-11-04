@@ -9,7 +9,7 @@ import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEna
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050200';
+const APP_VERSION = '202611050400';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -712,8 +712,8 @@ const synonymOf = w => { const e = w.extras.find(([h]) => h.replace(/\s/g, '') =
 const wordHint = w => (synonymOf(w) ? `유의어: ${synonymOf(w)}` : w.ex1 ? `예문: ${w.ex1}` : '');
 const STRICT_DESC = {
   easy: '여러 뜻 중 하나만 맞게 써도 정답이에요.',
-  mid: '비슷한 뜻은 하나만 써도 정답. 품사나 의미가 다른 뜻이 여럿이면 절반 이상 써야 정답이에요.',
-  hard: '나와 있는 뜻을 전부 써야 정답이에요.',
+  mid: '뜻 갈래(1. 2. …)마다 하나씩은 써야 정답이에요. 같은 갈래의 비슷한 말은 하나만 써도 돼요.',
+  hard: '나와 있는 뜻 낱말을 전부 써야 정답이에요.',
 };
 
 function wordCard(w) {
@@ -743,6 +743,7 @@ function renderWordQuestion(w) {
   mEl.hidden = true;
   $('#btn-hint').hidden = !mEl.textContent;
   $('#btn-hint').textContent = '💡 힌트';
+  $('#btn-idk').hidden = false;
   const actions = $('#q-actions');
   actions.innerHTML = '';
   kb = null;
@@ -761,6 +762,7 @@ function renderMeaningChoices(actions) {
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
     b.append(el('span', 'n', i + 1), el('span', null, c.meaning));
+    if (c === w) b.dataset.ok = '1'; // '모르겠어요'를 누르면 이 보기를 정답으로 표시
     b.addEventListener('click', () => {
       if (q.answered) return;
       const ok = c === w;
@@ -1290,7 +1292,7 @@ function answer(correct, given, kind) {
     // 같은 학습 중 3~5문제 뒤에 다시
     const at = Math.min(session.queue.length, session.pos + 1 + 3 + Math.floor(Math.random() * 3));
     session.queue.splice(at, 0, id);
-    label = kind === 'copied' ? '정답 보고 씀 · 잠시 후 다시' : '오답 · 잠시 후 다시';
+    label = kind === 'copied' ? '정답 보고 씀 · 잠시 후 다시' : kind === 'idk' ? '모름 · 잠시 후 다시' : '오답 · 잠시 후 다시';
   } else {
     session.done.push(id);
     if (outcome === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
@@ -1307,9 +1309,19 @@ function answer(correct, given, kind) {
   showFeedback(correct, given, kind, label);
 }
 
+// 단어 모드 '모르겠어요': 틀린 걸로 치고 정답을 보여 줌 (같은 학습 중 3~5문제 뒤 + 내일 다시)
+function giveUp() {
+  if (!WORD || !q || q.answered || current !== 'quiz') return;
+  const right = document.querySelector('#q-actions .choice[data-ok="1"]');
+  if (right) right.classList.add('correct');
+  document.querySelectorAll('#q-actions .choice, #q-actions input, #q-actions button').forEach(x => (x.disabled = true));
+  $('#btn-idk').hidden = true;
+  answer(false, null, 'idk');
+}
+
 function showFeedback(correct, given, kind, label) {
   const w = q.w;
-  const state = correct ? 'ok' : kind === 'partial' ? 'hint' : kind || 'bad';
+  const state = correct ? 'ok' : kind === 'partial' ? 'hint' : kind === 'idk' ? 'bad' : kind || 'bad';
   // 카드 위 상태 표시
   const head = $('#fb-head');
   head.hidden = false;
@@ -1329,6 +1341,7 @@ function showFeedback(correct, given, kind, label) {
     });
   }
   $('#btn-hint').hidden = true;
+  $('#btn-idk').hidden = true;
   if (settings.kind === 'type') {
     $('#q-actions').innerHTML = '';
     $('#quiz').classList.remove('kb-mode');
@@ -1847,6 +1860,7 @@ function bind() {
     goHome();
   });
   $('#btn-hint').addEventListener('click', useHint);
+  $('#btn-idk').addEventListener('click', giveUp);
   $('#fb-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setFbTab(b.dataset.t); });
   $('#btn-next').addEventListener('click', next);
   $('#btn-res-home').addEventListener('click', () => goHome());

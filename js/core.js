@@ -782,10 +782,16 @@ export function gradeMeaning(user, answer, strict = 'mid') {
   const chunks = String(user || '').split(/[\s,;\/、]+/).map(normKo).filter(Boolean);
   const gs = meaningSenses(answer);
   if (!chunks.length || !gs.length) return { score: 0, missing: gs.length };
-  const hit = gs.filter(alts => alts.some(a => chunks.some(c => nearKo(c, a)))).length;
-  const groups = String(answer).split(/[\/;]/).map(s => s.trim()).filter(Boolean).length;
-  const need = strict === 'easy' ? 1 : strict === 'hard' ? gs.length : groups <= 1 ? 1 : Math.max(1, Math.ceil(gs.length / 2));
-  return { score: hit === 0 ? 0 : hit >= need ? 2 : 1, missing: gs.length - hit };
+  const said = a => chunks.some(c => nearKo(c, a));
+  const hit = gs.filter(alts => alts.some(said)).length;
+  if (!hit) return { score: 0, missing: gs.length };
+  // 느슨: 뜻 하나만 맞아도 · 보통: 뜻 갈래(1. 2. …)마다 하나씩 · 엄격: 나와 있는 뜻 낱말 전부
+  if (strict === 'hard') {
+    const all = gs.flat(), got = all.filter(said).length;
+    return { score: got >= all.length ? 2 : 1, missing: all.length - got };
+  }
+  const need = strict === 'easy' ? 1 : gs.length;
+  return { score: hit >= need ? 2 : 1, missing: gs.length - hit };
 }
 // 두 뜻이 겹치는지 (오답 보기로 비슷한 뜻을 내지 않게)
 export function meaningsClash(a, b) {
