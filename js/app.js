@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611042200';
+const APP_VERSION = '202611042210';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -342,6 +342,14 @@ function renderHome() {
     st.appendChild(d);
   }
   $('#range-bar').style.width = rw.length ? `${(mastered / rw.length) * 100}%` : '0';
+  // 홈의 학습 계획 요약 한 줄 (바꾸는 건 학습 계획 화면에서)
+  const lo = Math.min(settings.from, settings.to), hi = Math.max(settings.from, settings.to);
+  $('#plan-sum').textContent = [
+    lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`,
+    settings.kind === 'type' ? '직접 입력' : '4지선다',
+    `새 단어 ${settings.newPerDay}`,
+    srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`,
+  ].join(' · ');
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
 
@@ -410,6 +418,8 @@ function renderPlan() {
       else if (x.id !== 'btn-wrong') x.disabled = false; // 다시 볼 단어는 renderHome이 개수로 정함
     });
   }
+  // 홈의 학습 계획 요약은 흐리게만 (문제 방식은 DAY 단독 학습에서도 바꿀 수 있어서 눌러 들어갈 수는 있음)
+  $('#plan-sum-card').classList.toggle('faded', stage === 'day');
   const finished = { learn: !learnLeft, review: !learnLeft && rv.done, extra: false };
   document.querySelectorAll('#today-flow span').forEach(sp => {
     const k = sp.dataset.s;
@@ -1730,6 +1740,8 @@ function bind() {
   });
   $('#btn-list').addEventListener('click', () => { listFilter = 'all'; show('list'); renderList(true); });
   $('#btn-list-back').addEventListener('click', () => goHome());
+  $('#plan-sum-card').addEventListener('click', () => show('plan'));
+  $('#btn-plan-back').addEventListener('click', () => goHome());
   onSeg('#seg-filter', v => { listFilter = v; renderList(); });
 
   $('#btn-quit').addEventListener('click', () => {
