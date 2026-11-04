@@ -568,3 +568,25 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .bar.two { display: grid; }
 .bar.two > .bar-fill { grid-area: 1 / 1; }
 .bar-fill.seen { opacity: .35; }
+
+/* 설정: 복습 방식(주기 복습) */
+.srs-desc { font-size: 13px; margin: 2px 0 10px; }
+.srs-dates { display: flex; gap: 10px; }
+.srs-dates label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
+.srs-dates .date-input { width: 100%; }
+.srs-warn { font-size: 13px; color: var(--warn); margin: 8px 0 0; }
+.srs-graph svg { width: 100%; height: auto; display: block; margin-bottom: 8px; }
+.srs-graph .g-grid { stroke: var(--line); stroke-dasharray: 2 4; }
+.srs-graph .g-ax, .srs-graph .g-leg text { fill: var(--muted); font-size: 10px; }
+.srs-graph .g-none { fill: none; stroke: var(--muted); stroke-width: 2; opacity: .45; }
+.srs-graph .g-rev { fill: none; stroke: var(--ok); stroke-width: 2.5; stroke-linejoin: round; }
+.srs-graph .g-dot { fill: var(--ok); }
+.srs-graph .g-off { fill: var(--muted); opacity: .45; }
+.srs-presets { display: flex; flex-direction: column; margin-bottom: 4px; }
+.preset { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; }
+.preset:last-child { border-bottom: 0; }
+.preset .p-name { font-weight: 700; font-size: 15px; min-width: 64px; }
+.preset .p-days { flex: 1; font-size: 12px; color: var(--muted); }
+.preset .p-tag { font-size: 12px; color: var(--muted); }
+.preset .p-radio { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.preset.on .p-radio { border-color: var(--primary); box-shadow: inset 0 0 0 4px var(--card); background: var(--primary); }

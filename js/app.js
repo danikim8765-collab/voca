@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, pickReview, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle, MAX_STAGE,
+  applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, REVIEW_SIZE, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey,
 } from './core.js';
@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611040900';
+const APP_VERSION = '202611041000';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -52,6 +52,8 @@ if (Object.values(stats).some(v => v && v.st == null)) {
 }
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
+  // 주기 복습 (설정에서 켬, 목표일·시험일 둘 다 있어야 동작): 복습 간격 다섯 가지, 목표일, 오늘의 복습 개수(0 = 제한 없음)
+  srs: false, srsPreset: 'm', goal: '', reviewLimit: 0,
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
   baseAccept: 'pause', // 원형이 예문 형태의 앞부분일 때(outlaw → outlawed): pause = 0.8초 멈추면 정답, instant = 바로
   extraN: 20, // 추가 학습·복습 개수
@@ -80,14 +82,16 @@ const otherProgress = () => ({ resetAt: load(OTHER_P + 'resetAt.v1', 0), stats: 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats, prefs: { exam: settings.exam, newPerDay: settings.newPerDay, at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats, prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     stats = m.stats;
     resetAt = m.resetAt;
     saveStats();
     save(KEY.resetAt, resetAt);
     if (m.prefs && (m.prefs.at || 0) > (settings.prefsAt || 0)) {
-      Object.assign(settings, { exam: m.prefs.exam || '', newPerDay: m.prefs.newPerDay || 20, prefsAt: m.prefs.at });
+      const p = m.prefs;
+      Object.assign(settings, { exam: p.exam || '', newPerDay: p.newPerDay || 20, prefsAt: p.at });
+      if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
       saveSettings();
     }
     if (current === 'home') renderHome();
@@ -230,9 +234,18 @@ function rangeWords() {
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   return words.filter(w => w.day >= from && w.day <= to);
 }
-const isMastered = s => s && s.st >= MAX_STAGE; // 4단계(14일 간격)까지 올라간 단어
+// 주기 복습: 설정에서 켜고, 목표일·시험일이 둘 다 있고 목표일이 먼저일 때만
+const srsOn = () => !!(settings.srs && settings.goal && settings.exam && settings.goal < settings.exam);
+const intervals = () => (srsOn() && PRESETS[settings.srsPreset]) || PRESETS.m;
+const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
+// 다음 복습일이 넘지 않을 날: 주기 복습이면 목표일 전까진 목표일, 그 뒤엔 시험일
+const deadline = (today = dateStr()) => (srsOn() && today < settings.goal ? settings.goal : settings.exam);
+const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
 const isWrongNote = s => s && s.st === 0;          // 마지막에 틀린 단어 (0단계)
-const todayPlan = () => buildPlan(words, rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam });
+const todayPlan = () => buildPlan(words, rangeWords(), stats, { today: dateStr(), newPerDay: settings.newPerDay, exam: settings.exam, srs: srsOn() ? { goal: settings.goal, exam: settings.exam } : null });
+// 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서)
+const srsPick = () => pickSrsReview(words, rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: settings.reviewLimit });
+const pickToday = () => (srsOn() ? srsPick().words : pickReview(words, stats));
 const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
 
@@ -240,7 +253,7 @@ const loadDay = () => { const d = load(KEY.day, null); return d && d.date === da
 function reviewState() {
   const day = loadDay();
   const started = Array.isArray(day.review);
-  const ids = started ? day.review.filter(id => byId.has(id)) : pickReview(words, stats).map(w => w.id);
+  const ids = started ? day.review.filter(id => byId.has(id)) : pickToday().map(w => w.id);
   const left = started ? ids.filter(id => !seenToday(id)) : ids;
   return { started, total: ids.length, left, done: !left.length };
 }
@@ -376,9 +389,11 @@ function renderPlan() {
   });
   for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
-  const left = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
+  // 주기 복습이면 목표일 전엔 목표 D-n, 그 뒤엔 시험 D-n
+  const toGoal = srsOn() && dateStr() < settings.goal;
+  const left = toGoal ? daysBetween(dateStr(), settings.goal) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   dd.hidden = left == null || left < 0 || stage === 'day';
-  if (!dd.hidden) { dd.textContent = left === 0 ? 'D-day' : `시험 D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
+  if (!dd.hidden) { dd.textContent = left === 0 && !toGoal ? 'D-day' : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
   let note = '';
 
   if (stage === 'day') {
@@ -394,13 +409,19 @@ function renderPlan() {
     fill($('#plan-info'), items);
     $('#btn-start').textContent = `오늘 학습 시작 (${learnLeft})`;
   } else if (stage === 'review') {
-    // 전에 한 단어 20개: 복습일 된 단어 먼저
+    // 기본: 전에 한 단어 20개(복습일 된 단어 먼저) · 주기 복습: 알고리즘이 고른 단어
     const due = plan.review.length;
     const shown = rv.left.length;
     const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
     fill($('#review-info'), [[shown, '복습'], [dueIn, '복습일 된 단어']]);
     $('#btn-review').textContent = `오늘 복습 시작 (${shown})`;
-    note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
+    if (srsOn()) {
+      const sp = srsPick();
+      const cap = settings.reviewLimit;
+      note = sp.phase === 'final' ? `목표일부터 시험 전까지 학습 범위 ${rangeWords().length}단어를 ${sp.days}일에 나눠 전부 복습해요 (하루 ${sp.size}개쯤).`
+        : cap && due > cap ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${cap}개만 해요. 설정에서 '제한 없음'으로 바꿀 수 있어요.`
+          : '주기 복습: 오늘 복습일이 된 단어예요.';
+    } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${REVIEW_SIZE}개씩 해요. 나머지는 추가 복습에서 나와요.` : '';
   } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
@@ -444,7 +465,7 @@ function startSession(mode, list) {
   } else if (mode === 'review') {
     // 처음 시작할 때 오늘의 복습 목록을 고정 → 중간에 그만둬도 남은 단어만 이어서
     const day = loadDay();
-    if (!Array.isArray(day.review)) { day.review = pickReview(words, stats).map(w => w.id); save(KEY.day, day); }
+    if (!Array.isArray(day.review)) { day.review = pickToday().map(w => w.id); save(KEY.day, day); }
     ids = shuffle(day.review.filter(id => byId.has(id) && !seenToday(id)));
     if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
     label = '오늘의 복습';
@@ -1065,7 +1086,7 @@ function answer(correct, given, kind) {
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
   const retry = session.wrong.includes(id);
   const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
-  stats[id] = applyResult(before, outcome, { today, exam: settings.exam, scheduled });
+  stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
 
   let label;
   if (outcome === 'wrong') {
@@ -1255,7 +1276,7 @@ function wordItem(w, view = bookView(), onMark) {
     main.appendChild(rel);
   }
   const dots = el('div', 'dots');
-  for (let i = 1; i <= MAX_STAGE; i++) dots.appendChild(el('i', s.st >= i ? 'on' : ''));
+  for (let i = 1; i <= maxStage(); i++) dots.appendChild(el('i', s.st >= i ? 'on' : ''));
   main.appendChild(dots);
   head.append(main, markBtn(w.id, onMark), speakBtn(w.word));
   item.appendChild(head);
@@ -1323,7 +1344,7 @@ function renderList(scrollToSel) {
     const s = view(w.id);
     if (listFilter === 'wrong') return s.wrong;
     if (listFilter === 'new') return !s.seen;
-    if (listFilter === 'done') return s.st >= MAX_STAGE;
+    if (listFilter === 'done') return s.st >= maxStage();
     if (listFilter === 'unknown') return isUnknown(w.id);
     return true;
   });
@@ -1365,8 +1386,63 @@ function renderSyncStatus() {
   }
 }
 
+// 설정의 복습 방식 카드: 켜기, 목표일·시험일, 기억 유지 그래프, 복습 주기, 오늘의 복습 개수
+const PRESET_LABEL = { xs: '매우 짧게', s: '짧게', m: '보통', l: '길게', xl: '매우 길게' };
+function renderSrs() {
+  const g = settings.goal, ex = settings.exam;
+  $('#goal-date').value = g || '';
+  $('#srs-exam-date').value = ex || '';
+  $('#opt-srs').checked = !!settings.srs;
+  const warn = $('#srs-warn');
+  const msg = !settings.srs ? ''
+    : !g || !ex ? '목표일과 시험일을 둘 다 정해야 주기 복습이 켜져요. 그 전까지는 기본 방식으로 해요.'
+      : g >= ex ? '목표일은 시험일보다 앞이어야 해요.' : '';
+  warn.hidden = !msg;
+  warn.textContent = msg;
+  $('#srs-opts').hidden = !settings.srs;
+  if (!settings.srs) return;
+  // 복습 주기 목록
+  const box = $('#srs-presets');
+  box.innerHTML = '';
+  for (const k of Object.keys(PRESETS)) {
+    const b = el('button', 'preset' + (settings.srsPreset === k ? ' on' : ''));
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', settings.srsPreset === k);
+    b.append(el('span', 'p-name', PRESET_LABEL[k]), el('span', 'p-days', PRESETS[k].join(' · ') + '일'));
+    if (k === 'm') b.appendChild(el('span', 'p-tag', '추천'));
+    b.appendChild(el('i', 'p-radio'));
+    b.addEventListener('click', () => { settings.srsPreset = k; settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); });
+    box.appendChild(b);
+  }
+  renderSrsGraph(PRESETS[settings.srsPreset] || PRESETS.m);
+  setSeg('#seg-limit', String(settings.reviewLimit || 0));
+}
+
+// 기억 유지 그래프 (0~30일): 고른 주기대로 복습했을 때(초록) / 안 했을 때(회색). 간단한 망각 곡선 모형
+function renderSrsGraph(iv) {
+  const W = 320, H = 170, L = 34, R = 8, T = 22, B = 24;
+  const x = d => L + (d / 30) * (W - L - R), y = v => T + (1 - v) * (H - T - B);
+  const c = retentionCurve(iv, 30);
+  const path = pts => pts.map(([d, v], i) => `${i ? 'L' : 'M'}${x(d).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  // 복습 순간은 떨어진 값 → 100%로 수직선
+  const seq = [];
+  let j = 0;
+  for (const [d, v] of c.pts) {
+    while (j < c.reviews.length && c.reviews[j] <= d + 1e-9) { seq.push([c.reviews[j], c.before[j][1]], [c.reviews[j], 1]); j++; }
+    if (!c.reviews.some(r => Math.abs(r - d) < 1e-9)) seq.push([d, v]);
+  }
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="기억 유지 그래프">`;
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) svg += `<line class="g-grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="g-ax" x="${L - 5}" y="${y(v) + 3.5}" text-anchor="end">${v * 100}%</text>`;
+  for (const d of [0, 7, 14, 21, 30]) svg += `<text class="g-ax" x="${x(d)}" y="${H - 6}" text-anchor="middle">${d}일</text>`;
+  svg += `<path class="g-none" d="${path(c.none)}"/><path class="g-rev" d="${path([[0, 1], ...seq])}"/>`;
+  svg += `<circle class="g-dot" cx="${x(0)}" cy="${y(1)}" r="3"/>` + c.reviews.map(r => `<circle class="g-dot" cx="${x(r)}" cy="${y(1)}" r="3"/>`).join('');
+  svg += `<g class="g-leg"><circle class="g-dot" cx="${W - 150}" cy="10" r="3.5"/><text x="${W - 143}" y="13.5">복습 했을 때</text><circle class="g-off" cx="${W - 70}" cy="10" r="3.5"/><text x="${W - 63}" y="13.5">안 했을 때</text></g>`;
+  $('#srs-graph').innerHTML = svg + '</svg>';
+}
+
 function renderSettings() {
   renderVersion();
+  renderSrs();
   setSeg('#seg-accent', settings.accent);
   $('#rate').value = settings.rate;
   $('#rate-val').textContent = `${settings.rate}x`;
@@ -1561,6 +1637,12 @@ function bind() {
     toast(`단어 ${words.length}개 · DAY ${days[0]}~${days[days.length - 1]}`);
   });
   $('#btn-local-csv').addEventListener('click', () => $('#csv-file').click());
+  // 복습 방식 (주기 복습)
+  const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
+  $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); });
+  $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
+  $('#srs-exam-date').addEventListener('change', e => { settings.exam = e.target.value; srsChanged(); });
+  onSeg('#seg-limit', v => { settings.reviewLimit = +v; srsChanged(); });
   $('#btn-update').addEventListener('click', async () => {
     try {
       const v = await latestVersion();

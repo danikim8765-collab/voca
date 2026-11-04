@@ -363,3 +363,45 @@ test('앱 키보드: 키 사이 틈을 눌러도 가장 가까운 키', async ()
   assert.equal(at(-10, 20), 'a'); // 가장자리 여백
   assert.equal(at(-100, 20), undefined); // 키보드 밖 멀리
 });
+
+test('주기 복습: 간격 프리셋, 목표일까지 맞춤, 목표일부터 범위 전부를 나눠서', async () => {
+  const { PRESETS, pickSrsReview, retentionCurve } = await import('../js/core.js');
+  // 보통은 기본 방식과 같은 간격
+  let s = applyResult(null, 'ok', { today: '2026-11-01' });
+  assert.deepEqual([s.st, s.due], [1, '2026-11-02']);
+  s = applyResult(s, 'ok', { today: '2026-11-02' });
+  assert.deepEqual([s.st, s.due], [2, '2026-11-05']);
+  // 매우 짧게: 6단계, 1·1·2·3·5·8일
+  let x = null; const days = [];
+  let d = '2026-11-01';
+  for (let i = 0; i < 7; i++) { x = applyResult(x, 'ok', { today: d, intervals: PRESETS.xs }); days.push(daysBetween(d, x.due)); d = x.due; }
+  assert.deepEqual(days, [1, 1, 2, 3, 5, 8, 8]);
+  assert.equal(x.st, 6);
+  // 목표일 전날을 넘지 않게
+  const capped = applyResult({ st: 3, due: '2026-11-01', c: 3, w: 0, s: 1, f: '2026-10-01' }, 'ok', { today: '2026-11-01', exam: '2026-11-05', intervals: PRESETS.m });
+  assert.equal(capped.due, '2026-11-04');
+
+  const words = Array.from({ length: 10 }, (_, i) => ({ id: 'w' + i, day: 1 }));
+  const old = new Date(2026, 9, 1).getTime();
+  const stats = { w0: { st: 1, due: '2026-11-02', c: 1, w: 0, s: old, f: '2026-10-01' }, w1: { st: 2, due: '2026-11-03', c: 1, w: 0, s: old, f: '2026-10-01' }, w2: { st: 2, due: '2026-11-20', c: 1, w: 0, s: old, f: '2026-10-01' } };
+  const opt = { goal: '2026-11-10', exam: '2026-11-15' };
+  // 목표일 전: 복습일 된 단어만, 제한
+  assert.deepEqual(pickSrsReview(words, words, stats, { ...opt, today: '2026-11-03' }).words.map(w => w.id), ['w0', 'w1']);
+  assert.deepEqual(pickSrsReview(words, words, stats, { ...opt, today: '2026-11-03', limit: 1 }).words.map(w => w.id), ['w0']);
+  // 목표일부터: 10단어를 5일에 나눠 하루 2개 (+ 복습일 된 단어)
+  const f0 = pickSrsReview(words, words, stats, { ...opt, today: '2026-11-10' });
+  assert.equal(f0.phase, 'final');
+  assert.deepEqual(f0.words.map(w => w.id), ['w0', 'w1']);
+  // 첫날 몫을 안 했으면 둘째 날에 같이
+  assert.deepEqual(pickSrsReview(words, words, stats, { ...opt, today: '2026-11-11' }).words.map(w => w.id), ['w0', 'w1', 'w2', 'w3']);
+  // 시험일부터는 복습일 된 단어만
+  assert.equal(pickSrsReview(words, words, stats, { ...opt, today: '2026-11-15' }).phase, 'after');
+  // 목표일부터 시험 전날까진 새 단어 없음
+  assert.deepEqual(buildPlan(words, words, {}, { today: '2026-11-12', newPerDay: 5, srs: opt }).fresh, []);
+  assert.equal(buildPlan(words, words, {}, { today: '2026-11-03', newPerDay: 5, srs: opt }).fresh.length, 5);
+  // 그래프: 복습할수록 덜 떨어짐, 안 하면 거의 0
+  const c = retentionCurve(PRESETS.m);
+  assert.deepEqual(c.reviews, [1, 4, 11, 25]);
+  assert.ok(c.none[c.none.length - 1][1] < 0.01);
+  assert.ok(c.before[3][1] > c.before[0][1]);
+});
