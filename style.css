@@ -706,3 +706,6 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .fb-card.explain .btn { width: 100%; }
 .fb-card.explain b { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
 .explain-text { line-height: 1.6; white-space: pre-line; }
+.q-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.q-tools .btn { width: auto; margin-bottom: 0; }
+#btn-idk { color: var(--muted); }
