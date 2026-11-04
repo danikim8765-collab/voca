@@ -571,11 +571,16 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 
 /* 설정: 복습 방식(주기 복습) */
 .srs-desc { font-size: 13px; margin: 2px 0 10px; }
-.srs-dates { display: flex; gap: 10px; }
-.srs-dates label { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
-.srs-dates .date-input { width: 100%; }
+.srs-dates { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.srs-dates label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
+/* iPad·아이폰 사파리의 날짜 칸은 자체 최소 너비가 있어서 옆 칸·카드 밖으로 삐져나감 → 기본 모양을 끄고 칸 너비에 맞춤 */
+.srs-dates .date-input, .exam-row .date-input {
+  display: block; width: 100%; max-width: 100%; min-width: 0; overflow: hidden;
+  -webkit-appearance: none; appearance: none; color: var(--text); text-align: left; min-height: 46px;
+}
+.date-input::-webkit-date-and-time-value { text-align: left; }
 .srs-warn { font-size: 13px; color: var(--warn); margin: 8px 0 0; }
-.srs-graph svg { width: 100%; height: auto; display: block; margin-bottom: 8px; }
+.srs-graph svg { width: 100%; max-width: 520px; height: auto; display: block; margin: 0 auto 8px; } /* 넓은 화면에서 글자가 커지지 않게 */
 .srs-graph .g-grid { stroke: var(--line); stroke-dasharray: 2 4; }
 .srs-graph .g-ax, .srs-graph .g-leg text { fill: var(--muted); font-size: 10px; }
 .srs-graph .g-none { fill: none; stroke: var(--muted); stroke-width: 2; opacity: .45; }
