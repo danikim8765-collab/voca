@@ -575,6 +575,10 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .kb-mode .coach { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); margin: 0; }
 .coach.spell { background: var(--spell-soft); border-color: var(--spell); }
 .coach.near { background: var(--ok-soft); border-color: var(--ok); }
+.coach.off { background: var(--bad-soft); border-color: var(--bad); } /* AI 풀이일 때만 */
+.coach.wait { background: var(--card); border-color: var(--line); color: var(--muted); }
+.coach.wait .coach-ic { animation: coach-think 1s ease-in-out infinite alternate; }
+@keyframes coach-think { to { opacity: .35; } }
 .coach-ic { font-size: 18px; line-height: 1.35; flex: none; }
 .coach-msg { flex: 1; min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
 .coach-diff { font-weight: 700; letter-spacing: .03em; }

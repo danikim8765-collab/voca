@@ -319,10 +319,15 @@
         <button data-v="hard">엄격</button>
       </div>
       <p class="muted" id="strict-desc"></p>
-      <label class="switch-row mt"><span>채점에 AI 사용하기 <span class="muted">(오답일 때만 다시 확인)</span></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
+    </div>
+    <!-- AI: 두 모드 공용 (키·스위치도 같이 씀) -->
+    <div class="card" id="ai-card">
+      <div class="label">AI</div>
+      <label class="switch-row"><span>AI 사용하기 <span class="muted" data-only="word">(오답일 때만 다시 채점·설명)</span><span class="muted" data-only="ex">(틀린 답 풀이 말풍선)</span></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
       <div id="ai-box" hidden>
       <div id="ai-off">
-        <p class="muted">API 키를 넣으면 위 규칙대로 바로 채점하다가, 오답(부분 정답 포함)이 나왔을 때만 AI가 뜻을 이해해서 다시 확인해요. 단어장과 표현이 달라도 같은 뜻이면 정답으로 바뀌어요. 인터넷이 안 되면 규칙 채점 결과 그대로예요.</p>
+        <p class="muted" data-only="word">API 키를 넣으면 위 규칙대로 바로 채점하다가, 오답(부분 정답 포함)이 나왔을 때만 AI가 뜻을 이해해서 다시 확인해요. 단어장과 표현이 달라도 같은 뜻이면 정답으로 바뀌어요. 인터넷이 안 되면 규칙 채점 결과 그대로예요.</p>
+        <p class="muted" data-only="ex">API 키를 넣으면 직접 입력에서 틀렸을 때(확인을 누르거나 1.2초 멈추면) AI가 두 예문을 보고 왜 안 맞는지 말풍선으로 알려줘요. 정답은 말하지 않아요. 철자 한두 글자 실수는 AI 없이 바로 알려줘요. 인터넷이 안 되면 기본 말풍선 그대로예요.</p>
         <ol class="steps">
           <li><a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq API 키 만들기 페이지 열기</a> (이메일·구글·GitHub로 가입, 무료, 카드 필요 없음). <b>Create API Key</b> 누르기</li>
           <li>만든 키(<code>gsk_…</code>)를 복사해서 아래에 붙여넣고 <b>연결</b></li>
