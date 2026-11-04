@@ -13,7 +13,7 @@ const json = (body, status = 200) => ({ ok: status < 400, status, json: async ()
 const { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
-beforeEach(() => { store.clear(); online = true; calls = []; reply = () => json({}); });
+beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
 
 test('키가 없으면 AI를 안 부름', async () => {
   assert.equal(aiEnabled(), false);
@@ -136,5 +136,13 @@ test('OpenRouter: 키 확인 후 :free 모델을 고르고, 앞뒤 말이 붙은
 
 test('모르는 키 모양은 연결 안 함', async () => {
   await assert.rejects(aiConnect('hello'), e => e.status === 401);
+  assert.equal(calls.length, 0);
+});
+
+test('스위치를 끄면 키가 있어도 AI를 안 부름', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'm' }));
+  store.set('voca.ai.on.v1', '0');
+  assert.equal(aiEnabled(), false);
+  assert.equal(await aiGradeMeaning(Q), null);
   assert.equal(calls.length, 0);
 });

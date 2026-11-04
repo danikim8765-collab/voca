@@ -5,11 +5,11 @@ import {
   synAnt, mergeMarks, nearestKey,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiName } from './ai.js';
+import { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050040';
+const APP_VERSION = '202611050100';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -1671,10 +1671,12 @@ function renderSettings() {
 }
 
 function renderAiStatus() {
-  const on = aiEnabled();
-  $('#ai-off').hidden = on;
-  $('#ai-on').hidden = !on;
-  if (on) $('#ai-info').textContent = navigator.onLine === false ? `${aiName()} 연결됨 · 지금은 오프라인이라 규칙대로 채점해요` : `${aiName()} 연결됨 · 규칙 채점에서 오답이 나오면 ${aiName()}가 다시 확인해요`;
+  const sw = aiSwitch(), key = aiHasKey();
+  $('#opt-ai').checked = sw;
+  $('#ai-box').hidden = !sw;
+  $('#ai-off').hidden = key;
+  $('#ai-on').hidden = !key;
+  if (key) $('#ai-info').textContent = navigator.onLine === false ? `${aiName()} 연결됨 · 지금은 오프라인이라 규칙대로 채점해요` : `${aiName()} 연결됨 · 규칙 채점에서 오답이 나오면 ${aiName()}가 다시 확인해요`;
 }
 
 function exportProgress() {
@@ -1831,6 +1833,7 @@ function bind() {
     btn.textContent = '연결';
     renderSyncStatus();
   });
+  $('#opt-ai').addEventListener('change', e => { setAiSwitch(e.target.checked); renderAiStatus(); });
   $('#btn-ai-connect').addEventListener('click', async () => {
     const key = $('#ai-key').value.trim();
     if (!key) { toast('API 키를 붙여넣어 주세요'); return; }

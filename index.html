@@ -319,7 +319,8 @@
         <button data-v="hard">엄격</button>
       </div>
       <p class="muted" id="strict-desc"></p>
-      <div class="label mt">AI 재확인</div>
+      <label class="switch-row mt"><span>채점에 AI 사용하기 <span class="muted">(오답일 때만 다시 확인)</span></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
+      <div id="ai-box" hidden>
       <div id="ai-off">
         <p class="muted">API 키를 넣으면 위 규칙대로 바로 채점하다가, 오답(부분 정답 포함)이 나왔을 때만 AI가 뜻을 이해해서 다시 확인해요. 단어장과 표현이 달라도 같은 뜻이면 정답으로 바뀌어요. 인터넷이 안 되면 규칙 채점 결과 그대로예요.</p>
         <ol class="steps">
@@ -334,6 +335,7 @@
         <p class="muted" id="ai-info"></p>
         <p class="muted">키는 이 기기에만 저장돼요. 비밀번호처럼 다른 사람에게 보내지 마세요.</p>
         <button class="btn ghost small" id="btn-ai-off">연결 끊기</button>
+      </div>
       </div>
     </div>
     <div class="card">

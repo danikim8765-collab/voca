@@ -23,7 +23,12 @@ const saveConf = c => { try { localStorage.setItem(KEY, JSON.stringify(c)); } ca
 export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^AIza/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
 const conf = () => { const c = loadConf(); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
 export const aiProvider = () => conf().provider || '';
-export const aiEnabled = () => !!conf().key;
+// 설정의 '채점에 AI 사용하기' 스위치 (키와 따로 저장: 끄고 켜도 키는 남음)
+const ON_KEY = 'voca.ai.on.v1';
+export const aiSwitch = () => { try { return localStorage.getItem(ON_KEY) === '1'; } catch { return false; } };
+export const setAiSwitch = on => { try { localStorage.setItem(ON_KEY, on ? '1' : '0'); } catch {} };
+export const aiHasKey = () => !!conf().key;
+export const aiEnabled = () => aiSwitch() && aiHasKey();
 export const aiOnline = () => aiEnabled() && navigator.onLine !== false;
 export const aiName = () => ({ gemini: 'Gemini', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider()] || 'AI');
 
@@ -180,7 +185,7 @@ export function pickJSON(text) {
  */
 export async function aiGradeMeaning({ word, meaning, user, strict = 'mid' }) {
   const c = conf();
-  if (!c.key || navigator.onLine === false) return null;
+  if (!aiSwitch() || !c.key || navigator.onLine === false) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
