@@ -1,5 +1,5 @@
-// 단어 모드 직접 입력의 AI 채점 (Claude). 인터넷이 되고 API 키가 있을 때만 쓰고,
-// 안 되거나 실패하면 null을 돌려줘서 core.js의 gradeMeaning(규칙 채점)으로 채점한다.
+// 단어 모드 직접 입력의 AI 재확인 (Claude). 규칙 채점(core.js의 gradeMeaning)이 정답이 아니라고 할 때만,
+// 인터넷이 되고 API 키가 있으면 부른다. 안 되거나 실패하면 null → 규칙 채점 결과 그대로.
 // 서버 없이 브라우저에서 바로 Anthropic API를 부른다. 키는 이 기기의 localStorage에만 저장 (동기화 안 함)
 
 const API = 'https://api.anthropic.com/v1';

@@ -9,7 +9,7 @@ import { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline } from './
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611042330';
+const APP_VERSION = '202611042345';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -782,7 +782,7 @@ function renderMeaningTyping(actions) {
   input.placeholder = '뜻 입력 (여러 뜻은 쉼표로)';
   const ok = el('button', 'btn primary', '확인');
   const level = { easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통';
-  const grader = aiOnline() ? `AI · ${level}` : aiEnabled() ? `${level} (오프라인)` : level;
+  const grader = aiOnline() ? `${level} · 오답이면 AI 재확인` : aiEnabled() ? `${level} (오프라인)` : level;
   actions.append(input, el('div', 'type-help', `채점: ${grader} · 설정에서 바꿀 수 있어요`), ok);
   let busy = false;
   const submit = async () => {
@@ -791,19 +791,20 @@ function renderMeaningTyping(actions) {
     if (!v) { toast('뜻을 먼저 써 주세요'); input.focus(); return; }
     const cur = q;
     input.blur();
-    // 인터넷이 되면 AI로, 안 되거나 실패하면 규칙 채점으로
-    let res = null;
-    if (aiOnline()) {
+    // 규칙 채점으로 바로. 정답이 아닐 때만(오답·부분 정답) 인터넷이 되면 AI가 다시 봄. AI가 실패하면 규칙 결과 그대로
+    let res = gradeMeaning(v, cur.w.meaning, settings.strict);
+    if (res.score < 2 && aiOnline()) {
       busy = true;
       input.disabled = ok.disabled = true;
-      ok.textContent = 'AI 채점 중…';
-      res = await aiGradeMeaning({ word: cur.w.word, meaning: cur.w.meaning, user: v, strict: settings.strict });
+      ok.textContent = 'AI 확인 중…';
+      const ai = await aiGradeMeaning({ word: cur.w.word, meaning: cur.w.meaning, user: v, strict: settings.strict });
       busy = false;
       if (q !== cur || cur.answered) return; // 채점 중에 다른 화면으로 나갔으면 버림
       input.disabled = ok.disabled = false;
       ok.textContent = '확인';
+      if (ai) res = ai;
     }
-    const { score, missing, note = '' } = res || gradeMeaning(v, cur.w.meaning, settings.strict);
+    const { score, missing, note = '' } = res;
     const tail = note ? ` · ${note}` : score === 1 ? ` · ${missing}개 뜻이 빠졌어요` : '';
     if (score === 2) answer(!cur.usedHint, null, cur.usedHint ? 'hint' : undefined);
     else if (score === 1) answer(false, v + tail, 'partial');
@@ -1673,7 +1674,7 @@ function renderAiStatus() {
   const on = aiEnabled();
   $('#ai-off').hidden = on;
   $('#ai-on').hidden = !on;
-  if (on) $('#ai-info').textContent = navigator.onLine === false ? '연결됨 · 지금은 오프라인이라 규칙대로 채점해요' : '연결됨 · 직접 입력 문제를 AI가 채점해요';
+  if (on) $('#ai-info').textContent = navigator.onLine === false ? '연결됨 · 지금은 오프라인이라 규칙대로 채점해요' : '연결됨 · 규칙 채점에서 오답이 나오면 AI가 다시 확인해요';
 }
 
 function exportProgress() {
