@@ -651,3 +651,5 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .flow span.link { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
 .flow span.link:hover { color: var(--primary); }
 #btn-start:disabled, #btn-review:disabled { opacity: .55; }
+.day-reset { display: block; margin: 2px auto 0; border: 0; background: transparent; color: var(--muted); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; padding: 4px 8px; }
+.day-reset:hover { color: var(--danger); }
