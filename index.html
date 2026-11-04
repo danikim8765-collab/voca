@@ -103,48 +103,16 @@
         <div class="muted" id="today-note"></div>
       </div>
 
-      <div class="card" id="card-range">
-        <div class="label">학습 범위 <span class="muted">(새 단어와 시험 범위)</span></div>
-        <div class="range">
-          <select id="day-from" aria-label="시작 DAY"></select>
-          <span>~</span>
-          <select id="day-to" aria-label="끝 DAY"></select>
+      <!-- 학습 계획 요약: 누르면 학습 계획 화면(범위·문제 방식·하루 개수·시험일) -->
+      <div class="card plan-sum" id="plan-sum-card">
+        <div class="plan-sum-head">
+          <div class="label">학습 계획</div>
+          <button class="btn ghost small plan-go" id="btn-plan">바꾸기 ›</button>
         </div>
-        <div class="chips" id="range-chips">
-          <button class="chip" data-range="last">최신 DAY</button>
-          <button class="chip" data-range="last3">최근 3 DAY</button>
-          <button class="chip" data-range="all">전체</button>
-        </div>
-        <div class="stats" id="range-stats"></div>
-        <div class="bar"><div class="bar-fill" id="range-bar"></div></div>
-      </div>
-
-      <div class="card">
-        <div class="label">문제 방식</div>
-        <div class="seg" id="seg-kind">
-          <button data-v="choice">4지선다</button>
-          <button data-v="type">직접 입력</button>
-        </div>
-        <div id="regular-opts">
-        <div class="label">하루 새 단어 수</div>
-        <div class="seg" id="seg-new">
-          <button data-v="10">10</button>
-          <button data-v="20">20</button>
-          <button data-v="30">30</button>
-          <button data-v="40">40</button>
-        </div>
-        <div class="label">하루 복습 수 <span class="muted">(기본 방식 · 오늘만 바꾸려면 맨 위 숫자를 눌러요)</span></div>
-        <div class="seg" id="seg-rev">
-          <button data-v="10">10</button>
-          <button data-v="20">20</button>
-          <button data-v="30">30</button>
-          <button data-v="40">40</button>
-        </div>
-        <div class="label">시험일 <span class="muted">(정하면 시험 전날까지 복습이 맞춰지고, 3일 전부터 범위 전체를 한 번씩)</span></div>
-        <div class="row exam-row">
-          <input type="date" id="exam-date" class="date-input">
-          <button class="btn ghost small" id="btn-exam-clear">지우기</button>
-        </div>
+        <div class="plan-sum-text" id="plan-sum"></div>
+        <div id="range-progress">
+          <div class="stats" id="range-stats"></div>
+          <div class="bar"><div class="bar-fill" id="range-bar"></div></div>
         </div>
       </div>
 
@@ -159,6 +127,58 @@
       <div class="label mt">DAY별 진도 <span class="muted">(연한 막대 학습 · 진한 막대 암기 완료 · 누르면 그 DAY만 따로 학습)</span></div>
       <div class="days" id="day-grid"></div>
      </div>
+    </div>
+  </section>
+
+  <!-- 학습 계획: 자주 안 바꾸는 것(범위, 문제 방식, 하루 개수, 시험일).
+       설정에서 '홈 간단히 보기'를 끄면 이 카드들이 예전처럼 홈으로 옮겨짐 (applyHomeLayout) -->
+  <section id="plan" class="screen">
+    <header class="top">
+      <button class="icon-btn" id="btn-plan-back" aria-label="뒤로">←</button>
+      <h1>학습 계획</h1>
+      <span></span>
+    </header>
+    <div class="card" id="card-range">
+      <div class="label">학습 범위 <span class="muted">(새 단어와 시험 범위)</span></div>
+      <div class="range">
+        <select id="day-from" aria-label="시작 DAY"></select>
+        <span>~</span>
+        <select id="day-to" aria-label="끝 DAY"></select>
+      </div>
+      <div class="chips" id="range-chips">
+        <button class="chip" data-range="last">최신 DAY</button>
+        <button class="chip" data-range="last3">최근 3 DAY</button>
+        <button class="chip" data-range="all">전체</button>
+      </div>
+    </div>
+
+    <div class="card" id="card-kind">
+      <div class="label">문제 방식</div>
+      <div class="seg" id="seg-kind">
+        <button data-v="choice">4지선다</button>
+        <button data-v="type">직접 입력</button>
+      </div>
+      <div id="regular-opts">
+      <div class="label">하루 새 단어 수</div>
+      <div class="seg" id="seg-new">
+        <button data-v="10">10</button>
+        <button data-v="20">20</button>
+        <button data-v="30">30</button>
+        <button data-v="40">40</button>
+      </div>
+      <div class="label">하루 복습 수 <span class="muted">(기본 방식 · 오늘만 바꾸려면 홈 맨 위 숫자를 눌러요)</span></div>
+      <div class="seg" id="seg-rev">
+        <button data-v="10">10</button>
+        <button data-v="20">20</button>
+        <button data-v="30">30</button>
+        <button data-v="40">40</button>
+      </div>
+      <div class="label">시험일 <span class="muted">(정하면 시험 전날까지 복습이 맞춰지고, 3일 전부터 범위 전체를 한 번씩)</span></div>
+      <div class="row exam-row">
+        <input type="date" id="exam-date" class="date-input">
+        <button class="btn ghost small" id="btn-exam-clear">지우기</button>
+      </div>
+      </div>
     </div>
   </section>
 
@@ -271,7 +291,7 @@
     </div>
     <div class="card" id="srs-card">
       <div class="label">복습 방식</div>
-      <label class="toggle"><input type="checkbox" id="opt-srs"> 주기 복습 켜기 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></label>
+      <label class="switch-row"><span>주기 복습 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
       <p class="muted srs-desc">고른 주기대로 복습일이 된 단어를 목표일까지 계속 복습하고, 목표일부터 시험 전날까지는 학습 범위 전부를 남은 날에 나눠 한 번씩 복습해요.</p>
       <div class="srs-dates">
         <label>목표일<input type="date" id="goal-date" class="date-input"></label>
@@ -301,6 +321,11 @@
       <p class="muted" id="strict-desc"></p>
     </div>
     <div class="card">
+      <div class="label">화면</div>
+      <label class="switch-row"><span>홈 간단히 보기</span><input type="checkbox" role="switch" class="switch" id="opt-simplehome"></label>
+      <p class="muted srs-desc">학습 범위·문제 방식은 '학습 계획' 화면에서 바꿔요. 끄면 예전처럼 홈에 모두 보여요.</p>
+    </div>
+    <div class="card">
       <div class="label">발음</div>
       <div class="seg" id="seg-accent">
         <button data-v="en-US">미국식</button>
@@ -308,10 +333,10 @@
       </div>
       <div class="label">말하기 속도 <span id="rate-val" class="muted"></span></div>
       <input type="range" id="rate" min="0.6" max="1.2" step="0.1">
-      <label class="toggle"><input type="checkbox" id="opt-autospeak"> 정답 확인 후 단어 자동 발음</label>
-      <label class="toggle" data-only="ex"><input type="checkbox" id="opt-ko"> 예문 해석 미리 보기</label>
-      <label class="toggle" data-only="ex"><input type="checkbox" id="opt-meaning"> 단어 뜻 미리 보기</label>
-      <label class="toggle touch-only" data-only="ex"><input type="checkbox" id="opt-appkb"> 직접 입력 때 앱 키보드 사용 (끄면 폰 키보드)</label>
+      <label class="switch-row"><span>정답 확인 후 단어 자동 발음</span><input type="checkbox" role="switch" class="switch" id="opt-autospeak"></label>
+      <label class="switch-row" data-only="ex"><span>예문 해석 미리 보기</span><input type="checkbox" role="switch" class="switch" id="opt-ko"></label>
+      <label class="switch-row" data-only="ex"><span>단어 뜻 미리 보기</span><input type="checkbox" role="switch" class="switch" id="opt-meaning"></label>
+      <label class="switch-row touch-only" data-only="ex"><span>직접 입력 때 앱 키보드 사용 <span class="muted">(끄면 폰 키보드)</span></span><input type="checkbox" role="switch" class="switch" id="opt-appkb"></label>
       <div data-only="ex">
         <div class="label">직접 입력: 원형까지 쓰면 <span class="muted">(outlaw → 예문은 outlawed)</span></div>
         <div class="seg" id="seg-base">
