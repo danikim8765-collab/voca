@@ -1,6 +1,7 @@
 // 단어 모드 직접 입력의 AI 재확인. 규칙 채점(core.js의 gradeMeaning)이 정답이 아니라고 할 때만,
 // 인터넷이 되고 API 키가 있으면 부른다. 안 되거나 실패하면 null → 규칙 채점 결과 그대로.
-// 키 앞부분으로 회사를 고른다: AIza… = Google Gemini(무료 등급), sk-ant-… = Anthropic Claude(유료)
+// 키 앞부분으로 회사를 고른다: gsk_… = Groq(무료), sk-or-… = OpenRouter(무료 모델),
+// AIza… = Google Gemini(무료 등급), sk-ant-… = Anthropic Claude(유료)
 // 서버 없이 브라우저에서 바로 부른다. 키는 이 기기의 localStorage에만 저장 (동기화 안 함)
 
 const KEY = 'voca.ai.v1'; // { key, provider, model } 두 모드가 같이 씀
@@ -10,16 +11,21 @@ const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_MODEL = 'gemini-flash-lite-latest'; // 가장 빠르고 무료 한도가 넉넉한 쪽. 없으면 연결할 때 목록에서 고름
 const CLAUDE_API = 'https://api.anthropic.com/v1';
 const CLAUDE_MODEL = 'claude-sonnet-5-5';
+// OpenAI 형식(chat/completions)을 쓰는 곳. 모델은 연결할 때 목록에서 앞쪽 것부터 고름
+const OPENAI_LIKE = {
+  groq: { api: 'https://api.groq.com/openai/v1', prefer: [/^openai\/gpt-oss-120b$/, /^openai\/gpt-oss-20b$/, /gpt-oss/, /^qwen/, /llama/], json: true },
+  openrouter: { api: 'https://openrouter.ai/api/v1', prefer: [/gpt-oss-120b:free$/, /gpt-oss.*:free$/, /deepseek.*:free$/, /qwen.*:free$/, /llama.*:free$/, /:free$/], json: false },
+};
 
 const loadConf = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 const saveConf = c => { try { localStorage.setItem(KEY, JSON.stringify(c)); } catch {} };
 
-export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^AIza/.test(key) ? 'gemini' : '');
+export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^AIza/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
 const conf = () => { const c = loadConf(); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
 export const aiProvider = () => conf().provider || '';
 export const aiEnabled = () => !!conf().key;
 export const aiOnline = () => aiEnabled() && navigator.onLine !== false;
-export const aiName = () => ({ gemini: 'Gemini', claude: 'Claude' }[aiProvider()] || 'AI');
+export const aiName = () => ({ gemini: 'Gemini', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider()] || 'AI');
 
 const claudeHeaders = key => ({
   'content-type': 'application/json',
@@ -29,6 +35,7 @@ const claudeHeaders = key => ({
   'anthropic-dangerous-direct-browser-access': 'true',
 });
 const geminiHeaders = key => ({ 'content-type': 'application/json', 'x-goog-api-key': key });
+const bearer = key => ({ 'content-type': 'application/json', authorization: `Bearer ${key}` });
 
 const fail = status => Object.assign(new Error(String(status)), { status });
 
@@ -40,6 +47,20 @@ export async function aiConnect(key) {
     const res = await fetch(`${CLAUDE_API}/models/${CLAUDE_MODEL}`, { headers: claudeHeaders(key), cache: 'no-store' });
     if (!res.ok) throw fail(res.status === 403 ? 401 : res.status);
     saveConf({ key, provider, model: CLAUDE_MODEL });
+    return;
+  }
+  if (OPENAI_LIKE[provider]) {
+    const { api, prefer } = OPENAI_LIKE[provider];
+    // 키 확인: Groq는 모델 목록, OpenRouter는 키 정보 (둘 다 비용 없음)
+    const check = await fetch(`${api}/${provider === 'openrouter' ? 'key' : 'models'}`, { headers: bearer(key), cache: 'no-store' });
+    if (!check.ok) throw fail([400, 401, 403].includes(check.status) ? 401 : check.status);
+    const list = provider === 'openrouter' ? await fetch(`${api}/models`, { cache: 'no-store' }) : check;
+    if (!list.ok) throw fail(list.status);
+    const ids = ((await list.json()).data || []).filter(m => m.active !== false).map(m => m.id);
+    let model = '';
+    for (const re of prefer) { model = ids.find(id => re.test(id)) || ''; if (model) break; }
+    if (!model) throw fail(404);
+    saveConf({ key, provider, model });
     return;
   }
   const get = path => fetch(`${GEMINI_API}/${path}`, { headers: geminiHeaders(key), cache: 'no-store' });
@@ -73,7 +94,8 @@ const SYSTEM = `영단어 시험의 한글 뜻 주관식 답안을 채점해요.
 - 뜻이 다르거나 너무 막연하면(예: "좋은", "어떤 것") 틀린 거예요. 반대 뜻은 틀린 거예요.
 - score는 2 정답, 1 부분 정답, 0 오답이에요.
 - missing은 학생이 빠뜨린 단어장 뜻 갈래 수예요.
-- note는 학생에게 보여 줄 한 줄 설명이에요 (20자 안팎, 해요체). 정답이면 빈 문자열.`;
+- note는 학생에게 보여 줄 한 줄 설명이에요 (20자 안팎, 해요체). 정답이면 빈 문자열.
+- 답은 JSON 하나로만: {"score": 0|1|2, "missing": 숫자, "note": "…"}`;
 
 const prompt = ({ word, meaning, user, strict }) =>
   `영단어: ${word}\n단어장 뜻: ${meaning}\n채점 기준: ${STRICT_RULE[strict] || STRICT_RULE.mid}\n\n학생 답:\n<answer>${user}</answer>`;
@@ -129,6 +151,30 @@ async function askGemini(c, q, signal) {
   return ((cand.content && cand.content.parts) || []).filter(p => !p.thought && p.text).map(p => p.text).join('');
 }
 
+async function askOpenAILike(c, q, signal) {
+  const { api, json } = OPENAI_LIKE[c.provider];
+  const body = {
+    model: c.model,
+    messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt(q) }],
+    max_tokens: 2048,
+  };
+  if (json) body.response_format = { type: 'json_object' };
+  if (/gpt-oss/.test(c.model)) body.reasoning_effort = 'low'; // 생각을 짧게 → 빠르게
+  const res = await fetch(`${api}/chat/completions`, { method: 'POST', headers: bearer(c.key), cache: 'no-store', signal, body: JSON.stringify(body) });
+  if (!res.ok) return null; // 429(무료 한도 초과) 등
+  const data = await res.json();
+  const ch = (data.choices || [])[0];
+  if (!ch || ch.finish_reason !== 'stop') return null;
+  return (ch.message && ch.message.content) || '';
+}
+
+// 응답 글자에서 JSON 하나 꺼내기 (```json … ``` 이나 앞뒤 말이 붙어 와도)
+export function pickJSON(text) {
+  const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '');
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  return a >= 0 && b > a ? JSON.parse(t.slice(a, b + 1)) : JSON.parse(t);
+}
+
 /**
  * AI 채점. 반환 { score: 0|1|2, missing, note } 또는 null(오프라인·키 없음·실패 → 규칙 채점으로)
  */
@@ -139,9 +185,10 @@ export async function aiGradeMeaning({ word, meaning, user, strict = 'mid' }) {
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
     const q = { word, meaning, user, strict };
-    const text = c.provider === 'gemini' ? await askGemini(c, q, ctrl.signal) : await askClaude(c, q, ctrl.signal);
+    const ask = c.provider === 'gemini' ? askGemini : OPENAI_LIKE[c.provider] ? askOpenAILike : askClaude;
+    const text = await ask(c, q, ctrl.signal);
     if (!text) return null;
-    const out = JSON.parse(text);
+    const out = pickJSON(text);
     if (![0, 1, 2].includes(out.score)) return null;
     return { score: out.score, missing: Math.max(0, out.missing | 0), note: String(out.note || '').trim() };
   } catch {

@@ -9,7 +9,7 @@ import { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiName } 
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050010';
+const APP_VERSION = '202611050040';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -1842,7 +1842,7 @@ function bind() {
       $('#ai-key').value = '';
       toast(`${aiName()} 재확인을 켰어요`);
     } catch (e) {
-      toast(e.status === 401 || e.status === 403 ? 'API 키가 맞지 않아요. AIza 또는 sk-ant-로 시작하는 키를 다시 복사해서 붙여넣어 주세요' : '확인하지 못했어요. 인터넷과 API 키를 확인해 주세요', 3500);
+      toast(e.status === 404 ? '지금 쓸 수 있는 무료 모델을 찾지 못했어요' : e.status === 401 || e.status === 403 ? 'API 키가 맞지 않아요. gsk_로 시작하는 키를 다시 복사해서 붙여넣어 주세요' : '확인하지 못했어요. 인터넷과 API 키를 확인해 주세요', 3500);
     }
     btn.disabled = false;
     btn.textContent = '연결';
