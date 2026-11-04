@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041400';
+const APP_VERSION = '202611041500';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -85,7 +85,7 @@ const otherProgress = () => ({ resetAt: load(OTHER_P + 'resetAt.v1', 0), stats: 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats, prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats, prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     stats = m.stats;
     resetAt = m.resetAt;
@@ -95,6 +95,8 @@ const sync = createSync({
       const p = m.prefs;
       Object.assign(settings, { exam: p.exam || '', newPerDay: p.newPerDay || 20, prefsAt: p.at });
       if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
+      // 학습 범위도 기기끼리 맞춤 (없는 DAY면 renderHome이 맞춰 줌)
+      if (p.from != null && p.to != null) Object.assign(settings, { from: p.from, to: p.to });
       saveSettings();
     }
     if (current === 'home') renderHome();
@@ -287,8 +289,10 @@ function fillDaySelects() {
 function setRange(from, to) {
   settings.from = from;
   settings.to = to;
+  settings.prefsAt = Date.now(); // 학습 범위도 동기화
   saveSettings();
   renderHome();
+  sync.soon();
 }
 
 function renderHome() {
