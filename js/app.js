@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041300';
+const APP_VERSION = '202611041400';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -838,7 +838,7 @@ function renderTyping(actions) {
     else if (!auto) toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   };
   if (settings.appKeyboard || DESK) {
-    const kbHelp = DESK ? `${parts > 1 ? `빈칸 ${parts}곳 · ` : ''}키보드로 바로 치세요 · Enter 확인 · Backspace 지우기`
+    const kbHelp = DESK ? `${parts > 1 ? `빈칸 ${parts}곳 · ` : ''}키보드로 바로 치세요 · Enter 확인 · Shift 힌트`
       : parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '키보드로 바로 입력하세요';
     return renderAppKeyboard(actions, kbHelp, check, autoCheck, notYet, fillsSlot);
   }
@@ -1657,6 +1657,16 @@ function bind() {
     } catch { toast('인터넷 연결을 확인해 주세요'); }
   });
   $('#csv-file').addEventListener('change', e => { if (e.target.files.length) importLocalCSV([...e.target.files]); e.target.value = ''; });
+
+  // 컴퓨터 키보드: Shift만 눌렀다 떼면 힌트 (대문자 치려고 Shift+글자를 누른 건 힌트 아님)
+  let shiftAlone = false;
+  document.addEventListener('keydown', e => { shiftAlone = e.key === 'Shift' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey; }, true);
+  document.addEventListener('keyup', e => {
+    if (e.key !== 'Shift' || !shiftAlone) return;
+    shiftAlone = false;
+    if (current === 'quiz' && $('#feedback').hidden && q && !q.answered) useHint();
+  });
+  document.addEventListener('pointerdown', () => { shiftAlone = false; }, true);
 
   // 키보드 (PC에서 테스트할 때)
   document.addEventListener('keydown', e => {
