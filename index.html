@@ -14,6 +14,8 @@
     (function () {
       var word = /[?&]m=word(&|$)/.test(location.search);
       document.documentElement.setAttribute('data-mode', word ? 'word' : 'ex');
+      // 컴퓨터(마우스·키보드): 화면 키보드 없이 실제 키보드로, 넓으면 두 칸 배치
+      if (window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) document.documentElement.classList.add('desk');
       if (word) {
         document.title = 'VOCA 단어 암기';
         document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f7f6f1');
@@ -50,6 +52,7 @@
     <div id="load-status" class="status">단어를 불러오는 중…</div>
 
     <div id="home-body" hidden>
+     <div class="home-main">
       <div id="resume-card" class="card resume" hidden>
         <div>
           <b>이어서 학습하기</b>
@@ -143,8 +146,11 @@
       </div>
       <button class="btn ghost" id="btn-list">단어장 보기</button>
 
+     </div>
+     <div class="home-side">
       <div class="label mt">DAY별 진도 <span class="muted">(연한 막대 학습 · 진한 막대 암기 완료 · 누르면 그 DAY만 따로 학습)</span></div>
       <div class="days" id="day-grid"></div>
+     </div>
     </div>
   </section>
 
@@ -297,7 +303,7 @@
       <label class="toggle"><input type="checkbox" id="opt-autospeak"> 정답 확인 후 단어 자동 발음</label>
       <label class="toggle" data-only="ex"><input type="checkbox" id="opt-ko"> 예문 해석 미리 보기</label>
       <label class="toggle" data-only="ex"><input type="checkbox" id="opt-meaning"> 단어 뜻 미리 보기</label>
-      <label class="toggle" data-only="ex"><input type="checkbox" id="opt-appkb"> 직접 입력 때 앱 키보드 사용 (끄면 폰 키보드)</label>
+      <label class="toggle touch-only" data-only="ex"><input type="checkbox" id="opt-appkb"> 직접 입력 때 앱 키보드 사용 (끄면 폰 키보드)</label>
       <div data-only="ex">
         <div class="label">직접 입력: 원형까지 쓰면 <span class="muted">(outlaw → 예문은 outlawed)</span></div>
         <div class="seg" id="seg-base">

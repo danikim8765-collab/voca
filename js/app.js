@@ -8,12 +8,15 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041100';
+const APP_VERSION = '202611041200';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
 // 예문 모드(./) · 단어 모드(./?m=word): 화면과 흐름은 같고 문제·색·진도 저장만 다름
 const WORD = document.documentElement.dataset.mode === 'word';
+// 컴퓨터(마우스·키보드): 화면 키보드는 숨기고 실제 키보드로 입력. 넓은 창(1000px~)이면 두 칸 배치 (index.html 머리에서 정함)
+const DESK = document.documentElement.classList.contains('desk');
+const wideDesk = () => DESK && window.innerWidth >= 1000;
 const P = WORD ? 'voca.word.' : 'voca.';
 const KEY = {
   stats: P + 'stats.v1',
@@ -834,8 +837,9 @@ function renderTyping(actions) {
     if (f) showCoach(actions, f);
     else if (!auto) toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
   };
-  if (settings.appKeyboard) {
-    const kbHelp = parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '키보드로 바로 입력하세요';
+  if (settings.appKeyboard || DESK) {
+    const kbHelp = DESK ? `${parts > 1 ? `빈칸 ${parts}곳 · ` : ''}키보드로 바로 치세요 · Enter 확인 · Backspace 지우기`
+      : parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '키보드로 바로 입력하세요';
     return renderAppKeyboard(actions, kbHelp, check, autoCheck, notYet, fillsSlot);
   }
 
@@ -1027,7 +1031,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
     },
   };
   // 고정된 키보드에 문장이 가리지 않게 아래 여백 확보
-  requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`; });
+  if (!DESK) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`; });
 }
 
 function useHint() {
@@ -1175,7 +1179,8 @@ function showFeedback(correct, given, kind, label) {
 
   $('#feedback').hidden = false;
   // 시트에 가리지 않게 문장 아래 여백
-  requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
+  // 넓은 컴퓨터 화면에선 정답 시트가 오른쪽 칸이라 여백 필요 없음
+  if (!wideDesk()) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
   $('#fb-mean').scrollTop = 0;
   if (settings.autoSpeak) speak(w.word);
 }
