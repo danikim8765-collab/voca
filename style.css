@@ -276,9 +276,7 @@ button { cursor: pointer; }
 }
 .sticky-bottom .btn { margin: 0; }
 
-.toggle { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 15px; }
-.toggle input { width: 20px; height: 20px; accent-color: var(--primary); }
-/* 켜고 끄는 스위치 (글자 왼쪽, 스위치 오른쪽) */
+/* 설정의 켜고 끄는 스위치 (글자 왼쪽, 스위치 오른쪽) */
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 15px; cursor: pointer; }
 .switch {
   appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: pointer;
