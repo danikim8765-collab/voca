@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041700';
+const APP_VERSION = '202611041800';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -318,8 +318,7 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
-  showNumSeg('#seg-new', '#new-custom', '#new-n', settings.newPerDay);
-  showNumSeg('#seg-rev', '#rev-custom', '#rev-n', settings.reviewSize);
+  setSeg('#seg-new', String(settings.newPerDay)); // 10·20·30·40이 아니면(맨 위 카드에서 직접 정한 값) 아무것도 안 켜짐
   $('#exam-date').value = settings.exam || '';
   renderPlan();
 
@@ -378,11 +377,13 @@ function renderHome() {
 function renderPlan() {
   const { plan, learnLeft, rv, stage: regular } = flowState();
   const stage = soloDay != null && days.includes(soloDay) ? 'day' : regular;
+  // items: [숫자, 이름, 누르면 할 일(있으면 눌러서 직접 정하기)]
   const fill = (box, items) => {
     box.innerHTML = '';
-    for (const [n, l] of items) {
-      const d = el('div');
+    for (const [n, l, onEdit] of items) {
+      const d = el(onEdit ? 'button' : 'div', onEdit ? 'editable' : null);
       d.append(el('b', null, n), l);
+      if (onEdit) { d.title = '눌러서 개수 정하기'; d.appendChild(el('i', 'edit-ic', '✎')); d.addEventListener('click', onEdit); }
       box.appendChild(d);
     }
   };
@@ -422,7 +423,7 @@ function renderPlan() {
   }
 
   if (stage === 'learn') {
-    const items = [[plan.fresh.length, '새 단어']];
+    const items = [[plan.fresh.length, '새 단어', editNewPerDay]];
     if (plan.examInfo && plan.examInfo.finalDay) items.unshift([plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
     fill($('#plan-info'), items);
     $('#btn-start').textContent = `오늘 학습 시작 (${learnLeft})`;
@@ -431,7 +432,7 @@ function renderPlan() {
     const due = plan.review.length;
     const shown = rv.left.length;
     const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
-    fill($('#review-info'), [[shown, '복습'], [dueIn, '복습일 된 단어']]);
+    fill($('#review-info'), [[shown, '복습', editReviewSize], [dueIn, '복습일 된 단어']]);
     $('#btn-review').textContent = `오늘 복습 시작 (${shown})`;
     if (srsOn()) {
       const sp = srsPick();
@@ -456,38 +457,76 @@ function renderPlan() {
   $('#today-note').textContent = note;
 }
 
-// 숫자 버튼 + '직접': 값이 버튼에 있으면 그 버튼, 아니면 '직접 N'
-const PRESET_COUNTS = ['10', '20', '30', '40'];
-function showNumSeg(segSel, rowSel, inputSel, n) {
-  const custom = !PRESET_COUNTS.includes(String(n));
-  setSeg(segSel, custom ? 'custom' : String(n));
-  $(`${segSel} button[data-v="custom"]`).textContent = custom ? `직접 ${n}` : '직접';
-  if (!custom) $(rowSel).hidden = true;
-  $(inputSel).value = n;
-}
-function bindNumSeg(segSel, rowSel, inputSel, get, set) {
-  $(segSel).addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    if (b.dataset.v === 'custom') {
-      const row = $(rowSel), inp = $(inputSel);
-      row.hidden = false;
-      inp.value = get();
-      inp.focus();
-      inp.select();
-      return;
+// 숫자 키패드 (앱 안): await askNumber({ title, value, extra }) → 숫자, 또는 extra를 고르면 extra.value, 취소면 null
+// 폰·패드는 시스템 키보드 없이 이 키패드로, 컴퓨터는 키패드는 숨기고 실제 키보드의 숫자·Backspace·Enter·Esc로
+function askNumber({ title, value, hint = '', extra = null, min = 1, max = 300 }) {
+  const d = $('#numpad');
+  $('#np-title').textContent = title;
+  $('#np-hint').textContent = hint;
+  let cur = String(value || ''), fresh = true; // 처음 누르는 숫자는 새로 쓰기
+  const show = () => { $('#np-val').textContent = cur || '0'; $('#np-ok').disabled = !(+cur >= min); };
+  return new Promise(resolve => {
+    const done = v => { d.hidden = true; document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const press = k => {
+      if (k === 'back') { cur = fresh ? '' : cur.slice(0, -1); fresh = false; }
+      else if (/^\d$/.test(k)) { cur = fresh ? k : (cur + k).replace(/^0+/, ''); fresh = false; if (+cur > max) cur = String(max); }
+      show();
+    };
+    const ok = () => { if (+cur >= min) done(Math.min(max, +cur)); };
+    const onKey = e => {
+      if (/^\d$/.test(e.key)) press(e.key);
+      else if (e.key === 'Backspace') press('back');
+      else if (e.key === 'Enter') ok();
+      else if (e.key === 'Escape') done(null);
+      else return;
+      e.preventDefault(); e.stopPropagation();
+    };
+    const keys = $('#np-keys');
+    keys.innerHTML = '';
+    for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'back']) {
+      const b = el('button', 'np-key' + (k === 'back' ? ' fn' : ''), k === 'back' ? '⌫' : k);
+      if (!k) { b.disabled = true; b.classList.add('blank-key'); }
+      else b.addEventListener('click', () => press(k));
+      keys.appendChild(b);
     }
-    $(rowSel).hidden = true;
-    set(+b.dataset.v);
+    const chips = $('#np-chips');
+    chips.innerHTML = '';
+    for (const n of [10, 20, 30, 40]) {
+      const c = el('button', 'chip', String(n));
+      c.addEventListener('click', () => { cur = String(n); fresh = true; show(); });
+      chips.appendChild(c);
+    }
+    if (extra) { const c = el('button', 'chip', extra.label); c.addEventListener('click', () => done(extra.value)); chips.appendChild(c); }
+    $('#np-ok').onclick = ok;
+    $('#np-cancel').onclick = () => done(null);
+    d.onclick = e => { if (e.target === d) done(null); };
+    document.addEventListener('keydown', onKey, true);
+    show();
+    d.hidden = false;
   });
-  const apply = () => {
-    const n = Math.round(+$(inputSel).value);
-    if (!(n >= 1)) { $(inputSel).value = get(); return; }
-    set(Math.min(300, n));
-    $(rowSel).hidden = true; // 정하면 입력칸은 접고 버튼에 '직접 N'으로
-  };
-  $(inputSel).addEventListener('change', apply);
-  $(inputSel).addEventListener('keydown', e => { if (e.key === 'Enter') { apply(); e.target.blur(); } });
+}
+
+// 맨 위 카드의 숫자를 눌러 하루 새 단어 수·오늘의 복습 수를 직접 정하기
+async function editNewPerDay() {
+  const n = await askNumber({ title: '하루 새 단어 수', value: settings.newPerDay, hint: '오늘부터 하루에 배울 새 단어 수' });
+  if (n == null) return;
+  settings.newPerDay = n; settings.prefsAt = Date.now(); saveSettings(); setSeg('#seg-new', String(n)); renderPlan(); sync.soon();
+}
+async function editReviewSize() {
+  const srs = srsOn();
+  const n = await askNumber({
+    title: '오늘의 복습 수', value: settings.reviewSize,
+    hint: srs ? '주기 복습: 복습일이 된 단어를 이 수까지만 (제한 없음도 고를 수 있어요)' : '전에 배운 단어 중 오늘 복습할 수',
+    extra: srs ? { label: '제한 없음', value: 0 } : null,
+  });
+  if (n == null) return;
+  if (srs) settings.reviewLimit = n ? 1 : 0;
+  if (n) settings.reviewSize = n;
+  settings.prefsAt = Date.now(); saveSettings();
+  // 오늘 복습을 아직 시작 안 했으면 새 개수로 다시 고르게
+  const day = loadDay();
+  if (Array.isArray(day.review) && !day.review.some(id => seenToday(id))) { delete day.review; save(KEY.day, day); }
+  renderPlan(); sync.soon();
 }
 
 function setSeg(sel, v) {
@@ -1620,15 +1659,7 @@ function bind() {
     if (r === 'all') setRange(days[0], last);
   });
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
-  // 하루 새 단어 수·오늘의 복습 수: 10·20·30·40 버튼 또는 '직접'으로 숫자 입력
-  const setCount = (key, n) => {
-    settings[key] = n; settings.prefsAt = Date.now(); saveSettings();
-    showNumSeg('#seg-new', '#new-custom', '#new-n', settings.newPerDay);
-    showNumSeg('#seg-rev', '#rev-custom', '#rev-n', settings.reviewSize);
-    renderPlan(); sync.soon();
-  };
-  bindNumSeg('#seg-new', '#new-custom', '#new-n', () => settings.newPerDay, n => setCount('newPerDay', n));
-  bindNumSeg('#seg-rev', '#rev-custom', '#rev-n', () => settings.reviewSize, n => setCount('reviewSize', n));
+  onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   const setExam = v => { settings.exam = v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); };
   $('#exam-date').addEventListener('change', e => setExam(e.target.value));
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });

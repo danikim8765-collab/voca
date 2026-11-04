@@ -131,18 +131,7 @@
           <button data-v="20">20</button>
           <button data-v="30">30</button>
           <button data-v="40">40</button>
-          <button data-v="custom">직접</button>
         </div>
-        <div class="num-row" id="new-custom" hidden><input type="number" id="new-n" min="1" max="300" inputmode="numeric" aria-label="하루 새 단어 수 직접 입력"><span>개</span></div>
-        <div class="label">오늘의 복습 수 <span class="muted">(기본 방식)</span></div>
-        <div class="seg" id="seg-rev">
-          <button data-v="10">10</button>
-          <button data-v="20">20</button>
-          <button data-v="30">30</button>
-          <button data-v="40">40</button>
-          <button data-v="custom">직접</button>
-        </div>
-        <div class="num-row" id="rev-custom" hidden><input type="number" id="rev-n" min="1" max="300" inputmode="numeric" aria-label="오늘의 복습 수 직접 입력"><span>개</span></div>
         <div class="label">시험일 <span class="muted">(정하면 시험 전날까지 복습이 맞춰지고, 3일 전부터 범위 전체를 한 번씩)</span></div>
         <div class="row exam-row">
           <input type="date" id="exam-date" class="date-input">
@@ -349,6 +338,21 @@
   </section>
 
   <!-- 확인 창 (지우기 등) -->
+  <!-- 숫자 키패드: 맨 위 카드의 새 단어·복습 수를 누르면. 폰·패드는 시스템 키보드 대신 이 키패드, 컴퓨터는 키패드 없이 숫자 치고 Enter -->
+  <div class="dialog numpad" id="numpad" role="dialog" aria-modal="true" aria-labelledby="np-title" hidden>
+    <div class="dialog-card numpad-card">
+      <div class="dlg-title" id="np-title"></div>
+      <div class="np-display"><b id="np-val"></b><span>개</span></div>
+      <div class="np-hint muted" id="np-hint"></div>
+      <div class="np-chips" id="np-chips"></div>
+      <div class="np-keys" id="np-keys"></div>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="np-cancel">취소</button>
+        <button class="btn dlg-ok" id="np-ok">확인</button>
+      </div>
+    </div>
+  </div>
+
   <div class="dialog" id="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-body" hidden>
     <div class="dialog-card">
       <div class="dlg-icon" id="dlg-icon" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/></svg></div>
