@@ -9,7 +9,7 @@ import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEna
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050300';
+const APP_VERSION = '202611050400';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -712,8 +712,8 @@ const synonymOf = w => { const e = w.extras.find(([h]) => h.replace(/\s/g, '') =
 const wordHint = w => (synonymOf(w) ? `유의어: ${synonymOf(w)}` : w.ex1 ? `예문: ${w.ex1}` : '');
 const STRICT_DESC = {
   easy: '여러 뜻 중 하나만 맞게 써도 정답이에요.',
-  mid: '비슷한 뜻은 하나만 써도 정답. 품사나 의미가 다른 뜻이 여럿이면 절반 이상 써야 정답이에요.',
-  hard: '나와 있는 뜻을 전부 써야 정답이에요.',
+  mid: '뜻 갈래(1. 2. …)마다 하나씩은 써야 정답이에요. 같은 갈래의 비슷한 말은 하나만 써도 돼요.',
+  hard: '나와 있는 뜻 낱말을 전부 써야 정답이에요.',
 };
 
 function wordCard(w) {
