@@ -122,31 +122,33 @@ const GEMINI_SCHEMA = {
   required: ['score', 'missing', 'note'],
 };
 
-// 회사별 요청 → 응답 JSON 글자. 실패면 null
-async function askClaude(c, q, signal) {
+// 회사별 요청 → 응답 글자. 실패면 null. r = { system, user, json(채점처럼 JSON으로 받을 때) }
+async function askClaude(c, r, signal) {
   const res = await fetch(`${CLAUDE_API}/messages`, {
     method: 'POST', headers: claudeHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
       model: c.model || CLAUDE_MODEL,
       max_tokens: 2048,
-      system: SYSTEM,
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: CLAUDE_SCHEMA } },
-      messages: [{ role: 'user', content: prompt(q) }],
+      system: r.system,
+      output_config: r.json ? { effort: 'low', format: { type: 'json_schema', schema: CLAUDE_SCHEMA } } : { effort: 'low' },
+      messages: [{ role: 'user', content: r.user }],
     }),
   });
   if (!res.ok) return null;
   const msg = await res.json();
-  if (msg.stop_reason !== 'end_turn') return null; // refusal·max_tokens 등은 규칙 채점으로
+  if (msg.stop_reason !== 'end_turn') return null; // refusal·max_tokens 등
   return (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
-async function askGemini(c, q, signal) {
+async function askGemini(c, r, signal) {
   const res = await fetch(`${GEMINI_API}/models/${c.model || GEMINI_MODEL}:generateContent`, {
     method: 'POST', headers: geminiHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM }] },
-      contents: [{ role: 'user', parts: [{ text: prompt(q) }] }],
-      generationConfig: { responseMimeType: 'application/json', responseSchema: GEMINI_SCHEMA, maxOutputTokens: 2048 },
+      systemInstruction: { parts: [{ text: r.system }] },
+      contents: [{ role: 'user', parts: [{ text: r.user }] }],
+      generationConfig: r.json
+        ? { responseMimeType: 'application/json', responseSchema: GEMINI_SCHEMA, maxOutputTokens: 2048 }
+        : { maxOutputTokens: 2048 },
     }),
   });
   if (!res.ok) return null; // 429(무료 한도 초과) 등
@@ -156,14 +158,14 @@ async function askGemini(c, q, signal) {
   return ((cand.content && cand.content.parts) || []).filter(p => !p.thought && p.text).map(p => p.text).join('');
 }
 
-async function askOpenAILike(c, q, signal) {
+async function askOpenAILike(c, r, signal) {
   const { api, json } = OPENAI_LIKE[c.provider];
   const body = {
     model: c.model,
-    messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: prompt(q) }],
+    messages: [{ role: 'system', content: r.system }, { role: 'user', content: r.user }],
     max_tokens: 2048,
   };
-  if (json) body.response_format = { type: 'json_object' };
+  if (r.json && json) body.response_format = { type: 'json_object' };
   if (/gpt-oss/.test(c.model)) body.reasoning_effort = 'low'; // 생각을 짧게 → 빠르게
   const res = await fetch(`${api}/chat/completions`, { method: 'POST', headers: bearer(c.key), cache: 'no-store', signal, body: JSON.stringify(body) });
   if (!res.ok) return null; // 429(무료 한도 초과) 등
@@ -171,6 +173,22 @@ async function askOpenAILike(c, q, signal) {
   const ch = (data.choices || [])[0];
   if (!ch || ch.finish_reason !== 'stop') return null;
   return (ch.message && ch.message.content) || '';
+}
+
+// 스위치·키·인터넷을 확인하고, 시간 제한을 걸어 부름. 실패면 null
+async function ask(r) {
+  const c = conf();
+  if (!aiSwitch() || !c.key || navigator.onLine === false) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const fn = c.provider === 'gemini' ? askGemini : OPENAI_LIKE[c.provider] ? askOpenAILike : askClaude;
+    return await fn(c, r, ctrl.signal);
+  } catch {
+    return null; // 인터넷 끊김, 시간 초과
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // 응답 글자에서 JSON 하나 꺼내기 (```json … ``` 이나 앞뒤 말이 붙어 와도)
@@ -184,21 +202,31 @@ export function pickJSON(text) {
  * AI 채점. 반환 { score: 0|1|2, missing, note } 또는 null(오프라인·키 없음·실패 → 규칙 채점으로)
  */
 export async function aiGradeMeaning({ word, meaning, user, strict = 'mid' }) {
-  const c = conf();
-  if (!aiSwitch() || !c.key || navigator.onLine === false) return null;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const text = await ask({ system: SYSTEM, user: prompt({ word, meaning, user, strict }), json: true });
+  if (!text) return null;
   try {
-    const q = { word, meaning, user, strict };
-    const ask = c.provider === 'gemini' ? askGemini : OPENAI_LIKE[c.provider] ? askOpenAILike : askClaude;
-    const text = await ask(c, q, ctrl.signal);
-    if (!text) return null;
     const out = pickJSON(text);
     if (![0, 1, 2].includes(out.score)) return null;
     return { score: out.score, missing: Math.max(0, out.missing | 0), note: String(out.note || '').trim() };
   } catch {
-    return null; // 인터넷 끊김, 시간 초과, 잘못된 응답
-  } finally {
-    clearTimeout(timer);
+    return null; // 잘못된 응답
   }
+}
+
+const EXPLAIN = `영단어 공부를 돕는 선생님이에요. 학생이 영단어의 한글 뜻을 틀리게 썼거나 골랐어요. 왜 틀렸는지 짧게 설명해요.
+- 학생 답이 실제로 어떤 뜻인지(보기를 골랐다면 어떤 다른 영단어의 뜻인지), 정답 뜻과 무엇이 다른지 말해요.
+- 헷갈리지 않게 외우는 요령을 하나 알려 줘요 (어원, 비슷한 단어와 구별, 짧은 예 등).
+- 학생 답도 맞는 뜻이라고 생각되면 솔직하게 그렇다고 말해요.
+- 3~4문장, 해요체. 마크다운·목록·제목 없이 문장으로만 써요.`;
+
+/**
+ * '왜 틀렸어?' 설명. how: 'type'(직접 입력) | 'choice'(보기 선택). extra: 유의어 등 참고. 반환 글자 또는 null
+ */
+export async function aiExplainWrong({ word, meaning, user, how = 'type', extra = '' }) {
+  const text = await ask({
+    system: EXPLAIN,
+    user: `영단어: ${word}\n단어장 뜻: ${meaning}${extra ? `\n참고: ${extra}` : ''}\n학생이 ${how === 'choice' ? '고른 보기' : '쓴 답'}:\n<answer>${user}</answer>`,
+  });
+  const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
+  return t || null;
 }
