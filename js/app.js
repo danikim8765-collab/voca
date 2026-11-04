@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611041900';
+const APP_VERSION = '202611042000';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -428,6 +428,7 @@ function renderPlan() {
     const dw = words.filter(w => w.day === soloDay);
     const seen = dw.filter(w => stats[w.id]).length;
     $('#btn-day').textContent = `DAY ${soloDay} 학습 시작 (${dw.length})`;
+    $('#btn-day-reset').hidden = !dayHasRecords(soloDay);
     note = `${dw.length}단어 중 ${seen}개 배움 · 정규 학습과 기록이 같이 쌓여요`;
   }
 
@@ -1418,22 +1419,37 @@ function wordItem(w, view = bookView(), onMark) {
 }
 
 // 그 DAY 단어들의 학습 기록(이 모드)을 지움. 동기화돼도 되살아나지 않게 지운 표시를 남김. 형광펜은 그대로
+// 그 DAY에 기록이 있는지 (예문·단어 모드 어느 쪽이든)
+function dayHasRecords(d) {
+  const o = otherProgress().stats;
+  return words.some(w => w.day === d && (stats[w.id] || (o[w.id] && !o[w.id].del)));
+}
+// 그 DAY 단어들의 학습 기록을 예문·단어 두 모드 모두 지움. 동기화돼도 되살아나지 않게 지운 표시를 남김. 형광펜은 그대로
 async function deleteDayRecords(d) {
-  const ids = words.filter(w => w.day === d && stats[w.id]).map(w => w.id);
-  if (!ids.length) return;
+  const dw = words.filter(w => w.day === d);
+  const o = otherProgress().stats;
+  const mine = dw.filter(w => stats[w.id]).map(w => w.id);
+  const theirs = dw.filter(w => o[w.id] && !o[w.id].del).map(w => w.id);
+  const n = new Set([...mine, ...theirs]).size;
+  if (!n) { toast(`DAY ${d}에는 지울 기록이 없어요`); return; }
   if (!(await ask({
     title: `DAY ${d} 기록을 지울까요?`,
-    body: `${WORD ? '단어' : '예문'} 모드에서 DAY ${d} 단어 ${ids.length}개의 학습 기록(맞힌·틀린 횟수, 복습 일정)이 지워져요.` + (sync.enabled ? ' 동기화된 다른 기기에서도 지워져요.' : '') + '\n형광펜 표시는 그대로예요. 지운 기록은 되돌릴 수 없어요.',
+    body: `예문·단어 모드에서 DAY ${d} 단어 ${n}개의 학습 기록(맞힌·틀린 횟수, 복습 일정)이 지워져요.` + (sync.enabled ? ' 동기화된 다른 기기에서도 지워져요.' : '') + '\n형광펜 표시는 그대로예요. 지운 기록은 되돌릴 수 없어요.',
     ok: '지우기', danger: true,
   }))) return;
   const now = Date.now();
-  for (const id of ids) { delete stats[id]; tombs[id] = { del: 1, s: now }; }
+  for (const id of mine) { delete stats[id]; tombs[id] = { del: 1, s: now }; }
   saveStats();
+  if (theirs.length) {
+    const os = load(OTHER_P + 'stats.v1', {});
+    for (const id of theirs) os[id] = { del: 1, s: now };
+    save(OTHER_P + 'stats.v1', os);
+  }
   // 오늘의 복습 목록에서도 빼기
   const day = loadDay();
-  if (Array.isArray(day.review)) { day.review = day.review.filter(id => !ids.includes(id)); save(KEY.day, day); }
+  if (Array.isArray(day.review)) { day.review = day.review.filter(id => !mine.includes(id)); save(KEY.day, day); }
   sync.soon();
-  renderList();
+  if (current === 'list') renderList(); else renderHome();
   toast(`DAY ${d} 기록을 지웠어요`);
 }
 
@@ -1503,7 +1519,7 @@ function renderList(scrollToSel) {
       const h = el('div', 'day-head');
       h.append(el('b', null, `DAY ${w.day}`), el('span', null, `${count[w.day]}단어`));
       const d = w.day;
-      if (words.some(x => x.day === d && stats[x.id])) {
+      if (dayHasRecords(d)) {
         const del = el('button', 'day-del', '기록 지우기');
         del.addEventListener('click', () => deleteDayRecords(d));
         h.appendChild(del);
@@ -1694,6 +1710,7 @@ function bind() {
   $('#btn-review').addEventListener('click', () => startSession('review'));
   $('#btn-day').addEventListener('click', () => startSession('day'));
   $('#btn-solo-close').addEventListener('click', () => { soloDay = null; renderHome(); });
+  $('#btn-day-reset').addEventListener('click', () => { if (soloDay != null) deleteDayRecords(soloDay); });
   $('#btn-unknown-test').addEventListener('click', () => startSession('unknown'));
   $('#btn-extra-new').addEventListener('click', () => startSession('extraNew'));
   $('#btn-extra-review').addEventListener('click', () => startSession('extraReview'));

@@ -74,8 +74,11 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       }
       if (other && g.files && g.files[OTHER]) {
         const lo = other.get();
-        const mo = mergeProgress(lo, await readFile(g, OTHER));
+        const ro = await readFile(g, OTHER);
+        const mo = mergeProgress(lo, ro);
         if (!sameStats(mo.stats, lo.stats || {})) other.set(mo.stats);
+        // 이 기기에서 다른 모드 기록을 지웠으면(DAY 기록 지우기) 그 파일에도 바로 올림
+        if (!sameStats(mo.stats, ro.stats || {})) files[OTHER] = { content: JSON.stringify(mo) };
       }
       if (Object.keys(files).length) await gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) });
       conf.last = Date.now();
