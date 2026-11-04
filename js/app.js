@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611042250';
+const APP_VERSION = '202611042300';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -305,7 +305,7 @@ function flowState() {
   return { plan, learnLeft, rv, stage };
 }
 const extraNew = n => rangeWords().filter(w => !stats[w.id]).slice(0, n);
-const extraReview = n => pickReview(rangeWords(), stats, { n });
+const extraReview = n => pickReview(rangeWords(), stats, { n, again: true }); // 다 봤으면 오늘 본·배운 단어도 다시
 
 function fillDaySelects() {
   for (const sel of [$('#day-from'), $('#day-to')]) {

@@ -559,15 +559,19 @@ export function retentionCurve(intervals, span = 30, step = 0.25) {
  * 복습할 단어 n개: 전에 배운 단어 중 오늘 배우거나 오늘 이미 본 단어는 빼고
  * 복습일이 된 단어(오래 밀린 것부터) → 나머지는 약한 단어부터(단계 낮은, 많이 틀린, 오래 안 본 순)
  */
-export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE } = {}) {
+export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE, again = false } = {}) {
+  // again(추가 복습): 오늘 배우거나 이미 본 단어도 뒤에 붙여서 다시 (복습할 게 다 떨어져도 더 할 수 있게)
   const pool = [];
   for (const w of allWords) {
     const s = normalizeStat(stats[w.id]);
-    if (!s || s.f === today || (s.s && dateStr(s.s) === today)) continue;
-    pool.push({ w, s, due: isDue(s, today) });
+    if (!s) continue;
+    const todays = s.f === today || !!(s.s && dateStr(s.s) === today);
+    if (todays && !again) continue;
+    pool.push({ w, s, todays, due: !todays && isDue(s, today) });
   }
   const miss = s => (s.w || 0) / Math.max(1, (s.c || 0) + (s.w || 0));
-  pool.sort((a, b) => (b.due - a.due)
+  pool.sort((a, b) => (a.todays - b.todays)
+    || (b.due - a.due)
     || (a.due ? a.s.due.localeCompare(b.s.due) : 0)
     || a.s.st - b.s.st
     || miss(b.s) - miss(a.s)

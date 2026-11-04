@@ -414,3 +414,18 @@ test('지운 기록은 동기화해도 되살아나지 않고, 다시 풀면 새
   const again = { st: 1, due: '2026-11-06', c: 1, w: 0, s: 300, f: '2026-11-05' };
   assert.equal(mergeProgress({ stats: { a: again } }, m1).stats.a.s, 300);
 });
+
+test('추가 복습: 안 본 단어 먼저, 다 봤으면 오늘 본·배운 단어도 다시', () => {
+  const T = '2026-11-04';
+  const now = new Date(2026, 10, 4, 9).getTime(), old = new Date(2026, 9, 1).getTime();
+  const words = ['a', 'b', 'c', 'd'].map(id => ({ id, day: 1 }));
+  const stats = {
+    a: { st: 2, due: '2026-11-04', c: 2, w: 0, s: now, f: '2026-10-01' },   // 오늘 이미 복습
+    b: { st: 1, due: '2026-11-05', c: 1, w: 0, s: now, f: T },              // 오늘 처음 배움
+    c: { st: 0, due: '2026-11-05', c: 0, w: 2, s: now, f: T },              // 오늘 배웠는데 틀림
+  };
+  assert.deepEqual(pickReview(words, stats, { today: T, n: 5 }).map(w => w.id), []); // 기본: 없음
+  assert.deepEqual(pickReview(words, stats, { today: T, n: 5, again: true }).map(w => w.id), ['c', 'b', 'a']); // 약한 것부터
+  const more = { ...stats, d: { st: 3, due: '2026-11-20', c: 3, w: 0, s: old, f: '2026-10-01' } };
+  assert.deepEqual(pickReview(words, more, { today: T, n: 2, again: true }).map(w => w.id), ['d', 'c']); // 안 본 단어 먼저
+});
