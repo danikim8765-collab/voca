@@ -5,10 +5,11 @@ import {
   synAnt, mergeMarks, nearestKey,
 } from './core.js';
 import { createSync } from './sync.js';
+import { aiGradeMeaning, aiConnect, aiDisconnect, aiEnabled, aiOnline } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611042300';
+const APP_VERSION = '202611042330';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -780,16 +781,33 @@ function renderMeaningTyping(actions) {
   Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, enterKeyHint: 'done' });
   input.placeholder = '뜻 입력 (여러 뜻은 쉼표로)';
   const ok = el('button', 'btn primary', '확인');
-  actions.append(input, el('div', 'type-help', `채점: ${{ easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통'} · 설정에서 바꿀 수 있어요`), ok);
-  const submit = () => {
-    if (q.answered) return;
+  const level = { easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통';
+  const grader = aiOnline() ? `AI · ${level}` : aiEnabled() ? `${level} (오프라인)` : level;
+  actions.append(input, el('div', 'type-help', `채점: ${grader} · 설정에서 바꿀 수 있어요`), ok);
+  let busy = false;
+  const submit = async () => {
+    if (q.answered || busy) return;
     const v = input.value.trim();
     if (!v) { toast('뜻을 먼저 써 주세요'); input.focus(); return; }
-    const { score, missing } = gradeMeaning(v, q.w.meaning, settings.strict);
+    const cur = q;
     input.blur();
-    if (score === 2) answer(!q.usedHint, null, q.usedHint ? 'hint' : undefined);
-    else if (score === 1) answer(false, `${v} · ${missing}개 뜻이 빠졌어요`, 'partial');
-    else answer(false, v);
+    // 인터넷이 되면 AI로, 안 되거나 실패하면 규칙 채점으로
+    let res = null;
+    if (aiOnline()) {
+      busy = true;
+      input.disabled = ok.disabled = true;
+      ok.textContent = 'AI 채점 중…';
+      res = await aiGradeMeaning({ word: cur.w.word, meaning: cur.w.meaning, user: v, strict: settings.strict });
+      busy = false;
+      if (q !== cur || cur.answered) return; // 채점 중에 다른 화면으로 나갔으면 버림
+      input.disabled = ok.disabled = false;
+      ok.textContent = '확인';
+    }
+    const { score, missing, note = '' } = res || gradeMeaning(v, cur.w.meaning, settings.strict);
+    const tail = note ? ` · ${note}` : score === 1 ? ` · ${missing}개 뜻이 빠졌어요` : '';
+    if (score === 2) answer(!cur.usedHint, null, cur.usedHint ? 'hint' : undefined);
+    else if (score === 1) answer(false, v + tail, 'partial');
+    else answer(false, v + tail);
   };
   ok.addEventListener('click', submit);
   input.addEventListener('keydown', e => {
@@ -1646,8 +1664,16 @@ function renderSettings() {
   setSeg('#seg-base', settings.baseAccept);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
+  renderAiStatus();
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
+}
+
+function renderAiStatus() {
+  const on = aiEnabled();
+  $('#ai-off').hidden = on;
+  $('#ai-on').hidden = !on;
+  if (on) $('#ai-info').textContent = navigator.onLine === false ? '연결됨 · 지금은 오프라인이라 규칙대로 채점해요' : '연결됨 · 직접 입력 문제를 AI가 채점해요';
 }
 
 function exportProgress() {
@@ -1803,6 +1829,28 @@ function bind() {
     btn.disabled = false;
     btn.textContent = '연결';
     renderSyncStatus();
+  });
+  $('#btn-ai-connect').addEventListener('click', async () => {
+    const key = $('#ai-key').value.trim();
+    if (!key) { toast('API 키를 붙여넣어 주세요'); return; }
+    const btn = $('#btn-ai-connect');
+    btn.disabled = true;
+    btn.textContent = '확인 중…';
+    try {
+      await aiConnect(key);
+      $('#ai-key').value = '';
+      toast('AI 채점을 켰어요');
+    } catch (e) {
+      toast(e.status === 401 || e.status === 403 ? 'API 키가 맞지 않아요. 다시 복사해서 붙여넣어 주세요' : '확인하지 못했어요. 인터넷과 API 키를 확인해 주세요', 3500);
+    }
+    btn.disabled = false;
+    btn.textContent = '연결';
+    renderAiStatus();
+  });
+  $('#btn-ai-off').addEventListener('click', async () => {
+    if (!(await ask({ title: 'AI 채점 연결을 끊을까요?', body: '이 기기에서 API 키를 지우고 규칙대로 채점해요.', ok: '연결 끊기' }))) return;
+    aiDisconnect();
+    renderAiStatus();
   });
   $('#btn-sync-now').addEventListener('click', async () => { await sync.now(); toast(sync.status === 'ok' ? '동기화했어요' : sync.error); });
   $('#btn-sync-copy').addEventListener('click', async () => {
