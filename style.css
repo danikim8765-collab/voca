@@ -602,6 +602,10 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .desk .kb-mode .quiz-actions { position: relative; left: auto; right: auto; bottom: auto; max-width: none; margin: 0; padding: 8px 0 0; background: none; border-top: 0; }
 .desk .kb-top { padding: 0; }
 .desk .touch-only { display: none; }
+/* 화면 키보드가 없으니 문제를 위아래 가운데로 (아래가 휑하지 않게) */
+.desk #quiz.active { display: flex; flex-direction: column; }
+.desk #quiz.active > .quiz-body { margin-top: auto; }
+.desk #quiz.active > .quiz-actions { margin-bottom: auto; padding-bottom: 24px; }
 .home-main, .home-side { min-width: 0; }
 @media (min-width: 1000px) {
   .desk .screen { max-width: 1160px; padding: 24px 40px 40px; }
@@ -612,10 +616,12 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
   .desk .home-side .label.mt { margin-top: 4px; }
   .desk .days { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
   /* 퀴즈: 왼쪽 문제, 오른쪽 정답 풀이 */
-  .desk #quiz.active { display: grid; grid-template-columns: minmax(0, 1fr) 400px; column-gap: 32px; align-items: start; align-content: start; }
-  .desk #quiz > .quiz-top { grid-column: 1 / -1; }
-  .desk #quiz > .quiz-body, .desk #quiz > .quiz-actions { grid-column: 1; }
-  .desk #quiz > .sheet { grid-column: 2; grid-row: 2 / span 2; position: sticky; top: 16px; left: auto; right: auto; bottom: auto; z-index: 1; display: block; }
+  /* 위·아래 빈 줄(1fr)로 문제와 정답 풀이를 화면 가운데에 */
+  .desk #quiz.active { display: grid; grid-template-columns: minmax(0, 1fr) 400px; grid-template-rows: auto 1fr auto auto 1fr; column-gap: 32px; align-items: start; }
+  .desk #quiz > .quiz-top { grid-column: 1 / -1; grid-row: 1; }
+  .desk #quiz.active > .quiz-body { grid-column: 1; grid-row: 3; margin-top: 0; }
+  .desk #quiz.active > .quiz-actions { grid-column: 1; grid-row: 4; margin-bottom: 0; }
+  .desk #quiz > .sheet { grid-column: 2; grid-row: 3 / span 2; align-self: center; position: relative; left: auto; right: auto; bottom: auto; z-index: 1; display: block; }
   .desk .sheet-inner { max-width: none; max-height: calc(100dvh - 120px); border-radius: 18px; padding: 18px 18px 16px; box-shadow: 0 8px 28px rgba(15, 30, 60, .12); animation: fb-in .25s ease-out; }
   .desk .grab { display: none; }
   .desk .quiz-actions { max-width: none; }
