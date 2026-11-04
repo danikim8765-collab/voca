@@ -5,11 +5,11 @@ import {
   synAnt, mergeMarks, nearestKey,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050145';
+const APP_VERSION = '202611050200';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -908,8 +908,8 @@ function renderChoices(actions) {
 
 // 오답 풀이 말풍선: 키보드 바로 위(앱 키보드) 또는 입력칸 위(폰 키보드).
 // 문제 푸는 걸 막지 않게: 잠깐(글 길이에 따라 2.5~4.5초) 보였다가 저절로 사라지고, 다시 쓰기 시작해도 바로 사라짐. 눌러도 아래가 그대로 눌림
-const COACH_ICON = { spell: '✏️', near: '🌱' };
-function showCoach(actions, f) {
+const COACH_ICON = { spell: '✏️', near: '🌱', off: '🤔', wait: '💭' }; // off(빨강)는 AI 풀이일 때만
+function showCoach(actions, f, { stay = false } = {}) {
   hideCoach();
   const box = el('div', `coach ${f.kind}`);
   box.setAttribute('role', 'status');
@@ -921,10 +921,13 @@ function showCoach(actions, f) {
   } else msg.textContent = f.text;
   box.append(el('span', 'coach-ic', COACH_ICON[f.kind] || '💬'), msg);
   actions.prepend(box);
-  const ms = Math.min(4500, 2500 + f.text.length * 30);
+  if (stay) return; // 'AI가 살펴보는 중…'은 결과가 올 때까지
+  const ms = Math.min(6000, 2500 + f.text.length * 35);
   hideCoach.timer = setTimeout(() => { box.classList.add('out'); setTimeout(() => box.remove(), 300); }, ms);
 }
 function hideCoach() { clearTimeout(hideCoach.timer); document.querySelectorAll('.coach').forEach(c => c.remove()); }
+
+const coachCache = new Map(), coachBusy = new Set(); // AI 풀이: 같은 단어·같은 답은 한 번만 물어봄
 
 const PAUSE_ACCEPT_MS = 800;
 const COACH_IDLE_MS = 1200; // 정답에서 벗어난 채로 이만큼 멈추면 말풍선 // 원형까지 쓰고 이만큼 멈추면 정답
@@ -998,11 +1001,31 @@ function renderTyping(actions) {
     return false;
   };
   // 틀린 답이 아깝거나 비슷하면 말풍선으로 (철자·형태 노랑 · 뜻이 통하는 말 초록). 상관없는 말엔 안 띄움
-  const notYet = (value, auto) => {
+  // AI가 켜져 있으면: 철자 실수·빈칸 덜 채움은 바로 규칙 말풍선, 그 밖엔 AI가 두 예문을 보고 풀이 (실패하면 규칙 말풍선)
+  const notYet = async (value, auto) => {
     clearTimeout(coachIdle);
+    const n = normalizeAnswer(value);
     const f = coachFeedback(value, q.w, { cands, find: t => findWord(t, q.w.id) });
-    if (f) showCoach(actions, f);
-    else if (!auto) toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요');
+    const plain = () => { if (f) showCoach(actions, f); else if (!auto) toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요'); };
+    if (!aiOnline() || n.length < 2 || q.revealed || (f && f.kind === 'spell')) return plain();
+    const key = `${q.w.id}|${n}`;
+    let r = coachCache.get(key);
+    if (r === undefined) {
+      if (coachBusy.has(key)) return; // 같은 답으로 이미 물어보는 중
+      coachBusy.add(key);
+      showCoach(actions, { kind: 'wait', text: 'AI가 살펴보는 중…' }, { stay: true });
+      const blankText = b => (b && b.segs.length ? b.segs.map(x => (x.t === 'blank' ? '___' : x.v)).join('') : '');
+      r = await aiCoach({
+        word: q.w.word, meaning: q.w.meaning, user: value.trim(),
+        sentences: [blankText(q.b1), blankText(q.b2)].filter(Boolean),
+        answers: [...new Set([q.w.word, ...cands])],
+      });
+      coachBusy.delete(key);
+      coachCache.set(key, r); // 실패(null)도 기억해서 같은 답으로 또 안 부름
+    }
+    // 그 사이 다음 문제로 넘어갔거나 다시 쓰기 시작했으면 안 보여 줌
+    if (q !== thisQ || q.answered || !q.typing || normalizeAnswer(q.typing.get()) !== n) return;
+    if (r) showCoach(actions, r); else { hideCoach(); plain(); }
   };
   if (settings.appKeyboard || DESK) {
     const kbHelp = DESK ? `${parts > 1 ? `빈칸 ${parts}곳 · ` : ''}키보드로 바로 치세요 · Enter 확인 · Shift 힌트`
@@ -1700,7 +1723,8 @@ function renderAiStatus() {
   $('#ai-box').hidden = !sw;
   $('#ai-off').hidden = key;
   $('#ai-on').hidden = !key;
-  if (key) $('#ai-info').textContent = navigator.onLine === false ? `AI 연결됨 · 지금은 오프라인이라 규칙대로 채점해요` : `AI 연결됨 · 규칙 채점에서 오답이 나오면 AI가 다시 확인해요`;
+  if (key) $('#ai-info').textContent = navigator.onLine === false ? `AI 연결됨 · 지금은 오프라인이라 ${WORD ? '규칙대로 채점해요' : '기본 말풍선만 보여요'}`
+    : WORD ? 'AI 연결됨 · 규칙 채점에서 오답이 나오면 AI가 다시 확인해요' : 'AI 연결됨 · 직접 입력에서 틀리면 AI가 왜 안 맞는지 말풍선으로 알려줘요';
 }
 
 function exportProgress() {

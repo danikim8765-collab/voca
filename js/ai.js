@@ -130,7 +130,7 @@ async function askClaude(c, r, signal) {
       model: c.model || CLAUDE_MODEL,
       max_tokens: 2048,
       system: r.system,
-      output_config: r.json ? { effort: 'low', format: { type: 'json_schema', schema: CLAUDE_SCHEMA } } : { effort: 'low' },
+      output_config: r.json ? { effort: 'low', format: { type: 'json_schema', schema: r.schema || CLAUDE_SCHEMA } } : { effort: 'low' },
       messages: [{ role: 'user', content: r.user }],
     }),
   });
@@ -147,7 +147,7 @@ async function askGemini(c, r, signal) {
       systemInstruction: { parts: [{ text: r.system }] },
       contents: [{ role: 'user', parts: [{ text: r.user }] }],
       generationConfig: r.json
-        ? { responseMimeType: 'application/json', responseSchema: GEMINI_SCHEMA, maxOutputTokens: 2048 }
+        ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA, maxOutputTokens: 2048 }
         : { maxOutputTokens: 2048 },
     }),
   });
@@ -229,4 +229,52 @@ export async function aiExplainWrong({ word, meaning, user, how = 'type', extra 
   });
   const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
   return t || null;
+}
+
+// ---------- 예문 모드: 틀린 답 풀이 말풍선 ----------
+const COACH = `영어 예문 빈칸 문제의 코치예요. 학생이 빈칸에 쓴 답이 정답이 아니에요.
+- 정답 단어는 절대 말하지 마세요. 정답의 철자 일부, 첫 글자도 말하지 마세요. 학생이 스스로 떠올리게 생각할 방향만 줘요.
+- 예문 속 빈칸 자리(품사, 앞뒤 말, 같이 쓰는 전치사)와 학생 답의 뜻·쓰임을 비교해서 왜 안 맞는지 짚어요.
+- kind는 하나:
+  "near" = 학생 답도 뜻은 통하거나 가깝지만, 이 문장에 더 딱 맞는 단어가 있어요(뉘앙스·강도·쓰임 차이).
+  "spell" = 사실상 같은 단어인데 형태·품사·철자만 달라요.
+  "off" = 뜻이 다르거나, 문법상 그 자리에 올 수 없어요.
+- text는 학생에게 보여 줄 1~2문장(60자 안팎), 해요체. 학생 답은 '작은따옴표'로 감싸요. 마크다운 없이.
+- 답은 JSON 하나로만: {"kind": "near"|"spell"|"off", "text": "…"}`;
+const COACH_SCHEMA = {
+  type: 'object',
+  properties: { kind: { type: 'string', enum: ['near', 'spell', 'off'] }, text: { type: 'string' } },
+  required: ['kind', 'text'],
+  additionalProperties: false,
+};
+const COACH_GSCHEMA = { type: 'OBJECT', properties: { kind: { type: 'STRING', enum: ['near', 'spell', 'off'] }, text: { type: 'STRING' } }, required: ['kind', 'text'] };
+
+// 설명에 정답이 새어 나오면 가림
+export function maskAnswer(text, answers) {
+  let t = String(text || '');
+  for (const a of answers.filter(Boolean).sort((x, y) => y.length - x.length)) {
+    const esc = a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp(`\\b${esc}\\b`, 'gi'), '○○');
+  }
+  return t;
+}
+
+/**
+ * 틀린 답 풀이. sentences: 빈칸을 ___로 바꾼 예문들, answers: 정답으로 인정하는 말들(원형·예문 형태), user: 학생 답
+ * 반환 { kind: 'near'|'spell'|'off', text } 또는 null(오프라인·키 없음·실패)
+ */
+export async function aiCoach({ word, meaning, sentences, answers, user }) {
+  const text = await ask({
+    system: COACH, json: true, schema: COACH_SCHEMA, gschema: COACH_GSCHEMA,
+    user: `정답(학생에게 말하지 말 것): ${answers.join(' / ')}\n단어장 뜻: ${meaning}\n예문:\n${sentences.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n학생 답:\n<answer>${user}</answer>`,
+  });
+  if (!text) return null;
+  try {
+    const out = pickJSON(text);
+    if (!['near', 'spell', 'off'].includes(out.kind) || !out.text) return null;
+    const t = maskAnswer(String(out.text).replace(/[*#`]/g, '').trim(), [word, ...answers]);
+    return t ? { kind: out.kind, text: t } : null;
+  } catch {
+    return null;
+  }
 }
