@@ -296,7 +296,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
   position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 90px); transform: translateX(-50%);
   background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; z-index: 30;
   box-shadow: 0 6px 20px rgba(10, 20, 40, .18);
-  max-width: 90vw; text-align: center;
+  width: max-content; max-width: 90vw; text-align: center; white-space: pre-line;
 }
 /* 확인 창 (정말 지울까요?) */
 .dialog { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(8, 14, 30, .45); animation: dlg-fade .18s ease-out; }
@@ -709,3 +709,47 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .q-tools { display: flex; gap: 6px; flex-wrap: wrap; }
 .q-tools .btn { width: auto; margin-bottom: 0; }
 #btn-idk { color: var(--muted); }
+
+/* ---------- 유반의어 테스트 ---------- */
+/* 유의어 = 파랑, 반의어 = 빨강 (DAY 박스를 왼쪽으로 밀 때 띠도 파랑→빨강), 학습 = 초록 */
+:root { --syn-c: #1c7ed6; --syn-soft: #e3f0fd; --ant-c: #e03131; --ant-soft: #ffe8e8; --study-c: #12b886; --study-soft: #e3f8f1; }
+@media (prefers-color-scheme: dark) { :root { --syn-c: #4dabf7; --syn-soft: #16304d; --ant-c: #ff6b6b; --ant-soft: #43201f; --study-c: #38d9a9; --study-soft: #143a33; } }
+.tag.kind-tag.syn { color: #fff; background: var(--syn-c); }
+.tag.kind-tag.ant { color: #fff; background: var(--ant-c); }
+#q-sentences .sent .en u.ul { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; font-weight: 800; }
+.word-card.syn-shown { padding: 28px 18px 26px; }
+.word-card.syn-shown .qw { font-size: 26px; line-height: 1.35; }
+@media (min-width: 700px) { .word-card.syn-shown .qw { font-size: 32px; } }
+.fb-card.opts > b { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.fb-card.opts .opt { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 15px; }
+.fb-card.opts .opt b { flex: none; }
+.fb-card.opts .opt .muted { font-size: 13px; min-width: 0; }
+.fb-card.opts .opt-ic { flex: none; width: 14px; text-align: center; color: var(--muted); font-weight: 800; }
+.fb-card.opts .opt.ok .opt-ic, .fb-card.opts .opt.ok b { color: var(--ok); }
+.fb-card.opts .opt.picked .opt-ic, .fb-card.opts .opt.picked b { color: var(--bad); }
+
+/* DAY 박스 옆으로 밀기: 뒤에 깔린 띠가 드러남 (왼쪽으로 밀면 오른쪽에 유반의어, 오른쪽으로 밀면 왼쪽에 학습) */
+.day-wrap { position: relative; border-radius: 14px; isolation: isolate; overflow: hidden; box-shadow: var(--shadow); }
+.day-wrap .day.solo { box-shadow: none; }
+.day-wrap:has(.day.solo) { box-shadow: 0 4px 14px var(--solo-glow); }
+.day-wrap .day { position: relative; z-index: 1; width: 100%; height: 100%; box-shadow: none; touch-action: pan-y; transition: transform .22s cubic-bezier(.2, .8, .3, 1); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.day-wrap.dragging .day { transition: none; }
+.swipe-bg { position: absolute; inset: 0; border-radius: 14px; display: flex; align-items: center; padding: 0 12px; color: #fff; font-size: 13px; font-weight: 800; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.swipe-bg span { opacity: .75; transform: scale(.92); transition: transform .15s, opacity .15s; }
+.swipe-bg.study { justify-content: flex-start; background: var(--study-c); }
+.swipe-bg.syn { justify-content: flex-end; background: linear-gradient(90deg, var(--syn-c) 35%, var(--ant-c) 95%); } /* 드러나는 오른쪽 부분에서 파랑→빨강이 보이게 */
+.day-wrap.to-right .swipe-bg.study, .day-wrap.to-left .swipe-bg.syn { opacity: .55; }
+.day-wrap.armed.to-right .swipe-bg.study, .day-wrap.armed.to-left .swipe-bg.syn { opacity: 1; }
+.day-wrap.armed .swipe-bg span { opacity: 1; transform: scale(1.06); }
+/* 처음 몇 번: 살짝 왼쪽(유반의어) → 오른쪽(학습)으로 흔들어서 밀 수 있다는 걸 보여 줌 */
+.day-wrap.hinting .day { animation: day-nudge 1.8s ease-in-out; }
+.day-wrap.hinting .swipe-bg.syn { animation: bg-l 1.8s ease-in-out; }
+.day-wrap.hinting .swipe-bg.study { animation: bg-r 1.8s ease-in-out; }
+@keyframes day-nudge { 0%, 100% { transform: none; } 20%, 35% { transform: translateX(-34px); } 50% { transform: none; } 65%, 80% { transform: translateX(34px); } }
+@keyframes bg-l { 0%, 50%, 100% { opacity: 0; } 20%, 35% { opacity: 1; } }
+@keyframes bg-r { 0%, 50%, 100% { opacity: 0; } 65%, 80% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .day-wrap.hinting .day, .day-wrap.hinting .swipe-bg { animation: none; } }
+/* DAY 단어장 아래 버튼: 박스를 민 것과 같은 색 */
+.day-acts { margin-bottom: 8px; }
+.btn.syn-btn { background: linear-gradient(90deg, var(--syn-c), var(--ant-c)); color: #fff; }
+.btn.study-btn { background: var(--study-c); color: #fff; }

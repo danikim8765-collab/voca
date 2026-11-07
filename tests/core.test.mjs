@@ -432,3 +432,74 @@ test('추가 복습: 안 본 단어 먼저, 다 봤으면 오늘 본·배운 단
   const more = { ...stats, d: { st: 3, due: '2026-11-20', c: 3, w: 0, s: old, f: '2026-10-01' } };
   assert.deepEqual(pickReview(words, more, { today: T, n: 2, again: true }).map(w => w.id), ['d', 'c']); // 안 본 단어 먼저
 });
+
+// ---------- 유반의어 테스트 ----------
+import { meaningBlocks, relBlocks, relForSense, senseOf, makeSynQuestion, hasSynAnt, koPos } from '../js/core.js';
+
+test('유반의어: 뜻·유의어 묶음 나누기', () => {
+  assert.deepEqual(meaningBlocks('1. 부패, 부식 2. 쇠퇴 / 1. 부패하다, 썩다 2. 쇠퇴하다'), [['부패, 부식', '쇠퇴'], ['부패하다, 썩다', '쇠퇴하다']]);
+  assert.deepEqual(meaningBlocks('명확한, 확고한'), [['명확한, 확고한']]);
+  assert.deepEqual(relBlocks('1. ease, abate, diminish / 2. sink'), [{ 1: ['ease', 'abate', 'diminish'], 2: ['sink'] }]);
+  assert.deepEqual(relBlocks('1. rot, decomposition / 2. decline / 1. rot, decompose / 2. decline'), [{ 1: ['rot', 'decomposition'], 2: ['decline'] }, { 1: ['rot', 'decompose'], 2: ['decline'] }]);
+  assert.deepEqual(relBlocks('epidemic, pandemic / torment, afflict'), [{ 0: ['epidemic', 'pandemic'] }, { 0: ['torment', 'afflict'] }]);
+});
+
+test('유반의어: 예문의 뜻 갈래에 맞는 유의어만', () => {
+  const abide = '1. ((~ by)) (규칙 등을) 준수하다 2. ((주로 부정문)) 참다, 견디다';
+  const syn = '1. obey, follow, comply with / 2. tolerate';
+  assert.equal(senseOf('우리는 모든 당사자가 상호 합의를 준수할 것이라고 믿는다.', abide), 1);
+  assert.deepEqual(relForSense(abide, syn, 1), ['obey', 'follow', 'comply with']);
+  assert.deepEqual(relForSense(abide, syn, 2), ['tolerate']);
+  assert.deepEqual(relForSense(abide, syn, 0), []); // 뜻을 모르면 내지 않음
+  // 번호 없는 유의어는 모든 뜻에
+  assert.deepEqual(relForSense('1. 치명적인 2. 결정적인, 중대한', 'deadly, lethal', 0), ['deadly', 'lethal']);
+  // 품사 묶음 수가 안 맞으면(어느 품사의 유의어인지 모름) 내지 않음
+  assert.deepEqual(relForSense('유죄를 선고하다 / 죄수, 수감자', 'prisoner', 1), []);
+  assert.deepEqual(relForSense('전염병, 역병 / 괴롭히다, 시달리게 하다', 'epidemic, pandemic / torment, afflict', 2), ['torment', 'afflict']);
+  assert.equal(koPos('치명적인'), 'a');
+  assert.equal(koPos('준수하다'), 'v');
+  assert.equal(koPos('사망자'), 'n');
+});
+
+const mk = (word, meaning, syn, ant, ex1 = '', ex1ko = '', day = 41) => ({
+  id: `${day}|${word}`, day, word, blank: word, meaning, ex1, ex1ko, ex2: '', ex2ko: '',
+  extras: [['유의어', syn], ['반의어', ant]].filter(([, v]) => v && v !== '-'),
+});
+const book = [
+  mk('evade', '피하다, 모면하다', 'avoid, dodge, sidestep', 'confront', 'The boy tried to evade his responsibilities.', '그 소년은 책임을 피하려고 했다.'),
+  mk('invade', '침입하다, 침략하다', 'attack', ''),
+  mk('condense', '압축하다, 응축하다', 'compress', ''),
+  mk('preach', '설교하다, 전도하다', '', ''),
+  mk('dodge', '(재빨리) 피하다', 'avoid', ''),
+  mk('permit', '허락하다, 허용하다', 'allow', 'forbid'),
+  mk('abolish', '폐지하다', 'eliminate', ''),
+  mk('testify', '증언하다', '', ''),
+];
+
+test('유반의어: 예문 모드 문제 — 정답 하나, 비슷한 말은 보기에서 빠짐', () => {
+  for (let i = 0; i < 30; i++) {
+    const q = makeSynQuestion(book[0], book, { byExample: true });
+    assert.ok(q && q.sentence, '예문 문제');
+    assert.equal(q.options.length, 4);
+    assert.equal(q.options.filter(o => o.ok).length, 1);
+    const texts = q.options.map(o => o.text.toLowerCase());
+    assert.equal(new Set(texts).size, 4);
+    assert.ok(!texts.includes('evade'));
+    // dodge(유의어가 겹치는 단어장 단어)는 정답이 아니면 보기에 없어야 함
+    if (q.kind === 'syn') assert.ok(texts.filter(t => ['avoid', 'dodge', 'sidestep'].includes(t)).length === 1);
+    if (q.kind === 'ant') assert.equal(q.answer, 'confront');
+  }
+});
+
+test('유반의어: 단어 모드 문제 — 유의어를 보고 그 단어 고르기', () => {
+  for (let i = 0; i < 30; i++) {
+    const q = makeSynQuestion(book[0], book, { byExample: false });
+    assert.ok(q && !q.sentence && q.shown.length);
+    assert.equal(q.answer, 'evade');
+    const texts = q.options.map(o => o.text);
+    assert.equal(texts.length, 4);
+    assert.ok(!texts.includes('dodge')); // 보여 준 유의어와 겹치는 단어는 빠짐
+  }
+  assert.equal(hasSynAnt(book[3]), false);
+  assert.equal(makeSynQuestion(book[3], book), null);
+});
