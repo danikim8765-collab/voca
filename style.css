@@ -712,8 +712,8 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 
 /* ---------- 유반의어 테스트 ---------- */
 /* 유의어 = 파랑, 반의어 = 빨강 (DAY 박스를 왼쪽으로 밀 때 띠도 파랑→빨강), 학습 = 초록 */
-:root { --syn-c: #1c7ed6; --syn-soft: #e3f0fd; --ant-c: #e03131; --ant-soft: #ffe8e8; --study-c: #12b886; --study-soft: #e3f8f1; }
-@media (prefers-color-scheme: dark) { :root { --syn-c: #4dabf7; --syn-soft: #16304d; --ant-c: #ff6b6b; --ant-soft: #43201f; --study-c: #38d9a9; --study-soft: #143a33; } }
+:root { --syn-c: #1c7ed6; --syn-soft: #e3f0fd; --ant-c: #e03131; --ant-soft: #ffe8e8; --study-c: #12b886; --study-c2: #82c91e; --study-soft: #e3f8f1; --swipe-text: #fff; }
+@media (prefers-color-scheme: dark) { :root { --syn-c: #4dabf7; --syn-soft: #16304d; --ant-c: #ff6b6b; --ant-soft: #43201f; --study-c: #38d9a9; --study-c2: #a9e34b; --study-soft: #143a33; --swipe-text: #111; } } /* 다크: 밝은 띠 위 글자는 검정 */
 .tag.kind-tag.syn { color: #fff; background: var(--syn-c); }
 .tag.kind-tag.ant { color: #fff; background: var(--ant-c); }
 #q-sentences .sent .en u.ul { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; font-weight: 800; }
@@ -734,9 +734,9 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .day-wrap:has(.day.solo) { box-shadow: 0 4px 14px var(--solo-glow); }
 .day-wrap .day { position: relative; z-index: 1; width: 100%; height: 100%; box-shadow: none; touch-action: pan-y; transition: transform .22s cubic-bezier(.2, .8, .3, 1); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .day-wrap.dragging .day { transition: none; }
-.swipe-bg { position: absolute; inset: 0; border-radius: 14px; display: flex; align-items: center; padding: 0 12px; color: #fff; font-size: 13px; font-weight: 800; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.swipe-bg { position: absolute; inset: 0; border-radius: 14px; display: flex; align-items: center; padding: 0 12px; color: var(--swipe-text); font-size: 13px; font-weight: 800; opacity: 0; transition: opacity .15s; pointer-events: none; }
 .swipe-bg span { opacity: .75; transform: scale(.92); transition: transform .15s, opacity .15s; }
-.swipe-bg.study { justify-content: flex-start; background: var(--study-c); }
+.swipe-bg.study { justify-content: flex-start; background: linear-gradient(90deg, var(--study-c2) 5%, var(--study-c) 65%); } /* 드러나는 왼쪽 부분에서 연두→초록 */
 .swipe-bg.syn { justify-content: flex-end; background: linear-gradient(90deg, var(--syn-c) 35%, var(--ant-c) 95%); } /* 드러나는 오른쪽 부분에서 파랑→빨강이 보이게 */
 .day-wrap.to-right .swipe-bg.study, .day-wrap.to-left .swipe-bg.syn { opacity: .55; }
 .day-wrap.armed.to-right .swipe-bg.study, .day-wrap.armed.to-left .swipe-bg.syn { opacity: 1; }
@@ -751,5 +751,5 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 @media (prefers-reduced-motion: reduce) { .day-wrap.hinting .day, .day-wrap.hinting .swipe-bg { animation: none; } }
 /* DAY 단어장 아래 버튼: 박스를 민 것과 같은 색 */
 .day-acts { margin-bottom: 8px; }
-.btn.syn-btn { background: linear-gradient(90deg, var(--syn-c), var(--ant-c)); color: #fff; }
-.btn.study-btn { background: var(--study-c); color: #fff; }
+.btn.syn-btn { background: linear-gradient(90deg, var(--syn-c), var(--ant-c)); color: var(--swipe-text); }
+.btn.study-btn { background: linear-gradient(90deg, var(--study-c2), var(--study-c)); color: var(--swipe-text); }
