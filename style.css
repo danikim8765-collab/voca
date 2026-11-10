@@ -753,3 +753,15 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .day-acts { margin-bottom: 8px; }
 .btn.syn-btn { background: linear-gradient(90deg, var(--syn-c), var(--ant-c)); color: var(--swipe-text); }
 .btn.study-btn { background: linear-gradient(90deg, var(--study-c2), var(--study-c)); color: var(--swipe-text); }
+
+/* DAY 박스를 밀어서 들어간 학습: 퀴즈 바탕의 아래쪽 빛을 밀 때 띠 색으로 (유반의어 = 파랑→빨강, DAY 학습 = 연두→초록) */
+:root { --tint-syn-a: #d6e7fb; --tint-syn-b: #fbd9d9; --tint-study-a: #e6f5c6; --tint-study-b: #c9f0e0; }
+@media (prefers-color-scheme: dark) { :root { --tint-syn-a: #173252; --tint-syn-b: #44202a; --tint-study-a: #2b3d15; --tint-study-b: #12403a; } }
+body[data-tint="syn"] { --tint-a: var(--tint-syn-a); --tint-b: var(--tint-syn-b); }
+body[data-tint="study"] { --tint-a: var(--tint-study-a); --tint-b: var(--tint-study-b); }
+body[data-tint] { --glow-0: var(--tint-b); --glow-1: var(--tint-a); } /* 화면 키보드·아래 버튼 바탕도 같은 계열 */
+body[data-tint]::before {
+  background:
+    linear-gradient(to top, transparent 0, transparent 120px, var(--bg) 72vh),
+    linear-gradient(90deg, var(--tint-a), var(--tint-b));
+}

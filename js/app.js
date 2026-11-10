@@ -180,7 +180,10 @@ function ask({ title, body = '', ok = '확인', cancel = '취소', danger = fals
 
 // ---------- 화면 전환 (안드로이드 뒤로가기 지원) ----------
 let current = 'home';
+// 퀴즈 바탕 색: 유반의어 테스트는 파랑→빨강, DAY 학습은 연두→초록 (DAY 박스를 밀 때 띠 색). 홈으로 가면 원래대로
+function setTint(t) { if (t) document.body.dataset.tint = t; else delete document.body.dataset.tint; }
 function show(id, push = true) {
+  if (id === 'home') setTint(null);
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
   current = id;
@@ -749,6 +752,7 @@ function startSession(mode, list) {
     label = `${range} 순서대로`;
   }
   session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
+  if (mode !== 'retry') setTint(mode === 'day' ? 'study' : null); // 틀린 단어 다시 풀기는 하던 색 그대로
   saveSession();
   show('quiz');
   renderQuestion();
@@ -761,6 +765,7 @@ function resumeSession() {
   saved.queue = saved.queue.filter(id => byId.has(id));
   saved.hinted = saved.hinted || [];
   session = saved;
+  setTint(session.mode === 'day' ? 'study' : null);
   if (session.pos >= session.queue.length) { finishSession(); return; }
   show('quiz');
   renderQuestion();
@@ -774,6 +779,7 @@ function startSynSession(day, list) {
   const pool = (list || words.filter(w => w.day === day)).filter(Boolean);
   const ids = shuffle(pool.filter(hasSynAnt)).map(w => w.id);
   if (!ids.length) { toast(`DAY ${day}에는 유의어·반의어가 있는 단어가 없어요`); return; }
+  setTint('syn');
   session = { label: `DAY ${day} 유반의어`, mode: 'syn', synDay: day, noSave: true, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
   show('quiz');
   renderQuestion();
