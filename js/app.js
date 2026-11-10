@@ -345,6 +345,7 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
+  setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
   setSeg('#seg-rev', String(settings.reviewSize));
   $('#exam-date').value = settings.exam || '';
@@ -371,6 +372,7 @@ function renderHome() {
   $('#plan-sum').textContent = [
     lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`,
     settings.kind === 'type' ? '직접 입력' : '4지선다',
+    ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     `새 단어 ${settings.newPerDay}`,
     srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`,
   ].join(' · ');
@@ -2012,7 +2014,6 @@ function renderSettings() {
   $('#rate').value = settings.rate;
   $('#rate-val').textContent = `${settings.rate}x`;
   $('#opt-autospeak').checked = settings.autoSpeak;
-  $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
   $('#opt-appkb').checked = settings.appKeyboard;
   $('#opt-simplehome').checked = ui.simpleHome;
@@ -2115,6 +2116,7 @@ function bind() {
     if (r === 'all') setRange(days[0], last);
   });
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
+  onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   onSeg('#seg-rev', v => { settings.reviewSize = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
@@ -2167,7 +2169,6 @@ function bind() {
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });
   $('#opt-autospeak').addEventListener('change', e => { settings.autoSpeak = e.target.checked; saveSettings(); });
-  $('#opt-ko').addEventListener('change', e => { settings.showKo = e.target.checked; saveSettings(); });
   $('#opt-meaning').addEventListener('change', e => { settings.showMeaning = e.target.checked; saveSettings(); });
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#opt-simplehome').addEventListener('change', e => { ui.simpleHome = e.target.checked; save(UI_KEY, ui); applyHomeLayout(); });

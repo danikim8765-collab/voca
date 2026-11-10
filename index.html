@@ -158,6 +158,13 @@
         <button data-v="choice">4지선다</button>
         <button data-v="type">직접 입력</button>
       </div>
+      <div data-only="ex">
+        <div class="label">예문 해석 <span class="muted">(가리면 문제 풀 때 눌러야 보여요)</span></div>
+        <div class="seg" id="seg-ko">
+          <button data-v="show">보이기</button>
+          <button data-v="hide">가리기</button>
+        </div>
+      </div>
       <div id="regular-opts">
       <div class="label">하루 새 단어 수</div>
       <div class="seg" id="seg-new">
@@ -365,7 +372,6 @@
       <div class="label">말하기 속도 <span id="rate-val" class="muted"></span></div>
       <input type="range" id="rate" min="0.6" max="1.2" step="0.1">
       <label class="switch-row"><span>정답 확인 후 단어 자동 발음</span><input type="checkbox" role="switch" class="switch" id="opt-autospeak"></label>
-      <label class="switch-row" data-only="ex"><span>예문 해석 미리 보기</span><input type="checkbox" role="switch" class="switch" id="opt-ko"></label>
       <label class="switch-row" data-only="ex"><span>단어 뜻 미리 보기</span><input type="checkbox" role="switch" class="switch" id="opt-meaning"></label>
       <label class="switch-row touch-only" data-only="ex"><span>직접 입력 때 앱 키보드 사용 <span class="muted">(끄면 폰 키보드)</span></span><input type="checkbox" role="switch" class="switch" id="opt-appkb"></label>
       <div data-only="ex">
