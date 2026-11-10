@@ -119,4 +119,8 @@ node --test tests/core.test.mjs
 
 ## 앱 수정 후 배포
 
-`js/app.js`의 `APP_VERSION`과 `version.txt`를 같은 새 값으로 바꿔서 올리면, 열려 있는 홈 화면 앱도 다음에 앱으로 돌아올 때 새 버전으로 새로고침돼요. (`node --test tests/core.test.mjs`가 두 값이 같은지 확인)
+PR에서는 `js/app.js`의 `APP_VERSION`과 `version.txt`를 바꾸지 않아요. PR에 `머지 대기` 라벨을 붙여 두면 GitHub Actions(`.github/workflows/scheduled-merge.yml`)가 매일 12:00 · 18:30(한국 시간)에 오래된 것부터 main에 머지하고, 머지한 게 있으면 두 값을 같은 새 값으로 한 번만 올려요. 그러면 열려 있는 홈 화면 앱도 다음에 앱으로 돌아올 때 새 버전으로 새로고침돼요. (`node --test tests/core.test.mjs`가 두 값이 같은지 확인)
+
+- 충돌로 머지 못 한 PR은 그대로 남고 Actions 실행이 실패로 표시돼요(알림 메일). 충돌을 풀면 다음 시간에 머지돼요.
+- 급할 땐 Actions 탭 → '정해진 시간 머지' → Run workflow로 바로 돌릴 수 있어요.
+- 저장소에 60일 동안 활동이 없으면 GitHub이 예약 실행을 멈출 수 있어요. 그땐 Actions 탭에서 다시 켜면 돼요.
