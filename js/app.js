@@ -74,6 +74,7 @@ const settings = Object.assign({
 const UI_KEY = 'voca.ui.v1';
 const ui = Object.assign({
   simpleHome: true, // 홈 간단히 보기: 학습 범위·문제 방식을 '학습 계획' 화면으로. 끄면 예전처럼 홈에
+  choiceLayout: DESK ? 'list' : 'grid', // 4지선다 선지 배치: grid(2×2) · list(한 줄씩)
   lean: 'mid', // 폰 4지선다 선지 쏠림: left(왼쪽 칸 넓게) · mid · right(오른쪽 칸 넓게). 한 손으로 누를 때
 }, load(UI_KEY, {}));
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
@@ -984,6 +985,7 @@ function renderQuestion() {
   if (settings.kind === 'type') renderTyping(actions);
   else {
     renderChoices(actions);
+    actions.dataset.layout = ui.choiceLayout;
     // 폰: 예문이 길면 선지가 화면 밖으로 밀려나서, 선지를 2×2로 화면 아래에 고정하고 문장 아래 여백 확보
     if (!DESK) {
       $('#quiz').classList.add('pin-choices');
@@ -2053,6 +2055,7 @@ function renderSettings() {
   $('#opt-appkb').checked = settings.appKeyboard;
   $('#opt-simplehome').checked = ui.simpleHome;
   setSeg('#seg-base', settings.baseAccept);
+  setSeg('#seg-layout', ui.choiceLayout);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
   renderAiStatus();
@@ -2151,6 +2154,13 @@ function bind() {
     if (r === 'all') setRange(days[0], last);
   });
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
+  onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
+  // 설정 바로가기: 그 카드로 스크롤
+  $('#set-nav').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (b) document.getElementById(b.dataset.go).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   onSeg('#seg-rev', v => { settings.reviewSize = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });

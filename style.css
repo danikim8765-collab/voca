@@ -204,8 +204,33 @@ button { cursor: pointer; }
 .pin-choices .quiz-actions[data-lean="right"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); }
 .pin-choices .choice { margin: 0; padding: 12px; word-break: keep-all; overflow-wrap: break-word; }
 /* 좁아진 칸은 번호를 빼서 단어 자리를 확보 (첫 자식은 lean-bar라 왼쪽 칸 선지가 짝수 번째) */
-.pin-choices .quiz-actions[data-lean="left"] .choice:nth-child(odd) .n,
-.pin-choices .quiz-actions[data-lean="right"] .choice:nth-child(even) .n { display: none; }
+.pin-choices .quiz-actions[data-layout="grid"][data-lean="left"] .choice:nth-child(odd) .n,
+.pin-choices .quiz-actions[data-layout="grid"][data-lean="right"] .choice:nth-child(even) .n { display: none; }
+/* 한 줄씩: 쏠리면 선지 폭을 줄여 그쪽 끝에 붙임 */
+.pin-choices .quiz-actions[data-layout="list"] { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.pin-choices .quiz-actions[data-layout="list"] .choice { padding: 11px 14px; transition: width .2s ease; }
+.pin-choices .quiz-actions[data-layout="list"][data-lean="left"] .choice { width: 78%; justify-self: start; }
+.pin-choices .quiz-actions[data-layout="list"][data-lean="right"] .choice { width: 78%; justify-self: end; }
+/* 컴퓨터에서 격자를 고르면 아래 고정 없이 2×2로 */
+.desk .quiz-actions[data-layout="grid"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.desk .quiz-actions[data-layout="grid"] .choice { margin: 0; }
+/* 설정: 위쪽에 붙는 바로가기, 카드 제목은 크게 */
+.set-nav {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: 0 0 12px; padding: 8px 0; background: var(--bg); -webkit-overflow-scrolling: touch;
+  box-shadow: 0 calc(-1 * env(safe-area-inset-top, 0px)) 0 var(--bg); /* 노치 아래 띠도 가림 */
+}
+.set-nav::-webkit-scrollbar { display: none; }
+.set-nav button {
+  flex: none; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 999px; padding: 7px 14px; font-size: 14px; font-weight: 600;
+}
+.set-nav button:active { background: var(--primary-soft); }
+#settings .card { scroll-margin-top: 64px; }
+#settings .card > .label:first-child { font-size: 17px; font-weight: 800; color: var(--text); margin: 0 0 12px; }
+#settings .card .seg + .label, #settings .card .switch-row + div > .label:first-child { margin-top: 16px; }
+.set-note { margin: 14px 0 0; }
+.link-btn { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .lean-bar { grid-column: 1 / -1; display: flex; justify-content: center; gap: 4px; margin: -12px 0 -2px; }
 .lean-btn {
   width: 44px; height: 28px; border: 0; border-radius: 10px; background: transparent; color: var(--muted);
