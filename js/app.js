@@ -863,7 +863,7 @@ function renderSynQuestion(w) {
   const actions = $('#q-actions');
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode');
+  $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   sq.options.forEach((o, i) => {
     const b = el('button', 'choice');
@@ -978,10 +978,17 @@ function renderQuestion() {
   const actions = $('#q-actions');
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode');
+  $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderTyping(actions);
-  else renderChoices(actions);
+  else {
+    renderChoices(actions);
+    // 폰: 예문이 길면 선지가 화면 밖으로 밀려나서, 선지를 2×2로 화면 아래에 고정하고 문장 아래 여백 확보
+    if (!DESK) {
+      $('#quiz').classList.add('pin-choices');
+      $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
+    }
+  }
 }
 
 // ---------- 단어 모드: 단어를 보고 뜻 맞히기 ----------
@@ -1024,7 +1031,7 @@ function renderWordQuestion(w) {
   const actions = $('#q-actions');
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode');
+  $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderMeaningTyping(actions);
   else renderMeaningChoices(actions);
@@ -1622,7 +1629,10 @@ function showFeedback(correct, given, kind, label) {
   $('#btn-idk').hidden = true;
   if (settings.kind === 'type') {
     $('#q-actions').innerHTML = '';
-    $('#quiz').classList.remove('kb-mode');
+    $('#quiz').classList.remove('kb-mode', 'pin-choices');
+  } else if ($('#quiz').classList.contains('pin-choices')) {
+    $('#quiz').classList.remove('pin-choices'); // 정답 시트가 아래를 덮으니 고정은 풂
+    $('.quiz-body').style.paddingBottom = '';
   }
 
   openSheet(w, WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline() ? [explainBox(q)] : []);
