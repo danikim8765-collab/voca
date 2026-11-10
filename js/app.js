@@ -8,8 +8,8 @@ import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
-// 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611080900';
+// 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
+const APP_VERSION = '202611101249';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -180,7 +180,10 @@ function ask({ title, body = '', ok = '확인', cancel = '취소', danger = fals
 
 // ---------- 화면 전환 (안드로이드 뒤로가기 지원) ----------
 let current = 'home';
+// 퀴즈 바탕 색: 유반의어 테스트는 파랑→빨강, DAY 학습은 연두→초록 (DAY 박스를 밀 때 띠 색). 홈으로 가면 원래대로
+function setTint(t) { if (t) document.body.dataset.tint = t; else delete document.body.dataset.tint; }
 function show(id, push = true) {
+  if (id === 'home') setTint(null);
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
   current = id;
@@ -430,35 +433,45 @@ function openDayBook(d) {
   renderList(true);
 }
 
-// 옆으로 밀기: 밀면 뒤에 색 띠가 드러나고, 박스 폭의 38% 넘게 밀었다 놓으면 실행. 위아래로 움직이면 그냥 스크롤
+// 옆으로 밀기: 밀면 뒤에 색 띠가 드러나고, 박스 폭의 30% 넘게 밀었다 놓거나 휙 튕기면 실행. 위아래로 움직이면 그냥 스크롤
+// - 손가락이 6px 움직였을 때 가로가 세로보다 크면 밀기로 봄 (엄지로 밀면 비스듬히 움직여서, 너무 엄격하면 자꾸 스크롤로 빠짐)
+// - 거리가 모자라도 빠르게 튕기면(0.45px/ms 넘게, 20px 넘게) 실행
 function attachSwipe(card, wrap, { onTap, onLeft, onRight }) {
-  let x0 = 0, y0 = 0, dx = 0, mode = null, pid = null, moved = false;
+  let x0 = 0, y0 = 0, dx = 0, mode = null, pid = null, moved = false, trail = [];
   const limit = () => card.offsetWidth * 0.72;
-  const th = () => Math.max(40, card.offsetWidth * 0.38);
+  const th = () => Math.max(32, card.offsetWidth * 0.3);
   const reset = () => {
     wrap.classList.remove('dragging');
     card.style.transform = '';
     clearTimeout(reset.t);
     reset.t = setTimeout(() => wrap.classList.remove('to-left', 'to-right', 'armed'), 230);
   };
+  // 손을 떼기 전 100ms 동안 움직인 속도 (px/ms, 부호 있음). 시각은 이벤트가 생긴 때(e.timeStamp)로
+  const speed = now => {
+    const recent = trail.filter(p => now - p.t <= 100);
+    if (recent.length < 2) return 0;
+    const a = recent[0], b = recent[recent.length - 1];
+    return b.t > a.t ? (b.x - a.x) / (b.t - a.t) : 0;
+  };
   card.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || mode) return;
+    if (e.button !== 0 || mode === 'drag') return; // 밀고 있는 중의 두 번째 손가락만 무시 (남은 상태는 새로 시작)
     x0 = e.clientX; y0 = e.clientY; dx = 0; mode = 'wait'; pid = e.pointerId; moved = false;
+    trail = [{ x: e.clientX, t: e.timeStamp }];
   });
   card.addEventListener('pointermove', e => {
     if (e.pointerId !== pid || !mode) return;
     const mx = e.clientX - x0, my = e.clientY - y0;
     if (mode === 'wait') {
-      if (Math.abs(mx) > 8 && Math.abs(mx) > Math.abs(my) * 1.2) {
-        mode = 'drag'; moved = true;
-        try { card.setPointerCapture(pid); } catch {}
-        clearTimeout(reset.t);
-        wrap.classList.add('dragging');
-        x0 = e.clientX - Math.sign(mx) * 8; // 8px 움직인 뒤부터 따라오게 해서 툭 튀지 않게
-      } else if (Math.abs(my) > 8) { mode = null; return; } else return;
+      if (Math.hypot(mx, my) < 6) return;
+      if (Math.abs(mx) < Math.abs(my)) { mode = null; return; } // 세로 → 스크롤
+      mode = 'drag'; moved = true;
+      try { card.setPointerCapture(pid); } catch {}
+      clearTimeout(reset.t);
+      wrap.classList.add('dragging');
     }
-    const x = e.clientX - x0;
-    dx = Math.max(-limit(), Math.min(limit(), x));
+    trail.push({ x: e.clientX, t: e.timeStamp });
+    if (trail.length > 12) trail.shift();
+    dx = Math.max(-limit(), Math.min(limit(), e.clientX - x0));
     card.style.transform = `translateX(${dx}px)`;
     wrap.classList.toggle('to-left', dx < 0);
     wrap.classList.toggle('to-right', dx > 0);
@@ -471,7 +484,9 @@ function attachSwipe(card, wrap, { onTap, onLeft, onRight }) {
     const was = mode;
     mode = null; pid = null;
     if (was !== 'drag') return;
-    const fire = e.type === 'pointerup' && Math.abs(dx) >= th() ? (dx < 0 ? onLeft : onRight) : null;
+    const v = speed(e.timeStamp);
+    const flick = Math.abs(dx) >= 20 && Math.abs(v) >= 0.45 && Math.sign(v) === Math.sign(dx);
+    const fire = e.type === 'pointerup' && (Math.abs(dx) >= th() || flick) ? (dx < 0 ? onLeft : onRight) : null;
     reset();
     if (fire) { ui.swiped = true; save(UI_KEY, ui); $('#toast').hidden = true; setTimeout(fire, 170); }
   };
@@ -749,6 +764,7 @@ function startSession(mode, list) {
     label = `${range} 순서대로`;
   }
   session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
+  if (mode !== 'retry') setTint(mode === 'day' ? 'study' : null); // 틀린 단어 다시 풀기는 하던 색 그대로
   saveSession();
   show('quiz');
   renderQuestion();
@@ -761,6 +777,7 @@ function resumeSession() {
   saved.queue = saved.queue.filter(id => byId.has(id));
   saved.hinted = saved.hinted || [];
   session = saved;
+  setTint(session.mode === 'day' ? 'study' : null);
   if (session.pos >= session.queue.length) { finishSession(); return; }
   show('quiz');
   renderQuestion();
@@ -774,6 +791,7 @@ function startSynSession(day, list) {
   const pool = (list || words.filter(w => w.day === day)).filter(Boolean);
   const ids = shuffle(pool.filter(hasSynAnt)).map(w => w.id);
   if (!ids.length) { toast(`DAY ${day}에는 유의어·반의어가 있는 단어가 없어요`); return; }
+  setTint('syn');
   session = { label: `DAY ${day} 유반의어`, mode: 'syn', synDay: day, noSave: true, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
   show('quiz');
   renderQuestion();

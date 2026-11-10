@@ -1,0 +1,70 @@
+# 정해진 시간 머지: 매일 12:00 · 18:30(한국 시간)에 '머지 대기' 라벨이 붙은 열린 PR을 오래된 것부터 main에 머지하고,
+# 하나라도 머지했으면 앱 버전(version.txt · js/app.js의 APP_VERSION)을 한 번만 올린다.
+# PR과 머지가 너무 잦지 않게 하려는 것. 규칙은 CLAUDE.md
+name: 정해진 시간 머지
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 12:00 KST (GitHub 사정으로 몇 분 늦게 돌 수 있음)
+    - cron: '30 9 * * *'  # 18:30 KST
+  workflow_dispatch: {}   # Actions 탭에서 손으로 돌릴 때
+
+permissions:
+  contents: write
+  pull-requests: write
+  pages: write
+
+concurrency:
+  group: scheduled-merge
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: "'머지 대기' PR 머지"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          merged=0
+          failed=""
+          prs=$(gh pr list --state open --base main --label "머지 대기" --json number,isDraft \
+                --jq 'sort_by(.number) | .[] | select(.isDraft | not) | .number')
+          for n in $prs; do
+            ok=0
+            # 바로 앞 PR을 머지하면 GitHub이 머지 가능 여부를 다시 계산하느라 잠깐 실패할 수 있어서 몇 번 다시 시도
+            for try in 1 2 3; do
+              if gh pr merge "$n" --merge; then ok=1; break; fi
+              sleep 10
+            done
+            if [ "$ok" = 1 ]; then merged=$((merged + 1)); echo "머지함: #$n"
+            else failed="$failed #$n"; echo "::warning::#$n 머지 못 함 (충돌이 있는지 PR에서 확인해 주세요)"; fi
+          done
+          echo "merged=$merged" >> "$GITHUB_ENV"
+          echo "### 머지 결과" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 머지한 PR 수: $merged" >> "$GITHUB_STEP_SUMMARY"
+          [ -n "$failed" ] && echo "- 머지 못 한 PR:$failed" >> "$GITHUB_STEP_SUMMARY"
+          # 하나라도 실패하면 실행을 실패로 표시해서 GitHub이 알림 메일을 보내게 함
+          [ -z "$failed" ]
+
+      - name: 앱 버전 올리기 (머지한 게 있을 때만, 한 번)
+        if: ${{ always() && env.merged != '0' && env.merged != '' }}
+        run: |
+          git pull --ff-only origin main
+          v=$(TZ=Asia/Seoul date +%Y%m%d%H%M)
+          echo "$v" > version.txt
+          sed -i "s/^const APP_VERSION = '[^']*';/const APP_VERSION = '$v';/" js/app.js
+          grep -q "^const APP_VERSION = '$v';" js/app.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "앱 버전 $v (정해진 시간 머지)"
+          git push origin main
+
+      - name: GitHub Pages 다시 배포
+        if: ${{ always() && env.merged != '0' && env.merged != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "Pages 배포 요청 실패 (main 푸시로 자동 배포될 수 있음)"
