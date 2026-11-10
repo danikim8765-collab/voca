@@ -124,7 +124,7 @@
 
      </div>
      <div class="home-side">
-      <div class="label mt">DAY별 진도 <span class="muted">(연한 막대 학습 · 진한 막대 암기 완료 · 누르면 그 DAY만 따로 학습)</span></div>
+      <div class="label mt">DAY별 진도 <span class="muted">(연한 막대 학습 · 진한 막대 암기 완료 · 누르면 단어장 · ← 밀면 유반의어 · 밀면 학습 →)</span></div>
       <div class="days" id="day-grid"></div>
      </div>
     </div>
@@ -190,13 +190,13 @@
       <span class="count" id="quiz-count"></span>
     </header>
     <div class="quiz-body">
-      <div class="q-meta"><span class="tag" id="q-day"></span><span class="tag warn" id="q-again" hidden>다시 나온 단어</span><span class="tag fb-head" id="fb-head" hidden></span></div>
+      <div class="q-meta"><span class="tag" id="q-day"></span><span class="tag kind-tag" id="q-kind" hidden></span><span class="tag warn" id="q-again" hidden>다시 나온 단어</span><span class="tag fb-head" id="fb-head" hidden></span></div>
       <div class="q-prompt">빈칸에 공통으로 들어갈 말은?</div>
       <div id="q-sentences"></div>
       <div id="q-meaning" class="q-meaning" hidden></div>
       <div class="q-tools">
         <button class="btn ghost small" id="btn-hint">💡 힌트</button>
-        <button class="btn ghost small" id="btn-idk" data-only="word">🤷 모르겠어요</button>
+        <button class="btn ghost small" id="btn-idk" hidden>🤷 모르겠어요</button>
       </div>
     </div>
     <div class="quiz-actions" id="q-actions"></div>
@@ -258,6 +258,11 @@
     <p class="muted list-note">예문·단어 모드 기록을 합쳐서 보여줘요. <span class="syn-t">유의어</span> · <span class="ant-t">반의어</span></p>
     <div id="word-list" class="list"></div>
     <div class="sticky-bottom">
+      <!-- DAY 박스를 눌러서 열었을 때만: 그 DAY 유반의어 테스트 / 그 DAY 학습 (박스를 왼쪽·오른쪽으로 민 것과 같음) -->
+      <div class="row two day-acts" id="day-acts" hidden>
+        <button class="btn syn-btn" id="btn-day-syn">유반의어 테스트</button>
+        <button class="btn study-btn" id="btn-day-study">이 DAY 학습</button>
+      </div>
       <button class="btn primary" id="btn-unknown-test">형광펜 친 단어만 테스트</button>
     </div>
   </section>

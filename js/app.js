@@ -2,14 +2,14 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 
 // 앱 버전: 고칠 때마다 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611050500';
+const APP_VERSION = '202611080900';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -138,7 +138,8 @@ const sync = createSync({
   other: { get: otherProgress, set: st => save(OTHER_P + 'stats.v1', st) },
 });
 const saveSettings = () => save(KEY.settings, settings);
-const saveSession = () => (session ? save(KEY.session, session) : localStorage.removeItem(KEY.session));
+// 유반의어 테스트(noSave)는 기록에 영향을 주지 않아서 이어하기에도 안 남김 (하던 정규 학습의 이어하기를 지우지 않게)
+const saveSession = () => (session ? session.noSave || save(KEY.session, session) : localStorage.removeItem(KEY.session));
 
 function toast(msg, ms = 2200) {
   const t = $('#toast');
@@ -381,6 +382,7 @@ function renderHome() {
     const seen = dw.filter(w => stats[w.id]).length;
     const m = dw.filter(w => isMastered(stats[w.id])).length;
     const wr = dw.filter(w => isWrongNote(stats[w.id])).length;
+    const wrap = el('div', 'day-wrap');
     const b = el('button', 'day' + (d >= from && d <= to ? ' sel' : ''));
     b.append(el('b', null, `DAY ${d}`), el('span', 'muted', `${seen}/${dw.length}` + (wr ? ` · 다시 ${wr}` : '')));
     b.title = `학습 ${seen} · 암기 완료 ${m} · 다시 볼 것 ${wr}`;
@@ -393,9 +395,16 @@ function renderHome() {
     bar.append(fs, f);
     b.appendChild(bar);
     if (d === soloDay) b.classList.add('solo');
-    b.addEventListener('click', () => { soloDay = d; renderHome(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
-    grid.appendChild(b);
+    // 누르면 그 DAY 단어장 · 왼쪽으로 밀면 유반의어 테스트 · 오른쪽으로 밀면 그 DAY 학습
+    const study = el('div', 'swipe-bg study'), synBg = el('div', 'swipe-bg syn');
+    study.appendChild(el('span', null, '학습'));
+    synBg.appendChild(el('span', null, '유반의어'));
+    wrap.append(study, synBg, b);
+    b.setAttribute('aria-label', `DAY ${d} 단어장 (왼쪽으로 밀면 유반의어, 오른쪽으로 밀면 학습)`);
+    attachSwipe(b, wrap, { onTap: () => openDayBook(d), onLeft: () => startSynSession(d), onRight: () => startDayStudy(d) });
+    grid.appendChild(wrap);
   }
+  swipeHintOnce(grid);
 
   const saved = load(KEY.session, null);
   const rc = $('#resume-card');
@@ -403,6 +412,101 @@ function renderHome() {
     rc.hidden = false;
     $('#resume-info').textContent = `${saved.label} · ${saved.done.length}/${saved.total} 완료`;
   } else rc.hidden = true;
+}
+
+// DAY 박스 오른쪽으로 밀기: 오늘 카드가 그 DAY만 학습하는 카드로 (예전에 누르면 하던 것)
+function startDayStudy(d) {
+  soloDay = d;
+  if (current !== 'home') { goHome(); return; }
+  renderHome();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+// DAY 박스 누르기: 그 DAY 단어장 (단어장의 DAY 고르기는 건드리지 않고 이번에만)
+let bookOnly = null;
+function openDayBook(d) {
+  bookOnly = d;
+  listFilter = 'all';
+  show('list');
+  renderList(true);
+}
+
+// 옆으로 밀기: 밀면 뒤에 색 띠가 드러나고, 박스 폭의 38% 넘게 밀었다 놓으면 실행. 위아래로 움직이면 그냥 스크롤
+function attachSwipe(card, wrap, { onTap, onLeft, onRight }) {
+  let x0 = 0, y0 = 0, dx = 0, mode = null, pid = null, moved = false;
+  const limit = () => card.offsetWidth * 0.72;
+  const th = () => Math.max(40, card.offsetWidth * 0.38);
+  const reset = () => {
+    wrap.classList.remove('dragging');
+    card.style.transform = '';
+    clearTimeout(reset.t);
+    reset.t = setTimeout(() => wrap.classList.remove('to-left', 'to-right', 'armed'), 230);
+  };
+  card.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || mode) return;
+    x0 = e.clientX; y0 = e.clientY; dx = 0; mode = 'wait'; pid = e.pointerId; moved = false;
+  });
+  card.addEventListener('pointermove', e => {
+    if (e.pointerId !== pid || !mode) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (mode === 'wait') {
+      if (Math.abs(mx) > 8 && Math.abs(mx) > Math.abs(my) * 1.2) {
+        mode = 'drag'; moved = true;
+        try { card.setPointerCapture(pid); } catch {}
+        clearTimeout(reset.t);
+        wrap.classList.add('dragging');
+        x0 = e.clientX - Math.sign(mx) * 8; // 8px 움직인 뒤부터 따라오게 해서 툭 튀지 않게
+      } else if (Math.abs(my) > 8) { mode = null; return; } else return;
+    }
+    const x = e.clientX - x0;
+    dx = Math.max(-limit(), Math.min(limit(), x));
+    card.style.transform = `translateX(${dx}px)`;
+    wrap.classList.toggle('to-left', dx < 0);
+    wrap.classList.toggle('to-right', dx > 0);
+    const armed = Math.abs(dx) >= th();
+    if (armed && !wrap.classList.contains('armed') && navigator.vibrate) navigator.vibrate(8);
+    wrap.classList.toggle('armed', armed);
+  });
+  const end = e => {
+    if (e.pointerId !== pid) return;
+    const was = mode;
+    mode = null; pid = null;
+    if (was !== 'drag') return;
+    const fire = e.type === 'pointerup' && Math.abs(dx) >= th() ? (dx < 0 ? onLeft : onRight) : null;
+    reset();
+    if (fire) { ui.swiped = true; save(UI_KEY, ui); $('#toast').hidden = true; setTimeout(fire, 170); }
+  };
+  card.addEventListener('pointerup', end);
+  card.addEventListener('pointercancel', end);
+  card.addEventListener('lostpointercapture', end);
+  card.addEventListener('click', e => {
+    if (moved) { moved = false; e.preventDefault(); return; } // 밀고 난 뒤 생기는 클릭은 무시
+    onTap();
+  });
+}
+
+// 처음 몇 번은 DAY 박스가 화면에 보일 때 하나를 살짝 좌우로 흔들어서 밀 수 있다는 걸 보여 줌 (한 번이라도 밀어 보면 그만)
+let swipeHinted = false, swipeIO = null; // 홈을 다시 그리면 박스도 새로 생기니 그때마다 새로 지켜봄
+function swipeHintOnce(grid) {
+  if (swipeIO) { swipeIO.disconnect(); swipeIO = null; }
+  if (swipeHinted || ui.swiped || (ui.swipeHints || 0) >= 3 || !('IntersectionObserver' in window)) return;
+  const first = grid.querySelector('.day-wrap .day.sel') || grid.querySelector('.day-wrap .day');
+  if (!first) return;
+  const io = swipeIO = new IntersectionObserver(es => {
+    if (!es.some(e => e.isIntersecting) || current !== 'home' || ui.swiped || swipeHinted) return;
+    io.disconnect();
+    swipeHinted = true;
+    const wrap = first.parentElement;
+    if (!wrap || !wrap.isConnected) return;
+    ui.swipeHints = (ui.swipeHints || 0) + 1;
+    save(UI_KEY, ui);
+    setTimeout(() => {
+      if (current !== 'home' || ui.swiped) return;
+      wrap.classList.add('hinting');
+      setTimeout(() => wrap.classList.remove('hinting'), 2000);
+      toast('DAY 박스 · 누르면 단어장\n← 밀면 유반의어 · 밀면 학습 →', 3800);
+    }, 500);
+  }, { threshold: 0.9 });
+  io.observe(first.parentElement);
 }
 
 // 홈의 오늘 카드: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기 순서로 한 카드 안에서 바뀜
@@ -662,13 +766,166 @@ function resumeSession() {
   renderQuestion();
 }
 
+// ---------- 유반의어 테스트 (DAY 박스를 왼쪽으로 밀면) ----------
+// 예문 모드: 예문 속 밑줄 친 단어와 뜻이 비슷한(반대인) 말 고르기 / 단어 모드: 유의어(반의어)를 보고 그 단어 고르기
+// 학습 기록·복습 일정·다시 볼 단어에 영향 없음. 이어하기에도 안 남김
+function startSynSession(day, list) {
+  viewStage = null;
+  const pool = (list || words.filter(w => w.day === day)).filter(Boolean);
+  const ids = shuffle(pool.filter(hasSynAnt)).map(w => w.id);
+  if (!ids.length) { toast(`DAY ${day}에는 유의어·반의어가 있는 단어가 없어요`); return; }
+  session = { label: `DAY ${day} 유반의어`, mode: 'syn', synDay: day, noSave: true, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
+  show('quiz');
+  renderQuestion();
+}
+
+const SYN_LABEL = { syn: '유의어', ant: '반의어' };
+// 예문 속 그 단어에 밑줄 (빈칸 대신)
+function underlineCard(b, ko, n, src, showKo) {
+  const card = el('div', 'sent');
+  const head = el('div', 'sent-head');
+  head.appendChild(el('span', 'num', `예문 ${n}` + (src ? ` · ${src}` : '')));
+  if (showKo) head.appendChild(speakBtn(b.segs.map(x => x.v).join('')));
+  card.appendChild(head);
+  const en = el('div', 'en');
+  for (const x of b.segs) en.appendChild(x.t === 'text' ? document.createTextNode(x.v) : el('u', 'ul', x.v));
+  card.appendChild(en);
+  if (showKo && ko) card.appendChild(el('div', 'ko', ko));
+  return card;
+}
+function synCard(sq, w, answered) {
+  if (sq.sentence) {
+    const s = sq.sentence;
+    return underlineCard(s.b, s.ko, s.n, s.n === 2 ? w.ex2src : w.ex1src, answered);
+  }
+  if (!sq.shown.length) return wordCard(w); // 예문 모드인데 예문의 뜻을 못 정한 단어: 단어만
+  const card = el('div', 'sent word-card syn-shown');
+  card.appendChild(el('div', 'qw', sq.shown.join(' · ')));
+  return card;
+}
+
+function renderSynQuestion(w) {
+  // 보기는 가까운 DAY 단어에서 (시험지처럼 아는 단어들로), 모자라면 전체에서
+  const near = words.filter(x => Math.abs(x.day - w.day) <= 2);
+  const sq = makeSynQuestion(w, near, { byExample: !WORD }) || makeSynQuestion(w, words, { byExample: !WORD });
+  if (!sq) { // 낼 수 없는 단어는 건너뜀
+    session.queue.splice(session.pos, 1);
+    session.total = Math.max(0, session.total - 1);
+    return session.pos < session.queue.length ? renderQuestion() : finishSession();
+  }
+  q = { w, syn: sq, answered: false };
+  $('#feedback').hidden = true;
+  $('#fb-head').hidden = true;
+  const prompt = document.querySelector('.q-prompt');
+  prompt.classList.remove('my-answer');
+  const rel = sq.kind === 'syn' ? '가장 비슷한' : '반대인';
+  prompt.textContent = sq.sentence ? `밑줄 친 부분과 의미가 ${rel} 것은?`
+    : sq.shown.length ? `이 말과 의미가 ${rel} 단어는?` : `이 단어와 의미가 ${rel} 것은?`;
+  $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
+  $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
+  $('#q-day').textContent = `DAY ${w.day}`;
+  $('#q-again').hidden = !session.again[w.id];
+  const kt = $('#q-kind');
+  kt.hidden = false;
+  kt.className = `tag kind-tag ${sq.kind}`;
+  kt.textContent = SYN_LABEL[sq.kind];
+  const box = $('#q-sentences');
+  box.className = '';
+  box.innerHTML = '';
+  box.appendChild(synCard(sq, w, false));
+  // 힌트: 예문이면 해석, 아니면 단어 뜻
+  const mEl = $('#q-meaning');
+  mEl.textContent = sq.sentence ? sq.sentence.ko || meaningText(w) : `뜻: ${meaningText(w)}`;
+  mEl.hidden = true;
+  $('#btn-hint').hidden = !mEl.textContent;
+  $('#btn-hint').textContent = '💡 힌트';
+  $('#btn-idk').hidden = false;
+  const actions = $('#q-actions');
+  actions.innerHTML = '';
+  kb = null;
+  $('#quiz').classList.remove('kb-mode');
+  $('.quiz-body').style.paddingBottom = '';
+  sq.options.forEach((o, i) => {
+    const b = el('button', 'choice');
+    b.append(el('span', 'n', i + 1), el('span', null, o.text));
+    if (o.ok) b.dataset.ok = '1';
+    b.addEventListener('click', () => {
+      if (q.answered) return;
+      b.classList.add(o.ok ? 'correct' : 'wrong');
+      if (!o.ok) actions.querySelector('.choice[data-ok="1"]').classList.add('correct');
+      actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
+      q.picked = o;
+      if (o.ok && q.usedHint) answer(false, null, 'hint');
+      else answer(o.ok, o.ok ? null : o.text);
+    });
+    actions.appendChild(b);
+  });
+}
+
+// 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (틀리면 3~5문제 뒤에 다시)
+function synAnswer(correct, given, kind) {
+  q.answered = true;
+  const id = q.w.id;
+  let label;
+  if (!correct && kind !== 'hint') {
+    if (!session.wrong.includes(id)) session.wrong.push(id);
+    session.again[id] = (session.again[id] || 0) + 1;
+    const at = Math.min(session.queue.length, session.pos + 1 + 3 + Math.floor(Math.random() * 3));
+    session.queue.splice(at, 0, id);
+    label = kind === 'idk' ? '모름 · 잠시 후 다시' : '오답 · 잠시 후 다시';
+  } else {
+    session.done.push(id);
+    if (kind === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
+    label = kind === 'hint' ? '힌트 사용' : '정답!';
+  }
+  session.pos++;
+  showSynFeedback(correct, given, kind, label);
+}
+
+function showSynFeedback(correct, given, kind, label) {
+  const { w, syn: sq } = q;
+  const state = correct ? 'ok' : kind === 'hint' ? 'hint' : 'bad';
+  const head = $('#fb-head');
+  head.hidden = false;
+  head.className = 'tag fb-head ' + state;
+  head.textContent = label;
+  const prompt = document.querySelector('.q-prompt');
+  prompt.textContent = !correct && given ? `내 답: ${given}` : ' ';
+  prompt.classList.toggle('my-answer', !correct && !!given);
+  const box = $('#q-sentences');
+  box.innerHTML = '';
+  box.className = 'answered ' + state;
+  box.appendChild(synCard(sq, w, true));
+  $('#btn-hint').hidden = true;
+  $('#btn-idk').hidden = true;
+  // 보기 풀이: 정답은 왜 정답인지, 다른 보기는 무슨 뜻인지
+  const card = el('div', 'fb-card opts');
+  card.appendChild(el('b', null, '보기 풀이'));
+  const rel = SYN_LABEL[sq.kind], other = SYN_LABEL[sq.kind === 'syn' ? 'ant' : 'syn'];
+  for (const o of sq.options) {
+    const row = el('div', 'opt' + (o.ok ? ' ok' : '') + (q.picked === o && !o.ok ? ' picked' : ''));
+    row.appendChild(el('span', 'opt-ic', o.ok ? '✓' : q.picked === o ? '✕' : '·'));
+    row.appendChild(el('b', null, o.text));
+    const why = o.role === 'answer' && !sq.shown.length ? `${w.word}의 ${rel}`
+      : o.role === 'answer' ? `${sq.shown.join(', ')}의 ${rel === '유의어' ? '유의어' : '반의어'}`
+      : o.role === 'trap' ? `${w.word}의 ${other} (함정)`
+      : o.w ? `${shortMeaning(o.w.meaning) || o.w.meaning} · DAY ${o.w.day}` : '';
+    row.appendChild(el('span', 'muted', why));
+    card.appendChild(row);
+  }
+  openSheet(w, [card]);
+}
+
 let q = null; // 현재 문제 상태
 
 function renderQuestion() {
   const id = session.queue[session.pos];
   const w = byId.get(id);
   if (!w) { session.pos++; return session.pos < session.queue.length ? renderQuestion() : finishSession(); }
+  $('#q-kind').hidden = true;
+  if (session.mode === 'syn') return renderSynQuestion(w);
   if (WORD) return renderWordQuestion(w);
+  $('#btn-idk').hidden = true;
   const b1 = w.ex1 ? makeBlanks(w.ex1, w.blank, w.word) : null;
   const b2 = w.ex2 ? makeBlanks(w.ex2, w.blank, w.word) : null;
   q = { w, b1, b2, answered: false, letterHint: false, revealed: false };
@@ -1229,7 +1486,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
 function useHint() {
   if (!q || q.answered) return;
   q.usedHint = true;
-  if (WORD) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
+  if (WORD || q.syn) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
   if (q.typing) {
     if (q.revealed) return;
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
@@ -1271,6 +1528,7 @@ function setHintButtons(label) {
 }
 
 function answer(correct, given, kind) {
+  if (session.mode === 'syn') return synAnswer(correct, given, kind);
   hideCoach();
   q.answered = true;
   const w = q.w;
@@ -1311,7 +1569,7 @@ function answer(correct, given, kind) {
 
 // 단어 모드 '모르겠어요': 틀린 걸로 치고 정답을 보여 줌 (같은 학습 중 3~5문제 뒤 + 내일 다시)
 function giveUp() {
-  if (!WORD || !q || q.answered || current !== 'quiz') return;
+  if (!q || q.answered || current !== 'quiz' || (!WORD && !q.syn)) return;
   const right = document.querySelector('#q-actions .choice[data-ok="1"]');
   if (right) right.classList.add('correct');
   document.querySelectorAll('#q-actions .choice, #q-actions input, #q-actions button').forEach(x => (x.disabled = true));
@@ -1347,7 +1605,11 @@ function showFeedback(correct, given, kind, label) {
     $('#quiz').classList.remove('kb-mode');
   }
 
-  // 아래 시트: 단어, 발음, 뜻/예문 탭
+  openSheet(w, WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline() ? [explainBox(q)] : []);
+}
+
+// 아래 정답 시트: 단어, 발음, 뜻/예문 탭. more = 뜻 카드 바로 아래에 넣을 카드
+function openSheet(w, more = []) {
   $('#fb-word').textContent = w.word;
   $('#fb-pron').textContent = w.pron || '';
   $('#fb-speak').onclick = () => speak(w.word);
@@ -1362,9 +1624,9 @@ function showFeedback(correct, given, kind, label) {
   if (w.pos) tags.appendChild(el('span', 'tag', w.pos));
   tags.appendChild(el('span', 'tag', `DAY ${w.day}`));
   card.append(tags, el('div', 'fb-meaning', formatMeaning(w.meaning)));
-  if (!WORD && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
+  if (!WORD && !(q && q.syn) && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
   mean.appendChild(card);
-  if (WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline()) mean.appendChild(explainBox(q));
+  for (const m of more) mean.appendChild(m);
   if (w.extras.length) {
     const ex = el('div', 'fb-card extras');
     for (const [k, v] of w.extras) {
@@ -1425,7 +1687,7 @@ function finishSession() {
   sync.now();
   const s = session;
   session = null;
-  saveSession();
+  if (!s.noSave) saveSession();
   $('#feedback').hidden = true;
   const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
   $('#res-title').textContent = `${s.label} 끝`;
@@ -1440,7 +1702,12 @@ function finishSession() {
   const again = $('#btn-res-again');
   const f = flowState();
   const nextStep = f.stage === 'review' ? ['오늘의 복습 하기', () => startSession('review')] : null;
-  if (wrong.length) {
+  if (s.mode === 'syn') {
+    // 유반의어: 틀린 단어만 다시, 다 맞혔으면 같은 DAY를 새 문제로 한 번 더 (기록엔 영향 없음)
+    $('#res-detail').textContent = `${s.total}단어를 다 풀었어요. 학습 기록에는 남지 않아요.`;
+    again.textContent = wrong.length ? '틀린 단어 다시 풀기' : '한 번 더';
+    again.onclick = () => startSynSession(s.synDay, wrong.length ? wrong.map(id => byId.get(id)) : null);
+  } else if (wrong.length) {
     again.textContent = '틀린 단어 다시 풀기';
     again.onclick = () => startSession('retry', wrong.map(id => byId.get(id)));
   } else if (nextStep) {
@@ -1565,6 +1832,7 @@ async function deleteDayRecords(d) {
 
 // 단어장에서 볼 DAY (여러 개 고르기). 정규 학습 범위와 따로, 처음엔 학습 범위
 function bookDays() {
+  if (bookOnly != null && days.includes(bookOnly)) return new Set([bookOnly]);
   const saved = (settings.bookDays || []).filter(d => days.includes(d));
   if (saved.length || settings.bookDays) return new Set(saved);
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
@@ -1572,6 +1840,7 @@ function bookDays() {
 }
 const bookWords = () => { const sel = bookDays(); return words.filter(w => sel.has(w.day)); };
 function setBookDays(set) {
+  bookOnly = null;
   settings.bookDays = days.filter(d => set.has(d));
   saveSettings();
   renderList();
@@ -1614,9 +1883,16 @@ function renderList(scrollToSel) {
   });
   if (!bw.length) box.appendChild(el('div', 'card center muted', '위에서 볼 DAY를 골라 주세요'));
   else if (!filtered.length) box.appendChild(el('div', 'card center muted', listFilter === 'unknown' ? '단어 옆 형광펜을 누르면 여기 모여요' : '해당하는 단어가 없어요'));
+  const acts = $('#day-acts');
+  acts.hidden = bookOnly == null;
+  if (bookOnly != null) {
+    $('#btn-day-study').textContent = `DAY ${bookOnly} 학습`;
+    $('#btn-day-syn').disabled = !bw.some(hasSynAnt);
+  }
   const updateTest = () => {
     const n = bw.filter(w => isUnknown(w.id)).length;
     const b = $('#btn-unknown-test');
+    b.hidden = bookOnly != null && !n; // DAY 단어장에선 형광펜 친 단어가 있을 때만
     b.disabled = !n;
     b.textContent = n ? `형광펜 친 단어만 테스트 (${n})` : '형광펜 친 단어가 없어요';
   };
@@ -1848,7 +2124,9 @@ function bind() {
     renderHome();
     toast('지웠어요');
   });
-  $('#btn-list').addEventListener('click', () => { listFilter = 'all'; show('list'); renderList(true); });
+  $('#btn-list').addEventListener('click', () => { bookOnly = null; listFilter = 'all'; show('list'); renderList(true); });
+  $('#btn-day-syn').addEventListener('click', () => { if (bookOnly != null) startSynSession(bookOnly); });
+  $('#btn-day-study').addEventListener('click', () => { if (bookOnly != null) startDayStudy(bookOnly); });
   $('#btn-list-back').addEventListener('click', () => goHome());
   $('#plan-sum-card').addEventListener('click', () => show('plan'));
   $('#btn-plan-back').addEventListener('click', () => goHome());
@@ -1989,7 +2267,7 @@ function bind() {
       e.preventDefault();
       return;
     }
-    if (settings.kind === 'choice' && /^[1-4]$/.test(e.key) && !(q && q.answered)) {
+    if ((settings.kind === 'choice' || (q && q.syn)) && /^[1-4]$/.test(e.key) && !(q && q.answered)) {
       const c = $('#q-actions').querySelectorAll('.choice')[+e.key - 1];
       if (c) c.click();
     }

@@ -968,3 +968,196 @@ export function nearestKey(keys, x, y, maxDist = 24) {
   }
   return bestD <= maxDist ? best : null;
 }
+
+// ---------- 유반의어 테스트 (DAY 박스를 왼쪽으로 밀면) ----------
+// 기록에는 영향 없음. 예문 모드: 예문 속 밑줄 친 단어와 뜻이 비슷한(반대인) 말 고르기 / 단어 모드: 유의어(반의어)를 보고 그 단어 고르기
+
+// 뜻 묶음과 갈래: "1. 부패 2. 쇠퇴 / 1. 부패하다 2. 쇠퇴하다" → [['부패', '쇠퇴'], ['부패하다', '쇠퇴하다']]
+// ('/'는 품사가 바뀌는 곳, 번호는 그 품사 안의 뜻 갈래. 번호가 없으면 통째로 갈래 하나)
+const splitNumbered = t => (/(^|\s)1\.\s*/.test(t) ? t.split(/(?:^|\s)\d+\.\s*/) : [t]).map(x => x.trim()).filter(Boolean);
+export function meaningBlocks(meaning) {
+  return String(meaning || '').split(/\s+\/\s+/).map(b => splitNumbered(b.trim())).filter(b => b.length);
+}
+export const senseList = meaning => meaningBlocks(meaning).flat();
+
+// 유의어·반의어 묶음: "1. rot / 2. decline / 1. decompose" → [{ 1: ['rot'], 2: ['decline'] }, { 1: ['decompose'] }]
+// 번호가 다시 작아지거나 번호 없는 조각이 나오면 다음 품사 묶음. 번호 없는 말은 0번(그 묶음의 모든 뜻)
+export function relBlocks(s) {
+  const blocks = [];
+  let cur = null, last = Infinity;
+  for (const piece of String(s || '').split(/\s*\/\s*|\s*[,;]?\s*(?=(?:^|\s)\d+\.\s)/)) {
+    const m = piece.match(/^\s*(\d+)\.\s*/);
+    const items = listWords(m ? piece.slice(m[0].length) : piece);
+    if (!items.length) continue;
+    const n = m ? +m[1] : 0;
+    if (!cur || !n || n <= last) { cur = {}; blocks.push(cur); }
+    last = n || Infinity;
+    const g = cur[n] || (cur[n] = []);
+    for (const x of items) if (!g.some(y => y.toLowerCase() === x.toLowerCase())) g.push(x);
+  }
+  return blocks;
+}
+const relText = (w, re) => (w.extras || []).filter(([k]) => re.test(k)).map(([, v]) => v).join(' / ');
+const SYN_COL = /유의어|동의어|synonym/i, ANT_COL = /반의어|반대말|antonym/i;
+const relCache = new WeakMap(); // 단어마다 한 번만 풀어 둠 (보기 고를 때 단어장 전체를 여러 번 훑음)
+function relLists(w) {
+  let c = relCache.get(w);
+  if (!c) {
+    const flat = str => [...new Set(relBlocks(str).flatMap(b => Object.values(b).flat()).map(x => x.toLowerCase()))];
+    const flatKo = new Set(meaningSenses(w.meaning).flat().filter(x => x.length >= 2));
+    c = { syn: flat(relText(w, SYN_COL)), ant: flat(relText(w, ANT_COL)), ko: flatKo, pos: koPos(senseList(w.meaning)[0]) };
+    relCache.set(w, c);
+  }
+  return c;
+}
+export const synList = w => relLists(w).syn;
+export const antList = w => relLists(w).ant;
+
+// 예문 해석에서 그 예문이 몇 번째 뜻(뜻 묶음 전체를 펼친 순서, 1부터)으로 쓰였는지 (뜻 강조가 가장 길게 잡히는 갈래). 모르면 0
+export function senseOf(ko, meaning) {
+  const senses = senseList(meaning);
+  if (senses.length <= 1) return senses.length;
+  let best = 0, bestLen = 0, tie = false;
+  senses.forEach((s, i) => {
+    const len = highlightMeaning(ko, s).filter(x => x.t === 'mark').reduce((a, x) => a + x.v.length, 0);
+    if (len > bestLen) { best = i + 1; bestLen = len; tie = false; } else if (len && len === bestLen) tie = true;
+  });
+  return tie ? 0 : best;
+}
+
+// 한국어 뜻으로 품사 짐작 (보기를 같은 품사로 맞추려고. 틀려도 보기 고르는 순서만 바뀜)
+export function koPos(sense) {
+  const t = String(sense || '').replace(/\(\([^)]*\)\)|\([^)]*\)|\[[^\]]*\]/g, ' ').split(/[,;]/)[0].trim();
+  if (!t) return '';
+  if (/다$/.test(t)) return 'v';
+  if (/(적으로|하게|히|게)$/.test(t)) return 'r';
+  if (/(인|한|은|운|된|는|난|른|진|던|친|없는|있는|많은|적인)$/.test(t)) return 'a';
+  return 'n';
+}
+
+/**
+ * 뜻 갈래 sense(펼친 순서, 0 = 모름)에 맞는 유의어(반의어). 확실하지 않으면 [] (엉뚱한 뜻의 말을 정답으로 내지 않게)
+ * - 뜻 묶음이 하나: 유의어를 한 묶음으로 보고 번호로 찾음. 번호 없는 말은 모든 뜻에 해당
+ * - 뜻 묶음이 여럿(품사가 여럿): 유의어 묶음 수가 같을 때만 순서대로 맞춤
+ */
+export function relForSense(meaning, relStr, sense) {
+  const mb = meaningBlocks(meaning);
+  let rb = relBlocks(relStr);
+  if (!rb.length || !mb.length) return [];
+  if (mb.length === 1 && rb.length > 1) { // 한 묶음으로 합침
+    const one = {};
+    for (const b of rb) for (const [k, v] of Object.entries(b)) one[k] = [...new Set([...(one[k] || []), ...v])];
+    rb = [one];
+  }
+  if (rb.length !== mb.length) return [];
+  // 펼친 순서 → (묶음, 묶음 안 번호)
+  let bi = -1, ni = 0;
+  if (sense) {
+    let k = sense;
+    for (let i = 0; i < mb.length; i++) { if (k <= mb[i].length) { bi = i; ni = k; break; } k -= mb[i].length; }
+  } else if (mb.length === 1) bi = 0;
+  if (bi < 0) return [];
+  const b = rb[bi], nums = Object.keys(b).filter(k => k !== '0');
+  if (ni && b[ni]) return b[ni];
+  if (b[0]) return b[0];
+  if (mb[bi].length === 1 && nums.length === 1) return b[nums[0]]; // 뜻이 하나인데 번호가 붙은 경우("1. vice")
+  return [];
+}
+
+const oneWord = s => !/\s/.test(String(s).trim());
+const rnd = (arr, rand) => arr[Math.floor(rand() * arr.length)];
+const isTemplate = s => /[~…]|\b(A|B|sb|sth|one's)\b/.test(s);
+
+/**
+ * 유반의어 문제 하나. all = 보기를 뽑을 단어장 단어들(같은 DAY·같은 품사가 먼저)
+ * byExample: 예문 모드(예문 속 밑줄 친 말과 뜻이 비슷한/반대인 말) / 아니면 단어 모드(유의어·반의어를 보고 그 단어 고르기)
+ * 반환 { kind: 'syn'|'ant', sentence: { en, ko, n, b } | null, shown, answer, options: [{ text, ok, role: answer|trap|other, w }] } 또는 null
+ */
+export function makeSynQuestion(target, all, { byExample = true, rand = Math.random } = {}) {
+  const synStr = relText(target, SYN_COL), antStr = relText(target, ANT_COL);
+  const senses = senseList(target.meaning);
+  const combos = [];
+  if (byExample) {
+    [[target.ex1, target.ex1ko], [target.ex2, target.ex2ko]].forEach(([en, ko], i) => {
+      if (!en) return;
+      const b = makeBlanks(en, target.blank, target.word);
+      if (!b.ok) return;
+      const sense = senseOf(ko, target.meaning);
+      for (const [kind, str] of [['syn', synStr], ['ant', antStr]]) {
+        const cands = relForSense(target.meaning, str, sense);
+        if (cands.length) combos.push({ kind, cands, sense, s: { en, ko, n: i + 1, b } });
+      }
+    });
+  }
+  // 예문 모드인데 예문의 뜻을 확실히 못 정하면: 단어만 보여 주고 유의어(반의어) 고르기
+  const head = byExample && !combos.length;
+  if (!byExample || head) {
+    for (const [kind, str] of [['syn', synStr], ['ant', antStr]]) {
+      for (const blk of relBlocks(str)) for (const [k, v] of Object.entries(blk)) if (v.length) combos.push({ kind, cands: v, sense: 0, num: +k });
+    }
+  }
+  if (!combos.length) return null;
+  // 반의어가 있으면 반반 (유의어만 있으면 유의어)
+  const kind = rnd([...new Set(combos.map(c => c.kind))], rand);
+  const pick = rnd(combos.filter(c => c.kind === kind), rand);
+  const senseText = (pick.sense && senses[pick.sense - 1]) || senses[0] || '';
+  const pos = koPos(senseText);
+
+  // 정답과 뜻이 비슷하거나 반대인 단어(유의어·반의어가 겹치거나 서로의 유의어·반의어)는 '그 밖의 보기'에서 뺌
+  const tw = target.word.toLowerCase();
+  const tSyn = new Set([...synList(target), tw]);
+  const tAnt = new Set(antList(target));
+  const related = w => {
+    const k = w.word.toLowerCase();
+    if (w === target || k === tw || tSyn.has(k) || tAnt.has(k)) return true;
+    const ws = synList(w), wa = antList(w);
+    if (ws.includes(tw) || wa.includes(tw) || ws.some(x => tSyn.has(x)) || ws.some(x => tAnt.has(x))) return true;
+    const tk = relLists(target).ko;
+    return [...relLists(w).ko].some(x => tk.has(x));
+  };
+  const ref = byExample ? null : target.word;
+  const fill = (options, taken, answer, extraSkip = () => false) => {
+    const cands = [];
+    for (const w of all) {
+      const k = w.word.toLowerCase();
+      if (taken.has(k) || related(w) || isTemplate(w.word) || extraSkip(w)) continue;
+      const score = (oneWord(w.word) === oneWord(answer) ? 0 : 40)
+        + (pos && relLists(w).pos === pos ? 0 : 35)
+        + (w.day === target.day ? 0 : 10) + Math.min(10, Math.abs(w.word.length - answer.length)) + rand() * 25;
+      cands.push({ w, score });
+    }
+    cands.sort((a, b) => a.score - b.score);
+    for (const { w } of cands) {
+      if (options.length >= 4) break;
+      const k = w.word.toLowerCase();
+      if (taken.has(k)) continue;
+      taken.add(k);
+      options.push({ text: w.word, ok: false, role: 'other', w });
+    }
+    return options.length >= 4;
+  };
+
+  if (byExample) {
+    // 정답 = 그 뜻의 유의어(반의어). 함정 = 반대 관계의 말(유의어 문제엔 반의어, 반의어 문제엔 유의어). 나머지 = 단어장의 다른 단어
+    const singles = pick.cands.filter(oneWord);
+    const answer = rnd(singles.length ? singles : pick.cands, rand);
+    const taken = new Set([answer.toLowerCase(), tw]);
+    const options = [{ text: answer, ok: true, role: 'answer' }];
+    const trapPool = head ? (kind === 'syn' ? antList(target) : synList(target)) : relForSense(target.meaning, kind === 'syn' ? antStr : synStr, pick.sense);
+    const trap = trapPool.find(x => !taken.has(x.toLowerCase()) && oneWord(x) === oneWord(answer)) || trapPool.find(x => !taken.has(x.toLowerCase()));
+    if (trap) { options.push({ text: trap, ok: false, role: 'trap' }); taken.add(trap.toLowerCase()); }
+    if (!fill(options, taken, answer)) return null;
+    return { kind, sense: pick.sense, senseText, sentence: pick.s || null, shown: [], answer, options: shuffle(options, rand) };
+  }
+
+  // 단어 모드: 보여 준 말과 유의어(반의어)가 겹치는 단어도 정답처럼 보이니 뺌
+  const shown = pick.cands.slice(0, 4);
+  const shownSet = new Set(shown.map(x => x.toLowerCase()));
+  const options = [{ text: target.word, ok: true, role: 'answer', w: target }];
+  const skip = w => shownSet.has(w.word.toLowerCase()) || (kind === 'syn' ? synList(w) : antList(w)).some(x => shownSet.has(x));
+  if (!fill(options, new Set([tw]), ref, skip)) return null;
+  return { kind, sense: 0, senseText: '', sentence: null, shown, answer: target.word, options: shuffle(options, rand) };
+}
+
+// 유반의어 문제를 낼 수 있는 단어
+export const hasSynAnt = w => !!(synList(w).length || antList(w).length);
