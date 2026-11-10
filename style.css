@@ -191,13 +191,28 @@ button { cursor: pointer; }
 .choice.correct { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
 .choice.wrong { border-color: var(--bad); background: var(--bad-soft); color: var(--bad); }
 .choice:disabled { opacity: 1; }
+/* 폰 4지선다: 선지를 화면 아래에 2×2로 고정. 띠 없이 배경과 같은 그라데이션을 깔고 위쪽만 살짝 흐려서 배경에 붙어 보이게 */
 .pin-choices .quiz-actions {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; max-width: 560px; margin: 0 auto;
-  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  padding: 10px 16px calc(env(safe-area-inset-bottom) + 10px); background: linear-gradient(to top, var(--glow-0) 0, var(--glow-1) 300px);
-  border-top: 1px solid var(--line);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
+  padding: 22px 16px calc(env(safe-area-inset-bottom) + 12px);
+  background: linear-gradient(to top, var(--glow-0) 0, var(--glow-1) 300px, var(--bg) 72vh);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px); mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  transition: grid-template-columns .2s ease;
 }
-.pin-choices .choice { margin: 0; padding: 12px; word-break: keep-all; overflow-wrap: anywhere; }
+.pin-choices .quiz-actions[data-lean="left"] { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.pin-choices .quiz-actions[data-lean="right"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); }
+.pin-choices .choice { margin: 0; padding: 12px; word-break: keep-all; overflow-wrap: break-word; }
+/* 좁아진 칸은 번호를 빼서 단어 자리를 확보 (첫 자식은 lean-bar라 왼쪽 칸 선지가 짝수 번째) */
+.pin-choices .quiz-actions[data-lean="left"] .choice:nth-child(odd) .n,
+.pin-choices .quiz-actions[data-lean="right"] .choice:nth-child(even) .n { display: none; }
+.lean-bar { grid-column: 1 / -1; display: flex; justify-content: center; gap: 4px; margin: -12px 0 -2px; }
+.lean-btn {
+  width: 44px; height: 28px; border: 0; border-radius: 10px; background: transparent; color: var(--muted);
+  font-size: 22px; font-weight: 700; line-height: 1; padding: 0 0 2px;
+}
+.lean-btn.on { color: var(--primary); background: var(--primary-soft); }
+@media (prefers-reduced-motion: reduce) { .pin-choices .quiz-actions { transition: none; } }
 .type-input {
   width: 100%; padding: 15px 16px; font-size: 19px; border-radius: 14px; border: 2px solid var(--line);
   background: var(--card); margin-bottom: 8px; outline: none;

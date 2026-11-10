@@ -74,6 +74,7 @@ const settings = Object.assign({
 const UI_KEY = 'voca.ui.v1';
 const ui = Object.assign({
   simpleHome: true, // 홈 간단히 보기: 학습 범위·문제 방식을 '학습 계획' 화면으로. 끄면 예전처럼 홈에
+  lean: 'mid', // 폰 4지선다 선지 쏠림: left(왼쪽 칸 넓게) · mid · right(오른쪽 칸 넓게). 한 손으로 누를 때
 }, load(UI_KEY, {}));
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
 function applyHomeLayout() {
@@ -986,6 +987,7 @@ function renderQuestion() {
     // 폰: 예문이 길면 선지가 화면 밖으로 밀려나서, 선지를 2×2로 화면 아래에 고정하고 문장 아래 여백 확보
     if (!DESK) {
       $('#quiz').classList.add('pin-choices');
+      actions.prepend(leanBar(actions));
       $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
     }
   }
@@ -1167,6 +1169,29 @@ function sentenceCard(b, ko, n, filled, wrongAnswer, w, src) {
     card.appendChild(k);
   }
   return card;
+}
+
+// 폰 4지선다: ‹ › 를 누르면 선지 칸이 그쪽으로 넓어짐 (한 손으로 누를 때). 반대쪽을 누르면 가운데로
+function leanBar(actions) {
+  const bar = el('div', 'lean-bar');
+  const apply = () => {
+    actions.dataset.lean = ui.lean;
+    bar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.d === ui.lean));
+  };
+  for (const [d, label, aria] of [['left', '‹', '선지를 왼쪽으로'], ['right', '›', '선지를 오른쪽으로']]) {
+    const b = el('button', 'lean-btn', label);
+    b.type = 'button';
+    b.dataset.d = d;
+    b.setAttribute('aria-label', aria);
+    b.addEventListener('click', () => {
+      ui.lean = ui.lean === 'mid' ? d : ui.lean === d ? d : 'mid';
+      save(UI_KEY, ui);
+      apply();
+    });
+    bar.appendChild(b);
+  }
+  apply();
+  return bar;
 }
 
 function renderChoices(actions) {
