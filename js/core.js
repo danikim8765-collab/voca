@@ -273,6 +273,7 @@ function findPhrase(sent, part) {
 }
 
 // 갈라진 덩어리(convince A of B)를 순서대로 찾는다. 문장 안에 여러 번 나오면 모두 찾음
+const QUANT_BEFORE_OF = /\b(?:thousands|hundreds|millions|billions|dozens|lots|lot|plenty|number|couple|majority|most|some|many|all|each|both|none|any|few|several|much|part|kinds?|sorts?|types?|one|two|three)\s+$/i;
 function findSequences(sent, parts) {
   const all = [];
   let pos = 0;
@@ -280,8 +281,13 @@ function findSequences(sent, parts) {
     const seq = [];
     let p = pos;
     for (const part of parts) {
-      const r = execAt(partRegex(part), sent, p);
+      let r = execAt(partRegex(part), sent, p);
       if (!r) break;
+      // deprive thousands of workers [of] …: 수량 표현의 of(thousands of, a lot of)는 숙어의 of가 아니므로 그 뒤의 of를 씀
+      if (seq.length && /^of$/i.test(part) && QUANT_BEFORE_OF.test(sent.slice(0, r.start))) {
+        const later = execAt(partRegex(part), sent, r.end);
+        if (later) r = later;
+      }
       seq.push(r);
       p = r.end;
     }
@@ -593,6 +599,8 @@ export function pickDistractors(target, all, n = 3, rand = Math.random) {
   const tKey = normalizeAnswer(answerParts(target.blank).join(' '));
   const tParts = answerParts(target.blank).length;
   const tLen = target.blank.length;
+  const wordCount = k => k.split(' ').length;
+  const tWords = wordCount(tKey);
   const seen = new Set([tKey]);
   const cands = [];
   for (const w of all) {
@@ -600,7 +608,9 @@ export function pickDistractors(target, all, n = 3, rand = Math.random) {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     const p = answerParts(w.blank).length;
-    const score = (p === tParts ? 0 : 50) + Math.abs(w.blank.length - tLen) * 2 + (w.day === target.day ? -8 : 0) + rand() * 30;
+    // 낱말 수가 다르면 빈칸 수만 세도 답이 보이므로(put up with ↔ fatal) 같은 낱말 수의 보기를 먼저
+    const score = (p === tParts ? 0 : 50) + Math.abs(wordCount(key) - tWords) * 60
+      + Math.abs(w.blank.length - tLen) * 2 + (w.day === target.day ? -8 : 0) + rand() * 30;
     cands.push({ w, score });
   }
   cands.sort((a, b) => a.score - b.score);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, buildPlan, pickReview, normalizeStat, addDays, daysBetween } from '../js/core.js';
+import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, buildPlan, pickReview, normalizeStat, addDays, daysBetween, pickDistractors, displayAnswer } from '../js/core.js';
 
 const show = r => r.segs.map(s => (s.t === 'blank' ? `[${s.v}]` : s.v)).join('');
 
@@ -502,4 +502,27 @@ test('유반의어: 단어 모드 문제 — 유의어를 보고 그 단어 고�
   }
   assert.equal(hasSynAnt(book[3]), false);
   assert.equal(makeSynQuestion(book[3], book), null);
+});
+
+test('떨어진 숙어: 수량 표현의 of(thousands of)는 건너뜀', () => {
+  assert.equal(show(makeBlanks('The new law will deprive thousands of workers of their overtime pay.', 'deprive A of B')),
+    'The new law will [deprive] thousands of workers [of] their overtime pay.');
+  // of가 하나뿐이면 그대로
+  assert.equal(show(makeBlanks('It robbed many of sleep.', 'rob A of B')), 'It [robbed] many [of] sleep.');
+  assert.equal(show(makeBlanks('It took hours to convince my parents of the value of my plan.', 'convince A of B')),
+    'It took hours to [convince] my parents [of] the value of my plan.');
+});
+
+test('4지선다 보기: 정답과 낱말 수가 같은 것부터 (빈칸 수로 답이 드러나지 않게)', () => {
+  const mk = (word, day = 1) => ({ id: `${day}|${word}`, day, word, blank: word });
+  const pool = ['fatal', 'abide', 'decay', 'norm', 'tissue', 'flaw', 'let down', 'take over', 'back off', 'give in', 'put up with', 'come away with', 'get back to', 'put in for'].map(w => mk(w));
+  const count = w => displayAnswer(w).split(' ').length;
+  for (let i = 0; i < 30; i++) {
+    for (const t of ['let down', 'put up with', 'fatal']) {
+      const target = pool.find(w => w.word === t);
+      const picked = pickDistractors(target, pool, 3);
+      assert.equal(picked.length, 3);
+      assert.ok(picked.every(w => count(w) === count(target)), `${t}: ${picked.map(w => w.word)}`);
+    }
+  }
 });
