@@ -74,6 +74,8 @@ const settings = Object.assign({
 const UI_KEY = 'voca.ui.v1';
 const ui = Object.assign({
   simpleHome: true, // 홈 간단히 보기: 학습 범위·문제 방식을 '학습 계획' 화면으로. 끄면 예전처럼 홈에
+  choiceLayout: DESK ? 'list' : 'grid', // 4지선다 선지 배치: grid(2×2) · list(한 줄씩)
+  lean: 'mid', // 폰 4지선다 선지 쏠림: left(왼쪽 칸 넓게) · mid · right(오른쪽 칸 넓게). 한 손으로 누를 때
 }, load(UI_KEY, {}));
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
 function applyHomeLayout() {
@@ -345,6 +347,7 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
+  setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
   setSeg('#seg-rev', String(settings.reviewSize));
   $('#exam-date').value = settings.exam || '';
@@ -371,6 +374,7 @@ function renderHome() {
   $('#plan-sum').textContent = [
     lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`,
     settings.kind === 'type' ? '직접 입력' : '4지선다',
+    ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     `새 단어 ${settings.newPerDay}`,
     srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`,
   ].join(' · ');
@@ -861,7 +865,7 @@ function renderSynQuestion(w) {
   const actions = $('#q-actions');
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode');
+  $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   sq.options.forEach((o, i) => {
     const b = el('button', 'choice');
@@ -976,10 +980,20 @@ function renderQuestion() {
   const actions = $('#q-actions');
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode');
+  $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderTyping(actions);
-  else renderChoices(actions);
+  else {
+    renderChoices(actions);
+    actions.dataset.layout = ui.choiceLayout;
+    // 폰: 예문이 길면 선지가 화면 밖으로 밀려나서, 선지를 2×2로 화면 아래에 고정하고 문장 아래 여백 확보
+    if (!DESK) {
+      $('#quiz').classList.add('pin-choices');
+      if (ui.choiceLayout === 'grid') actions.prepend(leanBar(actions)); // 쏠림은 격자에서만
+      else delete actions.dataset.lean;
+      $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
+    }
+  }
 }
 
 // ---------- 단어 모드: 단어를 보고 뜻 맞히기 ----------
@@ -1022,7 +1036,7 @@ function renderWordQuestion(w) {
   const actions = $('#q-actions');
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode');
+  $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderMeaningTyping(actions);
   else renderMeaningChoices(actions);
@@ -1158,6 +1172,29 @@ function sentenceCard(b, ko, n, filled, wrongAnswer, w, src) {
     card.appendChild(k);
   }
   return card;
+}
+
+// 폰 4지선다: ‹ › 를 누르면 선지 칸이 그쪽으로 넓어짐 (한 손으로 누를 때). 반대쪽을 누르면 가운데로
+function leanBar(actions) {
+  const bar = el('div', 'lean-bar');
+  const apply = () => {
+    actions.dataset.lean = ui.lean;
+    bar.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.d === ui.lean));
+  };
+  for (const [d, label, aria] of [['left', '‹', '선지를 왼쪽으로'], ['right', '›', '선지를 오른쪽으로']]) {
+    const b = el('button', 'lean-btn', label);
+    b.type = 'button';
+    b.dataset.d = d;
+    b.setAttribute('aria-label', aria);
+    b.addEventListener('click', () => {
+      ui.lean = ui.lean === 'mid' ? d : ui.lean === d ? d : 'mid';
+      save(UI_KEY, ui);
+      apply();
+    });
+    bar.appendChild(b);
+  }
+  apply();
+  return bar;
 }
 
 function renderChoices(actions) {
@@ -1620,7 +1657,10 @@ function showFeedback(correct, given, kind, label) {
   $('#btn-idk').hidden = true;
   if (settings.kind === 'type') {
     $('#q-actions').innerHTML = '';
-    $('#quiz').classList.remove('kb-mode');
+    $('#quiz').classList.remove('kb-mode', 'pin-choices');
+  } else if ($('#quiz').classList.contains('pin-choices')) {
+    $('#quiz').classList.remove('pin-choices'); // 정답 시트가 아래를 덮으니 고정은 풂
+    $('.quiz-body').style.paddingBottom = '';
   }
 
   openSheet(w, WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline() ? [explainBox(q)] : []);
@@ -2012,11 +2052,11 @@ function renderSettings() {
   $('#rate').value = settings.rate;
   $('#rate-val').textContent = `${settings.rate}x`;
   $('#opt-autospeak').checked = settings.autoSpeak;
-  $('#opt-ko').checked = settings.showKo;
   $('#opt-meaning').checked = settings.showMeaning;
   $('#opt-appkb').checked = settings.appKeyboard;
   $('#opt-simplehome').checked = ui.simpleHome;
   setSeg('#seg-base', settings.baseAccept);
+  setSeg('#seg-layout', ui.choiceLayout);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
   renderAiStatus();
@@ -2115,6 +2155,14 @@ function bind() {
     if (r === 'all') setRange(days[0], last);
   });
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
+  onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
+  // 설정 바로가기: 그 카드로 스크롤
+  $('#set-nav').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (b) document.getElementById(b.dataset.go).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); show('plan', false); } else goHome(); });
+  onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   onSeg('#seg-rev', v => { settings.reviewSize = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
@@ -2167,7 +2215,6 @@ function bind() {
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });
   $('#opt-autospeak').addEventListener('change', e => { settings.autoSpeak = e.target.checked; saveSettings(); });
-  $('#opt-ko').addEventListener('change', e => { settings.showKo = e.target.checked; saveSettings(); });
   $('#opt-meaning').addEventListener('change', e => { settings.showMeaning = e.target.checked; saveSettings(); });
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#opt-simplehome').addEventListener('change', e => { ui.simpleHome = e.target.checked; save(UI_KEY, ui); applyHomeLayout(); });
