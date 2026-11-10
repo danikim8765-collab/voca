@@ -695,9 +695,18 @@ export function mergeProgress(a, b) {
   }
   // 시험일·하루 새 단어 수 같은 설정도 더 최근에 바꾼 쪽으로
   const pa = (a && a.prefs) || null, pb = (b && b.prefs) || null;
-  const prefs = !pa ? pb : !pb ? pa : (pa.at || 0) >= (pb.at || 0) ? pa : pb;
+  let prefs = !pa ? pb : !pb ? pa : (pa.at || 0) >= (pb.at || 0) ? pa : pb;
+  // 시험일만은 다른 설정과 따로, 시험일을 더 최근에 바꾼 쪽(examAt)으로.
+  // (시험일은 예문·단어 모드가 같이 써서, 한 모드에서 정한 시험일이 다른 모드의 나머지 설정까지 끌고 가면 안 됨)
+  if (pa && pb) {
+    const e = examAt(pa) >= examAt(pb) ? pa : pb;
+    prefs = { ...prefs, exam: e.exam || '', examAt: examAt(e) };
+  }
   return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}) };
 }
+
+// 시험일을 바꾼 시각. examAt이 없던 예전 기록은 설정 전체를 바꾼 시각(at)으로 봄
+export const examAt = p => (p && p.examAt != null ? p.examAt : (p && p.at) || 0);
 
 export const samePrefs = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
 

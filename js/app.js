@@ -2,7 +2,7 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
@@ -113,18 +113,35 @@ function toggleUnknown(id) {
 const OTHER_P = WORD ? 'voca.' : 'voca.word.';
 const otherProgress = () => ({ resetAt: load(OTHER_P + 'resetAt.v1', 0), stats: load(OTHER_P + 'stats.v1', {}) });
 
+// 시험일을 바꾼 시각 (예전 설정엔 없어서 설정 전체를 바꾼 시각으로 봄)
+const myExamAt = () => examAt({ examAt: settings.examAt, at: settings.prefsAt });
+// 시험일은 예문·단어 모드가 같이 씀: 다른 모드의 설정에도 시험일과 그 시각만 적어 둠.
+// 다른 모드의 prefsAt은 건드리지 않음 (건드리면 안 쓰던 모드의 기본값이 '최신 설정'으로 동기화돼 다른 기기 설정을 덮어씀)
+function shareExam(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if (examAt({ examAt: o.examAt, at: o.prefsAt }) > at) return; // 다른 모드 쪽이 더 최근이면 그대로
+  o.exam = v; o.examAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
     saveStats();
     save(KEY.resetAt, resetAt);
+    // 시험일은 다른 설정과 따로: 더 최근에 바꾼 쪽으로. 두 모드가 같이 쓰니 다른 모드 설정에도 적어 둠
+    if (m.prefs && examAt(m.prefs) > myExamAt()) {
+      Object.assign(settings, { exam: m.prefs.exam || '', examAt: examAt(m.prefs) });
+      saveSettings();
+      shareExam(settings.exam, settings.examAt);
+    }
     if (m.prefs && (m.prefs.at || 0) > (settings.prefsAt || 0)) {
       const p = m.prefs;
-      Object.assign(settings, { exam: p.exam || '', newPerDay: p.newPerDay || 20, prefsAt: p.at });
+      Object.assign(settings, { newPerDay: p.newPerDay || 20, prefsAt: p.at });
       if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
       if (p.reviewSize) settings.reviewSize = p.reviewSize;
       // 학습 범위도 기기끼리 맞춤 (없는 DAY면 renderHome이 맞춰 줌)
@@ -2250,12 +2267,6 @@ function examOk(input) {
   input.value = settings.exam || '';
   return false;
 }
-// 시험일은 예문·단어 모드가 같이 씀 (다른 모드의 설정에도 적어 둠)
-function shareExam(v) {
-  const o = load(OTHER_P + 'settings.v1', {});
-  o.exam = v; o.prefsAt = Date.now();
-  save(OTHER_P + 'settings.v1', o);
-}
 
 function bind() {
   $('#day-from').addEventListener('change', e => setRange(+e.target.value, settings.to));
@@ -2286,7 +2297,7 @@ function bind() {
     if (sp.classList.contains('link')) { viewStage = sp.dataset.s; renderPlan(); }
     else if (!sp.classList.contains('on')) toast('오늘의 학습과 복습을 끝내면 열려요');
   });
-  const setExam = v => { settings.exam = v; settings.prefsAt = Date.now(); saveSettings(); shareExam(v); renderPlan(); sync.soon(); };
+  const setExam = v => { settings.exam = v; settings.examAt = Date.now(); saveSettings(); shareExam(v, settings.examAt); renderPlan(); sync.soon(); };
   $('#exam-date').addEventListener('change', e => { if (examOk(e.target)) setExam(e.target.value); });
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });
   $('#btn-start').addEventListener('click', () => startSession('today'));
@@ -2420,7 +2431,7 @@ function bind() {
   const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
   $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); });
   $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
-  $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; shareExam(settings.exam); srsChanged(); });
+  $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); srsChanged(); });
   onSeg('#seg-limit', v => { settings.reviewLimit = +v; srsChanged(); });
   $('#btn-update').addEventListener('click', async () => {
     try {

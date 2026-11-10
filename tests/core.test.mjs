@@ -526,3 +526,25 @@ test('4지선다 보기: 정답과 낱말 수가 같은 것부터 (빈칸 수로
     }
   }
 });
+
+test('동기화: 시험일은 다른 설정과 따로 examAt이 최신인 쪽으로', async () => {
+  const { mergeProgress } = await import('../js/core.js');
+  // 폰: 이 모드를 안 쓰다가 다른 모드에서 정한 시험일만 받아 적음 (설정은 기본값, at 0)
+  const phone = { stats: {}, prefs: { exam: '2026-12-01', examAt: 500, newPerDay: 20, srs: false, goal: '', at: 0 } };
+  // 패드: 이 모드를 쓰던 기기 (하루 40개, 주기 복습)
+  const ipad = { stats: {}, prefs: { exam: '', newPerDay: 40, srs: true, goal: '2026-11-20', at: 300 } };
+  for (const m of [mergeProgress(phone, ipad), mergeProgress(ipad, phone)]) {
+    assert.equal(m.prefs.exam, '2026-12-01'); // 시험일은 최신 쪽
+    assert.equal(m.prefs.examAt, 500);
+    assert.equal(m.prefs.newPerDay, 40); // 나머지 설정은 덮어써지지 않음
+    assert.equal(m.prefs.srs, true);
+    assert.equal(m.prefs.goal, '2026-11-20');
+    assert.equal(m.prefs.at, 300);
+  }
+  // examAt이 없는 예전 기록끼리는 전처럼 at이 최신인 쪽의 시험일
+  const old = mergeProgress({ stats: {}, prefs: { exam: 'A', at: 1 } }, { stats: {}, prefs: { exam: 'B', at: 2 } });
+  assert.equal(old.prefs.exam, 'B');
+  // 시험일을 지운 것도 최신이면 이김
+  const cleared = mergeProgress({ stats: {}, prefs: { exam: '', examAt: 9, at: 1 } }, { stats: {}, prefs: { exam: 'B', examAt: 5, at: 2 } });
+  assert.equal(cleared.prefs.exam, '');
+});
