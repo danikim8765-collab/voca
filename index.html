@@ -254,6 +254,7 @@
       <h1 id="list-title">단어장</h1>
       <span></span>
     </header>
+    <input type="search" id="book-search" class="type-input book-search" placeholder="단어·뜻 검색 (전체 DAY에서)" aria-label="단어장 검색" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
     <div class="day-pick" id="book-days" aria-label="볼 DAY 고르기"></div>
     <div class="seg" id="seg-filter">
       <button data-v="all">전체</button>
@@ -262,7 +263,7 @@
       <button data-v="done">암기 완료</button>
       <button data-v="unknown">형광펜</button>
     </div>
-    <p class="muted list-note">예문·단어 모드 기록을 합쳐서 보여줘요. <span class="syn-t">유의어</span> · <span class="ant-t">반의어</span></p>
+    <p class="muted list-note">단어를 누르면 예문이 펼쳐져요. 예문·단어 모드 기록을 합쳐서 보여줘요. <span class="syn-t">유의어</span> · <span class="ant-t">반의어</span> · 점은 복습 단계</p>
     <div id="word-list" class="list"></div>
     <div class="sticky-bottom">
       <!-- DAY 박스를 눌러서 열었을 때만: 그 DAY 유반의어 테스트 / 그 DAY 학습 (박스를 왼쪽·오른쪽으로 민 것과 같음) -->
@@ -325,7 +326,7 @@
       <label class="switch-row"><span>주기 복습 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
       <p class="muted srs-desc">고른 주기대로 복습일이 된 단어를 목표일까지 계속 복습하고, 목표일부터 시험 전날까지는 학습 범위 전부를 남은 날에 나눠 한 번씩 복습해요.</p>
       <div class="srs-dates">
-        <label>목표일<input type="date" id="goal-date" class="date-input"></label>
+        <label>목표일 <span class="muted">(새 단어를 끝낼 날)</span><input type="date" id="goal-date" class="date-input"></label>
         <label>시험일<input type="date" id="srs-exam-date" class="date-input"></label>
       </div>
       <p class="srs-warn" id="srs-warn" hidden></p>

@@ -2,7 +2,7 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
@@ -92,6 +92,7 @@ function applyHomeLayout() {
 }
 applyHomeLayout();
 let session = null;
+let planFrom = null; // 학습 계획 화면을 설정에서 열었으면 ←가 설정으로
 let soloDay = null; // DAY 박스를 누르면 그 DAY만 따로 학습 (정규 카드 자리에 간단히)
 let dataInfo = '';
 
@@ -112,18 +113,35 @@ function toggleUnknown(id) {
 const OTHER_P = WORD ? 'voca.' : 'voca.word.';
 const otherProgress = () => ({ resetAt: load(OTHER_P + 'resetAt.v1', 0), stats: load(OTHER_P + 'stats.v1', {}) });
 
+// 시험일을 바꾼 시각 (예전 설정엔 없어서 설정 전체를 바꾼 시각으로 봄)
+const myExamAt = () => examAt({ examAt: settings.examAt, at: settings.prefsAt });
+// 시험일은 예문·단어 모드가 같이 씀: 다른 모드의 설정에도 시험일과 그 시각만 적어 둠.
+// 다른 모드의 prefsAt은 건드리지 않음 (건드리면 안 쓰던 모드의 기본값이 '최신 설정'으로 동기화돼 다른 기기 설정을 덮어씀)
+function shareExam(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if (examAt({ examAt: o.examAt, at: o.prefsAt }) > at) return; // 다른 모드 쪽이 더 최근이면 그대로
+  o.exam = v; o.examAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
     saveStats();
     save(KEY.resetAt, resetAt);
+    // 시험일은 다른 설정과 따로: 더 최근에 바꾼 쪽으로. 두 모드가 같이 쓰니 다른 모드 설정에도 적어 둠
+    if (m.prefs && examAt(m.prefs) > myExamAt()) {
+      Object.assign(settings, { exam: m.prefs.exam || '', examAt: examAt(m.prefs) });
+      saveSettings();
+      shareExam(settings.exam, settings.examAt);
+    }
     if (m.prefs && (m.prefs.at || 0) > (settings.prefsAt || 0)) {
       const p = m.prefs;
-      Object.assign(settings, { exam: p.exam || '', newPerDay: p.newPerDay || 20, prefsAt: p.at });
+      Object.assign(settings, { newPerDay: p.newPerDay || 20, prefsAt: p.at });
       if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
       if (p.reviewSize) settings.reviewSize = p.reviewSize;
       // 학습 범위도 기기끼리 맞춤 (없는 DAY면 renderHome이 맞춰 줌)
@@ -151,6 +169,22 @@ function toast(msg, ms = 2200) {
   toast.timer = setTimeout(() => (t.hidden = true), ms);
 }
 
+// 열린 창(확인 창·숫자 키패드)과 뒤로 가기: 창을 열 때 기록을 하나 쌓아 두고, 뒤로 가기를 누르면 창만 닫음.
+// 버튼으로 닫으면 쌓아 둔 기록을 되돌린 다음에 결과를 넘김 (그 뒤에 화면을 바꿔도 기록이 꼬이지 않게)
+let modal = null, afterPop = null;
+function modalOpen(onBack) {
+  modal = { onBack };
+  history.pushState({ ...(history.state || {}), dlg: 1 }, '');
+}
+function modalDone(cb) {
+  if (!modal) { cb(); return; } // 뒤로 가기로 이미 닫힘
+  modal = null;
+  const run = () => { if (afterPop !== run) return; afterPop = null; cb(); };
+  afterPop = run;
+  history.back();
+  setTimeout(run, 500); // 혹시 popstate가 안 오면
+}
+
 // 확인 창: await ask({ title, body, ok: '지우기', danger: true }) → 누르면 true, 취소·바깥·Esc는 false
 function ask({ title, body = '', ok = '확인', cancel = '취소', danger = false }) {
   const d = $('#dialog'), okb = $('#dlg-ok'), nob = $('#dlg-cancel');
@@ -166,13 +200,14 @@ function ask({ title, body = '', ok = '확인', cancel = '취소', danger = fals
   nob.focus(); // 실수로 Enter를 눌러도 지워지지 않게 취소에 먼저
   return new Promise(resolve => {
     const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } };
-    const done = v => {
+    const close = () => {
       d.hidden = true;
       okb.onclick = nob.onclick = d.onclick = null;
       document.removeEventListener('keydown', key, true);
       if (prev && prev.focus) prev.focus();
-      resolve(v);
     };
+    const done = v => { close(); modalDone(() => resolve(v)); };
+    modalOpen(() => { close(); resolve(false); });
     okb.onclick = () => done(true);
     nob.onclick = () => done(false);
     d.onclick = e => { if (e.target === d) done(false); };
@@ -188,10 +223,13 @@ function show(id, push = true) {
   if (id === 'home') setTint(null);
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
+  if (id === 'quiz' && current !== 'quiz') { clearTimeout(toast.timer); $('#toast').hidden = true; }
   current = id;
   window.scrollTo(0, 0);
 }
 window.addEventListener('popstate', () => {
+  if (afterPop) { afterPop(); return; } // 창을 버튼으로 닫은 뒤의 되돌리기
+  if (modal) { const m = modal; modal = null; m.onBack(); return; } // 창이 열린 채 뒤로 가기 → 창만 닫음
   if (current === 'quiz') { $('#feedback').hidden = true; }
   if (current !== 'home') goHome(false);
 });
@@ -281,7 +319,9 @@ const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
 // 다음 복습일이 넘지 않을 날: 주기 복습이면 목표일 전까진 목표일, 그 뒤엔 시험일
 const deadline = (today = dateStr()) => (srsOn() && today < settings.goal ? settings.goal : settings.exam);
 const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
-const isWrongNote = s => s && s.st === 0;          // 마지막에 틀린 단어 (0단계)
+const isWrongRaw = s => !!(s && s.st === 0);        // 마지막에 틀린 단어 (0단계)
+// 다시 볼 단어: 0단계인데, '다시 볼 단어'에서 오늘 다시 맞힌 것(r = 오늘)은 뺌. 복습 일정은 그대로라 내일 복습에 다시 나옴
+const isWrongNote = s => isWrongRaw(s) && s.r !== dateStr();
 // 복습도 학습 범위 안의 단어에서만 (범위 밖 DAY를 실수로 풀어도 복습에 안 섞이게)
 // 오늘 배울 새 단어 총수: 맨 위 숫자로 오늘만 바꿨으면 그 값, 아니면 하루 새 단어 수
 const newToday = () => Object.values(stats).filter(s => s && s.f === dateStr()).length;
@@ -294,6 +334,8 @@ const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
 
 // 오늘의 복습: 시작하면 그날 목록을 고정. 그 전에는 지금 고르면 나올 단어로 미리 보여 줌
+// 힌트를 쓴 채 그만둔 문제 (다시 열어도 힌트 쓴 걸로)
+const hintedId = () => loadDay().hint || null;
 function reviewState() {
   const day = loadDay();
   const started = Array.isArray(day.review);
@@ -432,6 +474,7 @@ function startDayStudy(d) {
 let bookOnly = null;
 function openDayBook(d) {
   bookOnly = d;
+  bookQuery = ''; $('#book-search').value = '';
   listFilter = 'all';
   show('list');
   renderList(true);
@@ -532,8 +575,8 @@ function swipeHintOnce(grid) {
 let viewStage = null; // 학습 › 복습 › 더 하기를 눌러 직접 본 단계 (세션을 시작하면 다시 자동)
 function renderPlan() {
   const { plan, learnLeft, rv, stage: regular } = flowState();
-  // 눌러서 갈 수 있는 단계: 학습은 언제나, 복습은 학습을 끝냈거나 이미 시작했으면, 더 하기는 둘 다 끝냈으면
-  const can = { learn: true, review: !learnLeft || rv.started, extra: !learnLeft && rv.done };
+  // 눌러서 갈 수 있는 단계: 학습·복습은 언제나(복습을 먼저 해도 됨), 더 하기는 둘 다 끝냈으면
+  const can = { learn: true, review: true, extra: !learnLeft && rv.done };
   if (viewStage && !can[viewStage]) viewStage = null;
   const stage = soloDay != null && days.includes(soloDay) ? 'day' : viewStage || regular;
   // items: [숫자, 이름, 누르면 할 일(있으면 눌러서 직접 정하기)]
@@ -591,7 +634,9 @@ function renderPlan() {
     fill($('#plan-info'), items);
     $('#btn-start').textContent = learnLeft ? `오늘 학습 시작 (${learnLeft})` : '오늘 학습 완료 ✓';
     $('#btn-start').disabled = !learnLeft;
-    note = learnLeft ? '' : '숫자를 누르면 오늘 더 배울 수 있어요.';
+    const waiting = rv.started ? rv.left.length : plan.review.length;
+    note = !learnLeft ? '숫자를 누르면 오늘 더 배울 수 있어요.'
+      : waiting ? `복습할 단어 ${waiting}개가 기다려요 · 위의 '복습'을 누르면 먼저 할 수 있어요.` : '';
   } else if (stage === 'review') {
     // 기본: 전에 한 단어 20개(복습일 된 단어 먼저) · 주기 복습: 알고리즘이 고른 단어
     const due = plan.review.length;
@@ -632,7 +677,9 @@ function askNumber({ title, value, hint = '', extra = null, min = 1, max = 300 }
   let cur = String(value || ''), fresh = true; // 처음 누르는 숫자는 새로 쓰기
   const show = () => { $('#np-val').textContent = cur || '0'; $('#np-ok').disabled = !(+cur >= min); };
   return new Promise(resolve => {
-    const done = v => { d.hidden = true; document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const close = () => { d.hidden = true; document.removeEventListener('keydown', onKey, true); };
+    const done = v => { close(); modalDone(() => resolve(v)); };
+    modalOpen(() => { close(); resolve(null); });
     const press = k => {
       if (k === 'back') { cur = fresh ? '' : cur.slice(0, -1); fresh = false; }
       else if (/^\d$/.test(k)) { cur = fresh ? k : (cur + k).replace(/^0+/, ''); fresh = false; if (+cur > max) cur = String(max); }
@@ -675,7 +722,7 @@ function askNumber({ title, value, hint = '', extra = null, min = 1, max = 300 }
 // 맨 위 카드의 숫자를 눌러 '오늘' 남은 새 단어·복습 개수를 바꿈 (오늘만. 매일 개수는 문제 방식 카드의 버튼으로)
 async function editNewToday() {
   const left = todayPlan().fresh.length;
-  const n = await askNumber({ title: '오늘 더 배울 새 단어', value: left, min: 0, hint: '오늘만 바뀌어요 · 매일 개수는 아래 \'하루 새 단어 수\'' });
+  const n = await askNumber({ title: '오늘 더 배울 새 단어', value: left, min: 0, hint: '오늘만 바뀌어요 · 매일 개수는 학습 계획의 \'하루 새 단어 수\'' });
   if (n == null) return;
   const day = loadDay();
   day.newTarget = newToday() + n; // 오늘 이미 배운 수 + 더 배울 수
@@ -688,7 +735,7 @@ async function editReviewToday() {
   const left = reviewState().left.length;
   const n = await askNumber({
     title: '오늘 복습할 단어', value: left, min: 0,
-    hint: srs ? '오늘만 바뀌어요 · 주기 복습: 복습일이 된 단어에서' : '오늘만 바뀌어요 · 매일 개수는 아래 \'하루 복습 수\'',
+    hint: srs ? '오늘만 바뀌어요 · 주기 복습: 복습일이 된 단어에서' : '오늘만 바뀌어요 · 매일 개수는 학습 계획의 \'하루 복습 수\'',
     extra: srs ? { label: '전부(제한 없음)', value: -1 } : null,
   });
   if (n == null) return;
@@ -719,7 +766,18 @@ function onSeg(sel, fn) {
 }
 
 // ---------- 학습 세션 ----------
-function startSession(mode, list) {
+async function startSession(mode, list) {
+  // 하던 학습이 있으면: 같은 학습이면 이어서, 다른 학습이면 물어보고 (말없이 덮어쓰지 않게)
+  const saved = mode === 'retry' ? null : load(KEY.session, null);
+  if (saved && saved.date === dateStr() && saved.pos > 0 && saved.pos < saved.queue.length) {
+    if (saved.mode === mode && (mode === 'today' || mode === 'review')) { resumeSession(); return; }
+    if (!(await ask({
+      title: '하던 학습을 그만두고 새로 시작할까요?',
+      body: `${saved.label} · ${saved.done.length}/${saved.total}까지 했어요.\n맞히고 틀린 기록은 그대로 남고, 이어하기만 사라져요.`,
+      ok: '새로 시작',
+    }))) return;
+  }
+  const startedFrom = current; // 단어장에서 시작했으면 그만둘 때 단어장으로
   viewStage = null;
   const rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
@@ -756,7 +814,7 @@ function startSession(mode, list) {
     ids = shuffle(bookWords().filter(w => isUnknown(w.id))).map(w => w.id);
     if (!ids.length) { toast('형광펜 친 단어가 없어요'); return; }
     label = '형광펜 단어 테스트';
-  } else if (list) {
+  } else if (list && mode !== 'order') {
     ids = shuffle(list).map(w => w.id);
     label = '다시 볼 단어';
   } else if (mode === 'wrong') {
@@ -764,14 +822,35 @@ function startSession(mode, list) {
     if (!ids.length) { toast('이 범위에 다시 볼 단어가 없어요'); return; }
     label = `${range} 다시 볼 단어`;
   } else {
-    ids = rw.map(w => w.id);
+    ids = (list || rw).map(w => w.id);
     label = `${range} 순서대로`;
   }
   session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
+  if (startedFrom === 'list') session.from = 'list';
   if (mode !== 'retry') setTint(mode === 'day' ? 'study' : null); // 틀린 단어 다시 풀기는 하던 색 그대로
   saveSession();
   show('quiz');
   renderQuestion();
+}
+
+// 범위 순서대로 연습: 몇 개 할지 고름. 지난번에 한 데 다음부터 이어서 (범위를 바꾸면 처음부터)
+async function startOrder() {
+  const rw = rangeWords();
+  if (!rw.length) return;
+  const key = `${Math.min(settings.from, settings.to)}-${Math.max(settings.from, settings.to)}`;
+  const op = settings.orderPos;
+  const pos = op && op.key === key && op.at < rw.length ? op.at : 0;
+  const n = await askNumber({
+    title: '몇 개 연습할까요?', value: Math.min(40, rw.length), max: rw.length,
+    hint: pos ? `지난번에 이어서 ${pos + 1}번째 단어부터 · 범위 ${rw.length}개` : `범위의 처음부터 순서대로 · 범위 ${rw.length}개`,
+    extra: { label: '전부', value: -1 },
+  });
+  if (n == null) return;
+  const list = n < 0 ? rw : rw.slice(pos, pos + n);
+  await startSession('order', list);
+  if (!session || session.mode !== 'order') return;
+  settings.orderPos = n < 0 ? null : { key, at: pos + list.length >= rw.length ? 0 : pos + list.length };
+  saveSettings();
 }
 
 function resumeSession() {
@@ -780,6 +859,7 @@ function resumeSession() {
   if (saved.date !== dateStr()) { localStorage.removeItem(KEY.session); renderHome(); toast('날짜가 바뀌어서 오늘의 학습을 새로 만들었어요'); return; }
   saved.queue = saved.queue.filter(id => byId.has(id));
   saved.hinted = saved.hinted || [];
+  delete saved.from;
   session = saved;
   setTint(session.mode === 'day' ? 'study' : null);
   if (session.pos >= session.queue.length) { finishSession(); return; }
@@ -901,6 +981,7 @@ function synAnswer(correct, given, kind) {
     label = kind === 'hint' ? '힌트 사용' : '정답!';
   }
   session.pos++;
+  showProgress();
   showSynFeedback(correct, given, kind, label);
 }
 
@@ -950,7 +1031,7 @@ function renderQuestion() {
   $('#btn-idk').hidden = true;
   const b1 = w.ex1 ? makeBlanks(w.ex1, w.blank, w.word) : null;
   const b2 = w.ex2 ? makeBlanks(w.ex2, w.blank, w.word) : null;
-  q = { w, b1, b2, answered: false, letterHint: false, revealed: false };
+  q = { w, b1, b2, answered: false, letterHint: false, revealed: false, usedHint: hintedId() === id };
 
   $('#feedback').hidden = true;
   $('#fb-head').hidden = true;
@@ -985,6 +1066,7 @@ function renderQuestion() {
   if (settings.kind === 'type') renderTyping(actions);
   else {
     renderChoices(actions);
+    if (q.usedHint) { strikeChoices(); setHintButtons(null); }
     actions.dataset.layout = ui.choiceLayout;
     // 폰: 예문이 길면 선지가 화면 밖으로 밀려나서, 선지를 2×2로 화면 아래에 고정하고 문장 아래 여백 확보
     if (!DESK) {
@@ -1013,7 +1095,7 @@ function wordCard(w) {
 }
 
 function renderWordQuestion(w) {
-  q = { w, answered: false };
+  q = { w, answered: false, usedHint: hintedId() === w.id };
   $('#feedback').hidden = true;
   $('#fb-head').hidden = true;
   const prompt = document.querySelector('.q-prompt');
@@ -1206,6 +1288,7 @@ function renderChoices(actions) {
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
     b.append(el('span', 'n', i + 1), el('span', null, displayAnswer(c)));
+    if (c === w) b.dataset.ok = '1';
     b.addEventListener('click', () => {
       if (q.answered) return;
       const ok = c === w;
@@ -1541,6 +1624,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
 function useHint() {
   if (!q || q.answered) return;
   q.usedHint = true;
+  if (session && !session.noSave && hintedId() !== q.w.id) { const d = loadDay(); d.hint = q.w.id; save(KEY.day, d); }
   if (WORD || q.syn) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
   if (q.typing) {
     if (q.revealed) return;
@@ -1566,12 +1650,14 @@ function useHint() {
     setHintButtons(null);
     return;
   }
-  // 객관식: 빈칸마다 첫 글자
-  document.querySelectorAll('#q-sentences .blank').forEach(s => {
-    const v = s.querySelector('.sz').textContent.trim();
-    if (v) { s.querySelector('.fl').textContent = v[0] + '·'.repeat(Math.max(0, v.length - 1)); s.classList.add('hint'); }
-  });
+  // 객관식: 틀린 보기 두 개를 지움 (첫 글자를 보여 주면 보기 첫 글자가 대개 달라서 답이 그대로 드러남)
+  strikeChoices();
   setHintButtons(null);
+}
+
+function strikeChoices() {
+  const wrong = shuffle([...document.querySelectorAll('#q-actions .choice:not([data-ok])')]).slice(0, 2);
+  for (const b of wrong) { b.classList.add('gone'); b.disabled = true; }
 }
 
 function setHintButtons(label) {
@@ -1580,6 +1666,12 @@ function setHintButtons(label) {
     b.hidden = label == null;
     if (label) b.textContent = label;
   }
+}
+
+// 진행 막대·개수: 문제를 그릴 때와 답한 바로 그때
+function showProgress() {
+  $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
+  $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
 }
 
 function answer(correct, given, kind) {
@@ -1597,6 +1689,10 @@ function answer(correct, given, kind) {
   const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
   delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
   stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
+  // 다시 볼 단어(또는 틀린 단어 다시 풀기)에서 힌트 없이 맞히면 오늘은 목록에서 뺌
+  const cleared = outcome === 'ok' && !retry && !scheduled && isWrongRaw(before) && (session.mode === 'wrong' || session.mode === 'retry');
+  if (cleared) stats[id].r = today; else delete stats[id].r;
+  if (hintedId() === id) { const d = loadDay(); delete d.hint; save(KEY.day, d); }
 
   let label;
   if (outcome === 'wrong') {
@@ -1613,9 +1709,11 @@ function answer(correct, given, kind) {
     label = kind === 'partial' ? '부분 정답 · 내일 다시'
       : outcome === 'hint' ? '힌트 사용 · 내일 다시'
       : retry ? '정답! · 내일 다시'
-        : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습` : '정답!';
+        : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습`
+          : cleared ? '정답! · 다시 볼 단어에서 뺐어요' : '정답!';
   }
   session.pos++;
+  showProgress();
   saveStats();
   sync.soon();
   saveSession();
@@ -1735,6 +1833,14 @@ function setFbTab(t) {
   $('#fb-ex').hidden = t !== 'ex';
 }
 
+// 그만하기: 진행 상황은 저장되어 있어 홈에서 이어하기 가능. 단어장에서 시작한 학습이면 단어장으로
+function quitQuiz() {
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  const toList = session && session.from === 'list' && history.state && history.state.s === 'list';
+  session = null;
+  if (toList) { show('list', false); renderList(); } else goHome();
+}
+
 function next() {
   if (!session) return;
   if (session.pos >= session.queue.length) finishSession();
@@ -1774,11 +1880,13 @@ function finishSession() {
     again.textContent = '홈으로';
     again.onclick = () => goHome();
   }
+  $('#btn-res-home').hidden = again.textContent === '홈으로'; // 같은 버튼이 두 개 나오지 않게
   show('result', false);
 }
 
 // ---------- 단어장 ----------
 let listFilter = 'all';
+let bookQuery = ''; // 단어장 검색어 (있으면 고른 DAY와 상관없이 전체에서 찾음)
 // 단어장 기록은 예문·단어 두 모드를 합쳐서: 틀린 횟수는 더하고, 단계는 더 높은 쪽, 마지막에 틀렸으면(어느 모드든) 오답
 function bookView() {
   const o = otherProgress().stats;
@@ -1788,7 +1896,7 @@ function bookView() {
       seen: !!(a || b),
       w: ((a && a.w) || 0) + ((b && b.w) || 0),
       st: Math.max((a && a.st) || 0, (b && b.st) || 0),
-      wrong: isWrongNote(a) || isWrongNote(b),
+      wrong: isWrongRaw(a) || isWrongRaw(b),
     };
   };
 }
@@ -1915,7 +2023,11 @@ function renderBookDays(scrollToSel) {
   for (const d of days) {
     const b = el('button', 'dp' + (sel.has(d) ? ' on' : ''), String(d));
     b.setAttribute('aria-label', `DAY ${d}`);
-    b.addEventListener('click', () => { const n = new Set(sel); n.has(d) ? n.delete(d) : n.add(d); setBookDays(n); });
+    // 전부 켜져 있을 때 하나를 누르면 그 DAY만 (하나만 보려고 나머지를 다 끌 필요 없게). 그 밖엔 켜고 끄기
+    b.addEventListener('click', () => {
+      if (sel.size === days.length && days.length > 1) { setBookDays(new Set([d])); return; }
+      const n = new Set(sel); n.has(d) ? n.delete(d) : n.add(d); setBookDays(n);
+    });
     box.appendChild(b);
   }
   if (scrollToSel) {
@@ -1931,7 +2043,10 @@ function renderList(scrollToSel) {
   box.innerHTML = '';
   const view = bookView();
   const bw = bookWords();
-  const filtered = bw.filter(w => {
+  const qy = bookQuery.trim().toLowerCase();
+  const hit = w => w.word.toLowerCase().includes(qy) || w.meaning.toLowerCase().includes(qy) || w.extras.some(([, v]) => String(v).toLowerCase().includes(qy));
+  $('#book-days').classList.toggle('dim', !!qy);
+  const filtered = (qy ? words.filter(hit) : bw).filter(w => {
     const s = view(w.id);
     if (listFilter === 'wrong') return s.wrong;
     if (listFilter === 'new') return !s.seen;
@@ -1939,7 +2054,9 @@ function renderList(scrollToSel) {
     if (listFilter === 'unknown') return isUnknown(w.id);
     return true;
   });
-  if (!bw.length) box.appendChild(el('div', 'card center muted', '위에서 볼 DAY를 골라 주세요'));
+  if (qy && !filtered.length) box.appendChild(el('div', 'card center muted', `'${bookQuery.trim()}'에 맞는 단어가 없어요`));
+  else if (qy) { /* 검색 결과 */ }
+  else if (!bw.length) box.appendChild(el('div', 'card center muted', '위에서 볼 DAY를 골라 주세요'));
   else if (!filtered.length) box.appendChild(el('div', 'card center muted', listFilter === 'unknown' ? '단어 옆 형광펜을 누르면 여기 모여요' : '해당하는 단어가 없어요'));
   const acts = $('#day-acts');
   acts.hidden = bookOnly == null;
@@ -2143,6 +2260,14 @@ function boot(fromLocal) {
   renderHome();
 }
 
+// 지난 날짜를 시험일로 고르면 알려 주고 원래 값으로
+function examOk(input) {
+  if (!input.value || input.value >= dateStr()) return true;
+  toast('지난 날짜는 시험일로 정할 수 없어요');
+  input.value = settings.exam || '';
+  return false;
+}
+
 function bind() {
   $('#day-from').addEventListener('change', e => setRange(+e.target.value, settings.to));
   $('#day-to').addEventListener('change', e => setRange(settings.from, +e.target.value));
@@ -2161,14 +2286,19 @@ function bind() {
     const b = e.target.closest('button');
     if (b) document.getElementById(b.dataset.go).scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-  $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); show('plan', false); } else goHome(); });
+  $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   onSeg('#seg-rev', v => { settings.reviewSize = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
-  $('#today-flow').addEventListener('click', e => { const sp = e.target.closest('span[data-s]'); if (sp && sp.classList.contains('link')) { viewStage = sp.dataset.s; renderPlan(); } });
-  const setExam = v => { settings.exam = v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); };
-  $('#exam-date').addEventListener('change', e => setExam(e.target.value));
+  $('#today-flow').addEventListener('click', e => {
+    const sp = e.target.closest('span[data-s]');
+    if (!sp) return;
+    if (sp.classList.contains('link')) { viewStage = sp.dataset.s; renderPlan(); }
+    else if (!sp.classList.contains('on')) toast('오늘의 학습과 복습을 끝내면 열려요');
+  });
+  const setExam = v => { settings.exam = v; settings.examAt = Date.now(); saveSettings(); shareExam(v, settings.examAt); renderPlan(); sync.soon(); };
+  $('#exam-date').addEventListener('change', e => { if (examOk(e.target)) setExam(e.target.value); });
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });
   $('#btn-start').addEventListener('click', () => startSession('today'));
   $('#btn-review').addEventListener('click', () => startSession('review'));
@@ -2182,7 +2312,7 @@ function bind() {
   // 슬라이더: 5개 단위로 5~100개
   $('#extra-range').addEventListener('input', e => { settings.extraN = +e.target.value; saveSettings(); renderPlan(); });
   $('#btn-wrong').addEventListener('click', () => startSession('wrong'));
-  $('#btn-order').addEventListener('click', () => startSession('order'));
+  $('#btn-order').addEventListener('click', startOrder);
   $('#btn-resume').addEventListener('click', resumeSession);
   $('#btn-resume-drop').addEventListener('click', async () => {
     if (!(await ask({ title: '정말 지울까요?', body: '이어하던 학습 기록이 지워져요.\n지운 기록은 되돌릴 수 없어요.', ok: '지우기', danger: true }))) return;
@@ -2190,19 +2320,19 @@ function bind() {
     renderHome();
     toast('지웠어요');
   });
-  $('#btn-list').addEventListener('click', () => { bookOnly = null; listFilter = 'all'; show('list'); renderList(true); });
+  $('#btn-list').addEventListener('click', () => { bookOnly = null; listFilter = 'all'; bookQuery = ''; $('#book-search').value = ''; show('list'); renderList(true); });
+  $('#book-search').addEventListener('input', e => { bookQuery = e.target.value; renderList(); });
   $('#btn-day-syn').addEventListener('click', () => { if (bookOnly != null) startSynSession(bookOnly); });
   $('#btn-day-study').addEventListener('click', () => { if (bookOnly != null) startDayStudy(bookOnly); });
   $('#btn-list-back').addEventListener('click', () => goHome());
-  $('#plan-sum-card').addEventListener('click', () => show('plan'));
-  $('#btn-plan-back').addEventListener('click', () => goHome());
+  $('#plan-sum-card').addEventListener('click', () => { planFrom = null; show('plan'); });
+  $('#btn-plan-back').addEventListener('click', () => {
+    if (planFrom === 'settings' && history.state && history.state.s === 'settings') { planFrom = null; renderSettings(); renderSyncStatus(); show('settings', false); }
+    else goHome();
+  });
   onSeg('#seg-filter', v => { listFilter = v; renderList(); });
 
-  $('#btn-quit').addEventListener('click', () => {
-    if (window.speechSynthesis) speechSynthesis.cancel();
-    session = null; // 진행 상황은 저장되어 있어 홈에서 이어하기 가능
-    goHome();
-  });
+  $('#btn-quit').addEventListener('click', quitQuiz);
   $('#btn-hint').addEventListener('click', useHint);
   $('#btn-idk').addEventListener('click', giveUp);
   $('#fb-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setFbTab(b.dataset.t); });
@@ -2219,7 +2349,10 @@ function bind() {
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#opt-simplehome').addEventListener('change', e => { ui.simpleHome = e.target.checked; save(UI_KEY, ui); applyHomeLayout(); });
   onSeg('#seg-base', v => { settings.baseAccept = v; saveSettings(); });
-  $('#btn-test-voice').addEventListener('click', () => speak('I tried to convince him of the danger.'));
+  $('#btn-test-voice').addEventListener('click', () => {
+    speak('I tried to convince him of the danger.');
+    if (window.speechSynthesis && !pickVoice()) toast('이 기기에서 영어 음성을 찾지 못했어요. 기기 설정의 음성(TTS)을 확인해 주세요', 3500);
+  });
   $('#btn-export').addEventListener('click', exportProgress);
   $('#btn-sync-connect').addEventListener('click', async () => {
     const token = $('#sync-token').value.trim();
@@ -2298,7 +2431,7 @@ function bind() {
   const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
   $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); });
   $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
-  $('#srs-exam-date').addEventListener('change', e => { settings.exam = e.target.value; srsChanged(); });
+  $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); srsChanged(); });
   onSeg('#seg-limit', v => { settings.reviewLimit = +v; srsChanged(); });
   $('#btn-update').addEventListener('click', async () => {
     try {
@@ -2324,10 +2457,14 @@ function bind() {
   document.addEventListener('keydown', e => {
     if (current !== 'quiz') return;
     if (!$('#feedback').hidden && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); return; }
+    if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); quitQuiz(); return; }
     if (kb && !(q && q.answered) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // 한글 자판 상태(e.key가 'Process'나 한글)여도 누른 자리(e.code)의 영문자로 받음
+      const byCode = /^Key[A-Z]$/.test(e.code) ? e.code[3].toLowerCase() : e.code === 'Space' ? ' ' : e.code === 'Quote' ? "'" : e.code === 'Minus' ? '-' : '';
+      const ch = /^[a-zA-Z' -]$/.test(e.key) ? e.key.toLowerCase() : e.key.length !== 1 || e.key.charCodeAt(0) > 127 ? byCode : '';
       if (e.key === 'Enter') kb.submit();
       else if (e.key === 'Backspace') kb.type('back');
-      else if (/^[a-zA-Z' -]$/.test(e.key)) kb.type(e.key.toLowerCase());
+      else if (ch) kb.type(ch);
       else return;
       e.preventDefault();
       return;
