@@ -206,11 +206,9 @@ button { cursor: pointer; }
 /* 좁아진 칸은 번호를 빼서 단어 자리를 확보 (첫 자식은 lean-bar라 왼쪽 칸 선지가 짝수 번째) */
 .pin-choices .quiz-actions[data-layout="grid"][data-lean="left"] .choice:nth-child(odd) .n,
 .pin-choices .quiz-actions[data-layout="grid"][data-lean="right"] .choice:nth-child(even) .n { display: none; }
-/* 한 줄씩: 쏠리면 선지 폭을 줄여 그쪽 끝에 붙임 */
+/* 한 줄씩 (쏠림 없음) */
 .pin-choices .quiz-actions[data-layout="list"] { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.pin-choices .quiz-actions[data-layout="list"] .choice { padding: 11px 14px; transition: width .2s ease; }
-.pin-choices .quiz-actions[data-layout="list"][data-lean="left"] .choice { width: 78%; justify-self: start; }
-.pin-choices .quiz-actions[data-layout="list"][data-lean="right"] .choice { width: 78%; justify-self: end; }
+.pin-choices .quiz-actions[data-layout="list"] .choice { padding: 11px 14px; }
 /* 컴퓨터에서 격자를 고르면 아래 고정 없이 2×2로 */
 .desk .quiz-actions[data-layout="grid"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .desk .quiz-actions[data-layout="grid"] .choice { margin: 0; }

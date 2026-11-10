@@ -989,7 +989,8 @@ function renderQuestion() {
     // 폰: 예문이 길면 선지가 화면 밖으로 밀려나서, 선지를 2×2로 화면 아래에 고정하고 문장 아래 여백 확보
     if (!DESK) {
       $('#quiz').classList.add('pin-choices');
-      actions.prepend(leanBar(actions));
+      if (ui.choiceLayout === 'grid') actions.prepend(leanBar(actions)); // 쏠림은 격자에서만
+      else delete actions.dataset.lean;
       $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
     }
   }
