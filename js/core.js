@@ -627,10 +627,24 @@ const KO_WORD_END = /[\s.,!?;:"'“”‘’()\[\]…·~]/;
 
 export function highlightMeaning(ko, meaning, mark) {
   const text = String(ko || '');
-  // 직접 지정한 강조어(CSV '해석강조' 컬럼 또는 highlights.json)가 해석에 있으면 그걸 씀
+  // 직접 지정한 강조어(CSV '해석강조' 컬럼 또는 highlights.json)가 해석에 있으면 그걸 씀.
+  // 'A|B'처럼 여러 개면 해석에 있는 것 모두 (뜻 갈래마다 문장이 따로 있는 단어: "달할|해당한다")
+  const picks = [];
   for (const m of String(mark || '').split('|').map(x => x.trim()).filter(Boolean)) {
     const i = text.indexOf(m);
-    if (i >= 0) return [{ t: 'text', v: text.slice(0, i) }, { t: 'mark', v: m }, { t: 'text', v: text.slice(i + m.length) }].filter(x => x.v);
+    if (i >= 0 && !picks.some(p => i < p.end && i + m.length > p.start)) picks.push({ start: i, end: i + m.length });
+  }
+  if (picks.length) {
+    picks.sort((x, y) => x.start - y.start);
+    const segs = [];
+    let pos = 0;
+    for (const p of picks) {
+      if (p.start > pos) segs.push({ t: 'text', v: text.slice(pos, p.start) });
+      segs.push({ t: 'mark', v: text.slice(p.start, p.end) });
+      pos = p.end;
+    }
+    if (pos < text.length) segs.push({ t: 'text', v: text.slice(pos) });
+    return segs;
   }
   if (!text || !meaning) return [{ t: 'text', v: text }];
   const cleaned = String(meaning)
