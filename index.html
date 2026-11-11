@@ -64,13 +64,13 @@
         </div>
       </div>
 
-      <!-- 단어 코치 '콩이': 시험일에 맞춘 오늘 분량을 말해 줌 (설정에서 끌 수 있음. 꺼져 있으면 한 번만 켤지 물어봄) -->
-      <div id="kong-card" class="kong-card" hidden>
-        <button class="kong-char" id="kong-char" aria-label="단어 코치 콩이"></button>
-        <div class="kong-say">
-          <div class="kong-name">단어 코치 콩이</div>
-          <div class="kong-text" id="kong-text" role="status"></div>
-          <div class="kong-acts" id="kong-acts"></div>
+      <!-- 단어 코치: 고른 캐릭터가 시험일에 맞춘 오늘 분량을 말해 줌 (설정에서 끌 수 있음. 꺼져 있으면 한 번만 켤지 물어봄) -->
+      <div id="buddy-card" class="buddy-card" hidden>
+        <button class="buddy-char" id="buddy-char" aria-label="단어 코치"></button>
+        <div class="buddy-say">
+          <div class="buddy-name">단어 코치</div>
+          <div class="buddy-text" id="buddy-text" role="status"></div>
+          <div class="buddy-acts" id="buddy-acts"></div>
         </div>
       </div>
 
@@ -227,6 +227,7 @@
             <div class="w" id="fb-word"></div>
             <div class="muted" id="fb-pron"></div>
           </div>
+          <div class="fb-coach" id="fb-coach" hidden></div>
           <button class="mark-btn" id="fb-mark" aria-label="형광펜" title="형광펜"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
         </div>
         <div class="fb-tabs" id="fb-tabs">
@@ -247,7 +248,7 @@
   <section id="result" class="screen">
     <header class="top"><h1 id="res-title">학습 끝</h1></header>
     <div class="card center res-cheer">
-      <div class="res-kong" id="res-kong" hidden></div>
+      <div class="res-buddy" id="res-buddy" hidden></div>
       <div class="cheer">공부하느라 수고하셨어요</div>
       <div class="muted" id="res-detail"></div>
     </div>
@@ -337,6 +338,8 @@
       <div class="label">복습 방식</div>
       <label class="switch-row"><span>단어 코치 <span class="muted">(시험일만 정하면 목표일·하루 분량을 짜 줘요)</span></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
       <p class="muted srs-desc" id="coach-plan" hidden></p>
+      <div class="label" id="coach-chars-label" hidden>코치 캐릭터</div>
+      <div class="coach-choices" id="coach-chars" role="radiogroup" aria-label="코치 캐릭터" hidden></div>
       <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
       <div id="srs-manual">
       <label class="switch-row"><span>주기 복습 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
@@ -454,6 +457,19 @@
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="np-cancel">취소</button>
         <button class="btn dlg-ok" id="np-ok">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 코치 고르기: 단어 코치를 처음 켤 때 -->
+  <div class="dialog" id="coach-pick" role="dialog" aria-modal="true" aria-labelledby="cp-title" hidden>
+    <div class="dialog-card">
+      <div class="dlg-title" id="cp-title">함께할 코치를 골라 주세요</div>
+      <div class="dlg-body">설정에서 언제든 바꿀 수 있어요.</div>
+      <div class="coach-choices" id="cp-choices"></div>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="cp-cancel">취소</button>
+        <button class="btn dlg-ok" id="cp-ok">이 코치로</button>
       </div>
     </div>
   </div>

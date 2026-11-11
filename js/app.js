@@ -7,6 +7,7 @@ import {
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
+import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
 const APP_VERSION = '202611111925';
@@ -580,7 +581,7 @@ function swipeHintOnce(grid) {
 
 // ---------- 단어 코치 ----------
 // 시험일만 알려 주면 남은 날을 '새 단어를 배우는 날'과 '범위 전체를 훑는 날'로 나눠 목표일과 하루 분량을 정하고(core.js coachPlan),
-// 매일 남은 단어 ÷ 목표일까지 남은 날로 오늘 몫을 다시 계산함. 홈 맨 위에서 캐릭터 '콩이'가 말로 알려 줌. 설정에서 끌 수 있음
+// 매일 남은 단어 ÷ 목표일까지 남은 날로 오늘 몫을 다시 계산함. 홈 맨 위에서 고른 코치 캐릭터가 말로 알려 줌. 설정에서 끌 수 있음
 const fmtDay = d => { const [, m, dd] = String(d || '').split('-'); return m ? `${+m}월 ${+dd}일` : ''; };
 const leftNew = () => rangeWords().filter(w => !stats[w.id]).length;
 // 목표일(coachGoal)은 전체 복습을 시작하는 날이라 새 단어를 보는 마지막 날은 그 전날
@@ -628,54 +629,88 @@ function setCoach(on) {
   renderHome();
 }
 
-// 캐릭터 '콩이' (새싹이 난 콩, 16×16 픽셀). . 빈칸 · k 테두리 · b 몸 · s 그늘 · w 반짝임 · g 잎 · d 잎 진한 쪽 · e 눈 · m 입 · p 볼 · t 땀 · z 잠 · y 별
-const KONG_BODY = [
-  '....gg....gg....',
-  '...gggd..dggg...',
-  '...ggggddgggg...',
-  '....gggddggg....',
-  '.......dd.......',
-  '....kkkkkkkk....',
-  '...kbbbbbbbbk...',
-  '..kbwbbbbbbbbk..',
-  '..kbbbbbbbbbbk..',
-  '..kbbbbbbbbbbk..',
-  '..kbbbbbbbbbbk..',
-  '..kbbbbbbbbbbk..',
-  '..kbbbbbbbbbsk..',
-  '...kbbbbbbssk...',
-  '....kkkkkkkk....',
-  '................',
-];
-// 기분마다 얼굴 네 줄(8~11번째)만 바꿈
-const KONG_FACE = {
-  normal: ['..kbbebbbbebbk..', '..kbbebbbbebbk..', '..kbpbbmmbbpbk..', '..kbbbbbbbbbbk..'],
-  happy: ['..kbbebbbbebbk.y', '..kbbebbbbebbk..', '..kbpbmmmmbpbk..', '..kbbbbmmbbbbk..'],
-  worry: ['..kbbebbbbebbkt.', '..kbbebbbbebbkt.', '..kbbbbmmbbbbk..', '..kbbbmbbmbbbk..'],
-  sleep: ['..kbbbbbbbbbbk.z', '..kbeebbbbeebk..', '..kbpbbmmbbpbk..', '..kbbbbbbbbbbk..'],
-};
-function kongSvg(mood = 'normal') {
-  const rows = KONG_BODY.slice();
-  (KONG_FACE[mood] || KONG_FACE.normal).forEach((r, i) => { rows[8 + i] = r; });
-  let out = '<svg class="kong-svg" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-hidden="true">';
+// 코치 캐릭터 (js/coach-art.js의 32×32 픽셀 그림): 고양이·햄스터·부엉이·슬라임 가운데 고름. 기기마다 저장(ui.coachChar), 두 모드가 같이 씀
+// 기분: normal 기본 · happy 기쁨(정답) · worry 걱정(오답) · sleep 졸림 · cheer 응원
+const COACH_MOOD = { normal: 'idle', happy: 'correct', worry: 'wrong', sleep: 'sleepy', cheer: 'cheer' };
+const coachChar = () => (COACH_ART[ui.coachChar] ? ui.coachChar : 'cat');
+const coachSvgCache = new Map();
+function coachSvg(mood = 'normal', char = coachChar()) {
+  const key = `${char}|${mood}`;
+  if (coachSvgCache.has(key)) return coachSvgCache.get(key);
+  const rows = COACH_ART[char][COACH_MOOD[mood]] || COACH_ART[char].idle;
+  let out = '<svg class="buddy-svg" viewBox="0 0 32 32" shape-rendering="crispEdges" aria-hidden="true">';
   rows.forEach((row, y) => {
     for (let x = 0; x < row.length;) { // 같은 색이 이어진 칸은 한 줄로 묶어 그림
       const c = row[x];
       let n = 1;
       while (x + n < row.length && row[x + n] === c) n++;
-      if (c !== '.') out += `<rect class="kp-${c}" x="${x}" y="${y}" width="${n}" height="1"/>`;
+      if (c !== '.') out += `<rect fill="${COACH_COLORS[c]}" x="${x}" y="${y}" width="${n}" height="1"/>`;
       x += n;
     }
   });
-  return out + '</svg>';
+  out += '</svg>';
+  coachSvgCache.set(key, out);
+  return out;
 }
 
-// 콩이가 지금 할 말: { mood, text, acts: [[버튼 글자, 할 일]] }
+// 코치 고르기 창: 처음 켤 때 뜨고, 설정에서 언제든 바꿀 수 있음. 고르면 캐릭터 이름, 취소면 null
+function pickCoach() {
+  const d = $('#coach-pick'), box = $('#cp-choices');
+  let cur = coachChar();
+  const draw = () => {
+    box.innerHTML = '';
+    for (const c of Object.keys(COACH_ART)) {
+      const b = el('button', 'coach-choice' + (c === cur ? ' on' : ''));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', c === cur);
+      b.innerHTML = coachSvg(c === cur ? 'cheer' : 'normal', c);
+      b.appendChild(el('span', null, COACH_NAMES[c]));
+      b.addEventListener('click', () => { cur = c; draw(); });
+      box.appendChild(b);
+    }
+  };
+  draw();
+  d.hidden = false;
+  return new Promise(resolve => {
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(cur); } };
+    const close = () => { d.hidden = true; d.onclick = null; document.removeEventListener('keydown', key, true); };
+    const done = v => { close(); modalDone(() => resolve(v)); };
+    modalOpen(() => { close(); resolve(null); });
+    $('#cp-ok').onclick = () => done(cur);
+    $('#cp-cancel').onclick = () => done(null);
+    d.onclick = e => { if (e.target === d) done(null); };
+    document.addEventListener('keydown', key, true);
+  });
+}
+function setCoachChar(c) {
+  ui.coachChar = c;
+  save(UI_KEY, ui);
+  if (current === 'settings') renderSrs();
+  renderCoach();
+}
+// 스위치·'켜기' 버튼: 처음 켤 땐 코치부터 고름 (취소하면 안 켬)
+async function toggleCoach(on) {
+  if (on && !COACH_ART[ui.coachChar]) {
+    const c = await pickCoach();
+    if (!c) { renderPlan(); if (current === 'settings') renderSrs(); return; } // 스위치를 원래대로
+    ui.coachChar = c;
+    save(UI_KEY, ui);
+  }
+  setCoach(on);
+}
+// 정답 시트 한쪽에서 코치가 맞았는지 틀렸는지 같이 반응 (코치가 켜져 있을 때만)
+function setFbCoach(state) {
+  const box = $('#fb-coach');
+  box.hidden = !settings.coach;
+  if (settings.coach) box.innerHTML = coachSvg(state === 'ok' ? 'happy' : state === 'bad' ? 'worry' : 'normal');
+}
+
+// 코치가 지금 할 말: { mood, text, acts: [[버튼 글자, 할 일]] }
 function coachSay() {
   const today = dateStr();
   const openPlan = () => { planFrom = null; show('plan'); setTimeout(() => { const i = $('#exam-date'); i.scrollIntoView({ block: 'center' }); i.focus(); }, 60); };
   if (!settings.exam) return { mood: 'normal', text: '시험일을 알려 주면 남은 날에 맞춰 목표일과 하루 분량을 짜 줄게요.', acts: [['시험일 정하기', openPlan]] };
-  if (settings.exam === today) return { mood: 'happy', text: '오늘이 시험 날이에요. 외운 만큼 다 쓰고 와요! 가기 전에 다시 볼 단어만 한 번 훑어도 좋아요.', acts: [] };
+  if (settings.exam === today) return { mood: 'cheer', text: '오늘이 시험 날이에요. 외운 만큼 다 쓰고 와요! 가기 전에 다시 볼 단어만 한 번 훑어도 좋아요.', acts: [] };
   if (settings.exam < today) return { mood: 'sleep', text: '시험이 끝났어요. 수고했어요! 다음 시험일을 정하면 일정을 다시 짜 줄게요.', acts: [['시험일 정하기', openPlan]] };
   const D = daysBetween(today, settings.exam), goal = settings.coachGoal, rd = daysBetween(goal, settings.exam);
   const f = flowState();
@@ -702,22 +737,23 @@ function coachSay() {
 }
 
 // 홈 맨 위 코치 카드. 꺼져 있으면 한 번만 켤지 물어봄(괜찮아요를 누르면 다시 안 물음)
-function renderCoach(stage) {
-  const card = $('#kong-card');
+function renderCoach(stage = soloDay != null && days.includes(soloDay) ? 'day' : null) {
+  const card = $('#buddy-card');
   let say = null;
   if (stage === 'day') say = null; // DAY 단독 학습 중엔 숨김
   else if (settings.coach) say = coachSay();
   else if (!ui.coachAsked) {
     say = {
-      mood: 'normal', text: '단어 코치를 켜 볼까요? 시험일만 알려 주면 목표일과 하루 분량을 짜서 매일 알려 줄게요.',
-      acts: [['켜기', () => setCoach(true)], ['괜찮아요', () => { ui.coachAsked = true; save(UI_KEY, ui); renderCoach(); toast('설정 > 복습 방식에서 언제든 켤 수 있어요'); }]],
+      mood: 'cheer', text: '단어 코치를 켜 볼까요? 시험일만 알려 주면 목표일과 하루 분량을 짜서 매일 알려 줄게요.',
+      acts: [['켜기', () => toggleCoach(true)], ['괜찮아요', () => { ui.coachAsked = true; save(UI_KEY, ui); renderCoach(); toast('설정 > 복습 방식에서 언제든 켤 수 있어요'); }]],
     };
   }
   card.hidden = !say;
   if (!say) return;
-  $('#kong-char').innerHTML = kongSvg(say.mood);
-  $('#kong-text').textContent = say.text;
-  const acts = $('#kong-acts');
+  $('#buddy-char').innerHTML = coachSvg(say.mood);
+  $('#buddy-char').setAttribute('aria-label', `단어 코치 ${COACH_NAMES[coachChar()]}`);
+  $('#buddy-text').textContent = say.text;
+  const acts = $('#buddy-acts');
   acts.innerHTML = '';
   say.acts.forEach(([label, fn], i) => {
     const b = el('button', 'btn small ' + (i ? 'ghost' : 'secondary'), label);
@@ -1181,6 +1217,7 @@ function showSynFeedback(correct, given, kind, label) {
     row.appendChild(el('span', 'muted', why));
     card.appendChild(row);
   }
+  setFbCoach(state);
   openSheet(w, [card]);
 }
 
@@ -2001,6 +2038,7 @@ function showFeedback(correct, given, kind, label) {
     $('.quiz-body').style.paddingBottom = '';
   }
 
+  setFbCoach(state);
   const more = [];
   if (q.choices && !correct) more.push(choiceNotes(q.choices, w, q.picked));
   if (WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline()) more.push(explainBox(q));
@@ -2099,9 +2137,9 @@ function finishSession() {
   const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
   $('#res-title').textContent = `${s.label} 끝`;
   $('#res-detail').textContent = `${s.total}단어를 다 봤어요.`;
-  const rk = $('#res-kong');
+  const rk = $('#res-buddy');
   rk.hidden = !settings.coach;
-  if (settings.coach) rk.innerHTML = kongSvg(wrong.length ? 'normal' : 'happy');
+  if (settings.coach) rk.innerHTML = coachSvg(wrong.length ? 'normal' : 'cheer');
   $('#res-wrong-label').textContent = wrong.length ? `틀렸거나 헷갈린 단어 ${wrong.length}개 · 한 번씩만 더 보고 가요` : '';
   const list = $('#res-wrong');
   list.innerHTML = '';
@@ -2384,6 +2422,20 @@ function renderSrs() {
   $('#goal-label').hidden = coach;
   const cp = $('#coach-plan');
   cp.hidden = !coach;
+  // 코치 캐릭터: 눌러서 언제든 바꿈
+  const cc = $('#coach-chars');
+  $('#coach-chars-label').hidden = cc.hidden = !coach;
+  cc.innerHTML = '';
+  if (coach) for (const c of Object.keys(COACH_ART)) {
+    const b = el('button', 'coach-choice' + (c === coachChar() ? ' on' : ''));
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', c === coachChar());
+    b.innerHTML = coachSvg('normal', c);
+    b.appendChild(el('span', null, COACH_NAMES[c]));
+    b.addEventListener('click', () => setCoachChar(c));
+    cc.appendChild(b);
+  }
   $('#btn-coach-replan').hidden = !coachActive();
   if (coach) {
     const today = dateStr();
@@ -2762,10 +2814,10 @@ function bind() {
   $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
   $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); if (coachActive()) planCoach(true); coachMoved = false; srsChanged(); });
   // 단어 코치: 설정과 학습 계획 화면의 스위치, 일정 다시 짜기, 캐릭터를 누르면 폴짝
-  $('#opt-coach').addEventListener('change', e => setCoach(e.target.checked));
-  $('#opt-coach-plan').addEventListener('change', e => setCoach(e.target.checked));
+  $('#opt-coach').addEventListener('change', e => toggleCoach(e.target.checked));
+  $('#opt-coach-plan').addEventListener('change', e => toggleCoach(e.target.checked));
   $('#btn-coach-replan').addEventListener('click', () => { if (planCoach(true)) { coachMoved = false; renderSrs(); toast('남은 날에 맞춰 일정을 다시 짰어요'); } });
-  $('#kong-char').addEventListener('click', e => { const c = e.currentTarget; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); });
+  $('#buddy-char').addEventListener('click', e => { const c = e.currentTarget; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); });
   onSeg('#seg-limit', v => { settings.reviewLimit = +v; srsChanged(); });
   $('#btn-update').addEventListener('click', async () => {
     try {
