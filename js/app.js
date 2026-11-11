@@ -2457,6 +2457,11 @@ function bind() {
   document.addEventListener('keydown', e => {
     if (current !== 'quiz') return;
     if (!$('#feedback').hidden && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); return; }
+    // 4지선다: 숫자는 보기를 고르기만 하고 Enter로 채점 (마우스로 누르면 바로 채점)
+    if (e.key === 'Enter' && !(q && q.answered) && !e.isComposing) {
+      const p = $('#q-actions').querySelector('.choice.picked:not(:disabled)');
+      if (p) { e.preventDefault(); p.click(); return; }
+    }
     if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); quitQuiz(); return; }
     if (kb && !(q && q.answered) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       // 한글 자판 상태(e.key가 'Process'나 한글)여도 누른 자리(e.code)의 영문자로 받음
@@ -2471,7 +2476,12 @@ function bind() {
     }
     if ((settings.kind === 'choice' || (q && q.syn)) && /^[1-4]$/.test(e.key) && !(q && q.answered)) {
       const c = $('#q-actions').querySelectorAll('.choice')[+e.key - 1];
-      if (c) c.click();
+      if (c && !c.disabled) {
+        e.preventDefault();
+        $('#q-actions').querySelectorAll('.choice.picked').forEach(x => x.classList.remove('picked'));
+        c.classList.add('picked');
+        c.scrollIntoView({ block: 'nearest' });
+      }
     }
   });
 }
