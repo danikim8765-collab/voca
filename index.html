@@ -263,7 +263,7 @@
       <button data-v="done">암기 완료</button>
       <button data-v="unknown">형광펜</button>
     </div>
-    <p class="muted list-note">단어를 누르면 예문이 펼쳐져요. 예문·단어 모드 기록을 합쳐서 보여줘요. <span class="syn-t">유의어</span> · <span class="ant-t">반의어</span> · 점은 복습 단계</p>
+    <p class="muted list-note"><span id="list-tip">단어를 누르면 예문이 펼쳐져요. 예문·단어 모드 기록을 합쳐서 보여줘요. </span><span class="syn-t">유의어</span> · <span class="ant-t">반의어</span> · 점은 복습 단계</p>
     <div id="word-list" class="list"></div>
     <div class="sticky-bottom">
       <!-- DAY 박스를 눌러서 열었을 때만: 그 DAY 유반의어 테스트 / 그 DAY 학습 (박스를 왼쪽·오른쪽으로 민 것과 같음) -->
@@ -407,13 +407,13 @@
     </div>
     <div class="card" id="set-data">
       <div class="label">진도 백업 · 데이터</div>
-      <p class="muted">진도는 이 폰의 브라우저에 저장돼요. 브라우저 데이터를 지우거나 다른 폰으로 옮길 땐 백업 파일을 써주세요.</p>
+      <p class="muted">진도는 이 폰의 브라우저에 저장돼요. 브라우저 데이터를 지우거나 다른 폰으로 옮길 땐 백업 파일을 써주세요. 백업 파일 하나에 예문·단어 두 모드의 진도와 학습 설정, 형광펜이 모두 들어가요.</p>
       <div class="row two">
         <button class="btn secondary" id="btn-export">백업 저장</button>
         <button class="btn secondary" id="btn-import">백업 불러오기</button>
       </div>
       <input type="file" id="import-file" accept=".json,application/json" hidden>
-      <button class="btn danger small" id="btn-reset">진도 전체 초기화</button>
+      <button class="btn danger small" id="btn-reset"><span data-only="ex">예문</span><span data-only="word">단어</span> 모드 진도 초기화</button>
       <div class="label mt">단어 데이터</div>
       <p class="muted" id="data-info"></p>
       <button class="btn ghost small" id="btn-reload">서버에서 다시 불러오기</button>

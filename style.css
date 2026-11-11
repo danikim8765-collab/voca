@@ -219,6 +219,10 @@ button { cursor: pointer; }
 /* 컴퓨터에서 격자를 고르면 아래 고정 없이 2×2로 */
 .desk .quiz-actions[data-layout="grid"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .desk .quiz-actions[data-layout="grid"] .choice { margin: 0; }
+/* 컴퓨터: 한 줄씩 놓으면 창 아래로 넘칠 때(낮은 창, 긴 예문)는 2×2로 줄여서 한 화면에 (app.js fitChoices) */
+.desk .quiz-actions.fit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.desk .quiz-actions.fit .choice { margin: 0; padding: 11px 14px; }
+.desk #quiz.active > .quiz-actions.fit { padding-bottom: 8px; }
 /* 설정: 위쪽에 붙는 바로가기, 카드 제목은 크게 */
 .set-nav {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
@@ -594,6 +598,9 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 /* 단어장: 볼 DAY 고르기 (가로로 넘기는 한 줄) · DAY 제목 */
 .day-pick { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 10px; padding: 2px 16px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .day-pick::-webkit-scrollbar { display: none; }
+/* 컴퓨터는 마우스 휠로 옆으로 못 넘기니 DAY 줄·설정 바로가기를 여러 줄로 다 보여 줌 */
+.desk .day-pick { flex-wrap: wrap; overflow: visible; margin: 0 0 10px; padding: 2px 0 4px; }
+.desk .set-nav { flex-wrap: wrap; overflow: visible; }
 .dp { flex: none; min-width: 42px; height: 34px; padding: 0 10px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--card); color: var(--muted); font-size: 14px; font-weight: 700; }
 .dp.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .day-head { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 4px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
@@ -719,7 +726,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .np-display { display: flex; align-items: baseline; justify-content: center; gap: 4px; margin: 6px 0 2px; }
 .np-display b { font-size: 44px; font-weight: 800; letter-spacing: .02em; min-width: 1ch; }
 .np-display span { color: var(--muted); }
-.np-hint { font-size: 12px; margin-bottom: 10px; }
+.np-hint { font-size: 12px; margin-bottom: 10px; text-wrap: balance; word-break: keep-all; }
 .np-chips { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .np-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .np-key { height: 52px; border: 0; border-radius: 12px; background: var(--bg); color: var(--text); font-size: 22px; font-weight: 600; }
@@ -829,3 +836,6 @@ body[data-tint] {
   .kb-row { margin-bottom: 5px; }
 }
 .book-search { padding: 11px 14px; font-size: 16px; }
+
+/* 예문 한 칸에 문장이 여럿일 때: 문장마다 줄을 나누고 해석을 바로 아래에 */
+.sent.multi .sent-part + .sent-part { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }

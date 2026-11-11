@@ -887,7 +887,7 @@ function underlineCard(b, ko, n, src, showKo) {
   const card = el('div', 'sent');
   const head = el('div', 'sent-head');
   head.appendChild(el('span', 'num', `예문 ${n}` + (src ? ` · ${src}` : '')));
-  if (showKo) head.appendChild(speakBtn(b.segs.map(x => x.v).join('')));
+  if (showKo) head.appendChild(speakBtn(speakText(b.segs)));
   card.appendChild(head);
   const en = el('div', 'en');
   for (const x of b.segs) en.appendChild(x.t === 'text' ? document.createTextNode(x.v) : el('u', 'ul', x.v));
@@ -962,6 +962,7 @@ function renderSynQuestion(w) {
     });
     actions.appendChild(b);
   });
+  fitChoices();
 }
 
 // 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (틀리면 3~5문제 뒤에 다시)
@@ -1049,7 +1050,9 @@ function renderQuestion() {
     if (!b || !b.segs.length) return;
     box.appendChild(sentenceCard(b, ko, i + 1, false, false, w, i ? w.ex2src : w.ex1src));
   });
-  document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요' : '빈칸에 공통으로 들어갈 말은?';
+  document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요'
+    : { same: '빈칸에 공통으로 들어갈 말은?', single: '빈칸에 들어갈 말은?',
+      diff: settings.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2)];
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
 
   const mEl = $('#q-meaning');
@@ -1075,7 +1078,40 @@ function renderQuestion() {
       else delete actions.dataset.lean;
       $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
     }
+    fitChoices();
   }
+}
+
+// 빈칸에 들어갈 말이 모든 문장에서 같은 꼴인지 (deteriorated / deteriorate처럼 다르면 '공통으로'라고 묻지 않음)
+// 'same' 여러 번 나오는데 다 같은 꼴 · 'diff' 꼴이 다름 · 'single' 한 번만 나옴
+function blankForms(b1, b2) {
+  const bs = [b1, b2].filter(b => b && b.ok && b.blanks.length);
+  if (!bs.length) return 'single';
+  const unit = blankUnit(bs[0].blanks).map(x => x.toLowerCase());
+  if (!bs.every(b => b.blanks.every((x, i) => x.toLowerCase() === unit[i % unit.length]))) return 'diff';
+  return bs.length > 1 || bs[0].blanks.length > unit.length ? 'same' : 'single';
+}
+
+// 4지선다 '보기 풀이': 정답과 내가 고른 보기가 각각 무슨 단어·뜻인지 (틀렸거나 힌트를 썼을 때 정답 시트에)
+function choiceNotes(choices, right, picked) {
+  const card = el('div', 'fb-card opts');
+  card.appendChild(el('b', null, '보기 풀이'));
+  for (const c of choices) {
+    const ok = c === right, mine = c === picked && !ok;
+    const row = el('div', 'opt' + (ok ? ' ok' : '') + (mine ? ' picked' : ''));
+    row.append(el('span', 'opt-ic', ok ? '✓' : mine ? '✕' : '·'), el('b', null, WORD ? c.word : displayAnswer(c)),
+      el('span', 'muted', `${shortMeaning(c.meaning) || c.meaning} · DAY ${c.day}`));
+    card.appendChild(row);
+  }
+  return card;
+}
+
+// 컴퓨터: 선지가 창 아래로 넘치면(낮은 창, 긴 예문) 2×2로 줄여서 한 화면에
+function fitChoices() {
+  if (!DESK) return;
+  const actions = $('#q-actions');
+  actions.classList.remove('fit');
+  if (actions.querySelector('.choice') && actions.getBoundingClientRect().bottom > window.innerHeight - 8) actions.classList.add('fit');
 }
 
 // ---------- 단어 모드: 단어를 보고 뜻 맞히기 ----------
@@ -1121,7 +1157,7 @@ function renderWordQuestion(w) {
   $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderMeaningTyping(actions);
-  else renderMeaningChoices(actions);
+  else { renderMeaningChoices(actions); fitChoices(); }
 }
 
 function renderMeaningChoices(actions) {
@@ -1130,6 +1166,7 @@ function renderMeaningChoices(actions) {
   let opts = pickMeaningDistractors(w, pool, 3);
   if (opts.length < 3) opts = opts.concat(pickMeaningDistractors(w, words, 3).filter(o => !opts.some(x => x.meaning === o.meaning))).slice(0, 3);
   const choices = shuffle([w, ...opts]);
+  q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
     b.append(el('span', 'n', i + 1), el('span', null, c.meaning));
@@ -1141,6 +1178,7 @@ function renderMeaningChoices(actions) {
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
       q.answered = true;
+      q.picked = c;
       q.userAnswer = c.meaning; // '왜 틀렸어?'에 씀
       q.how = 'choice';
       if (ok && q.usedHint) answer(false, null, 'hint');
@@ -1227,31 +1265,66 @@ function meaningText(w) {
   return [w.pos, formatMeaning(w.meaning)].filter(Boolean).join(' ');
 }
 
+// 예문 한 칸에 문장이 여럿이면(" / "로 이어 적음) 문장마다 나눔. segs를 문장별 묶음으로
+const SENT_SEP = /\s+\/\s+/;
+function splitSegs(segs) {
+  const parts = [[]];
+  for (const s of segs) {
+    if (s.t !== 'text') { parts[parts.length - 1].push(s); continue; }
+    s.v.split(SENT_SEP).forEach((v, i) => {
+      if (i) parts.push([]);
+      if (v) parts[parts.length - 1].push({ t: 'text', v });
+    });
+  }
+  return parts.filter(p => p.length);
+}
+// 읽어 줄 때 " / "를 '슬래시'로 읽지 않게
+const speakText = segs => segs.map(s => s.v).join('').replace(/\s+\/\s+/g, '. ').replace(/\.\. /g, '. ');
+
 function sentenceCard(b, ko, n, filled, wrongAnswer, w, src) {
   const card = el('div', 'sent');
   const head = el('div', 'sent-head');
   head.appendChild(el('span', 'num', `예문 ${n}` + (src ? ` · ${src}` : '')));
-  if (filled) head.appendChild(speakBtn(b.segs.map(s => s.v).join('')));
+  if (filled) head.appendChild(speakBtn(speakText(b.segs)));
   card.appendChild(head);
-  const en = el('div', 'en');
-  for (const s of b.segs) {
-    if (s.t === 'text') en.appendChild(document.createTextNode(s.v));
-    else {
-      // 빈칸 폭 = 정답 단어 폭: 정답을 안 보이게 깔고(sz) 그 위에 입력/정답을 겹쳐 씀(fl)
-      const span = el('span', 'blank');
-      span.dataset.i = s.i;
-      span.append(el('span', 'sz', s.v || '\u00a0\u00a0\u00a0'), el('span', 'fl', filled ? s.v : ''));
-      if (filled) span.classList.add('filled');
-      if (filled && wrongAnswer) span.classList.add('bad');
-      en.appendChild(span);
+  const enLine = segs => {
+    const en = el('div', 'en');
+    for (const s of segs) {
+      if (s.t === 'text') en.appendChild(document.createTextNode(s.v));
+      else {
+        // 빈칸 폭 = 정답 단어 폭: 정답을 안 보이게 깔고(sz) 그 위에 입력/정답을 겹쳐 씀(fl)
+        const span = el('span', 'blank');
+        span.dataset.i = s.i;
+        span.append(el('span', 'sz', s.v || '\u00a0\u00a0\u00a0'), el('span', 'fl', filled ? s.v : ''));
+        if (filled) span.classList.add('filled');
+        if (filled && wrongAnswer) span.classList.add('bad');
+        en.appendChild(span);
+      }
     }
-  }
-  card.appendChild(en);
-  if (ko) {
+    return en;
+  };
+  const koLine = text => {
     const k = el('div', 'ko' + (!filled && !settings.showKo ? ' hide' : ''));
-    for (const s of highlightMeaning(ko, w && w.meaning, w && w.koMark)) k.appendChild(s.t === 'mark' ? el('b', 'ko-mark', s.v) : document.createTextNode(s.v));
+    for (const s of highlightMeaning(text, w && w.meaning, w && w.koMark)) k.appendChild(s.t === 'mark' ? el('b', 'ko-mark', s.v) : document.createTextNode(s.v));
     if (!filled && !settings.showKo) k.addEventListener('click', () => k.classList.remove('hide'));
-    card.appendChild(k);
+    return k;
+  };
+  const parts = splitSegs(b.segs);
+  const kos = ko ? String(ko).split(SENT_SEP) : [];
+  if (parts.length > 1) {
+    // 해석도 같은 수로 나뉘면 문장 바로 아래에 하나씩, 아니면 맨 아래에 한꺼번에
+    const paired = kos.length === parts.length;
+    card.classList.add('multi');
+    parts.forEach((segs, i) => {
+      const part = el('div', 'sent-part');
+      part.appendChild(enLine(segs));
+      if (paired) part.appendChild(koLine(kos[i]));
+      card.appendChild(part);
+    });
+    if (ko && !paired) card.appendChild(koLine(ko));
+  } else {
+    card.appendChild(enLine(b.segs));
+    if (ko) card.appendChild(koLine(ko));
   }
   return card;
 }
@@ -1285,6 +1358,7 @@ function renderChoices(actions) {
   let opts = pickDistractors(w, pool, 3);
   if (opts.length < 3) opts = opts.concat(pickDistractors(w, words, 3).filter(o => !opts.includes(o))).slice(0, 3);
   const choices = shuffle([w, ...opts]);
+  q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
     b.append(el('span', 'n', i + 1), el('span', null, displayAnswer(c)));
@@ -1296,6 +1370,7 @@ function renderChoices(actions) {
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
       q.answered = true;
+      q.picked = c;
       if (ok && q.usedHint) answer(false, null, 'hint');
       else answer(ok, ok ? null : displayAnswer(c));
     });
@@ -1628,6 +1703,7 @@ function useHint() {
   if (WORD || q.syn) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
   if (q.typing) {
     if (q.revealed) return;
+    hideCoach(); // 힌트로 글자가 바뀌니 앞의 말풍선(… 한 글자 달라요)은 치움
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
     const cur = q.typing.get();
     let k = 0;
@@ -1761,7 +1837,10 @@ function showFeedback(correct, given, kind, label) {
     $('.quiz-body').style.paddingBottom = '';
   }
 
-  openSheet(w, WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline() ? [explainBox(q)] : []);
+  const more = [];
+  if (q.choices && !correct) more.push(choiceNotes(q.choices, w, q.picked));
+  if (WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline()) more.push(explainBox(q));
+  openSheet(w, more);
 }
 
 // 아래 정답 시트: 단어, 발음, 뜻/예문 탭. more = 뜻 카드 바로 아래에 넣을 카드
@@ -1943,6 +2022,7 @@ function wordItem(w, view = bookView(), onMark) {
   head.append(main, markBtn(w.id, onMark), speakBtn(w.word));
   item.appendChild(head);
   item.addEventListener('click', () => {
+    if (!ui.bookOpened) { ui.bookOpened = true; save(UI_KEY, ui); const tip = $('#list-tip'); if (tip) tip.hidden = true; }
     if (item.classList.toggle('open')) {
       const det = el('div', 'detail');
       [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].forEach(([en, ko], i) => {
@@ -2036,9 +2116,14 @@ function renderBookDays(scrollToSel) {
   } else box.scrollLeft = keep;
 }
 
+// 단어장 목록은 길어서(1000단어) 처음 몇 십 개만 바로 그리고 나머지는 화면이 멈추지 않게 조금씩 이어 그림
+let listRun = 0;
+const LIST_FIRST = 30, LIST_STEP = 60;
 function renderList(scrollToSel) {
   renderBookDays(scrollToSel);
   setSeg('#seg-filter', listFilter);
+  $('#list-tip').hidden = !!ui.bookOpened; // '누르면 펼쳐져요' 안내는 한 번 펼쳐 보면 그만
+  const run = ++listRun; // 다시 그리기 시작하면 앞에서 이어 그리던 건 그만
   const box = $('#word-list');
   box.innerHTML = '';
   const view = bookView();
@@ -2067,20 +2152,23 @@ function renderList(scrollToSel) {
   const updateTest = () => {
     const n = bw.filter(w => isUnknown(w.id)).length;
     const b = $('#btn-unknown-test');
-    b.hidden = bookOnly != null && !n; // DAY 단어장에선 형광펜 친 단어가 있을 때만
+    // 형광펜 친 단어가 없으면 버튼을 숨겨 목록 자리를 넓힘 (형광펜 탭에서는 안내로 남김)
+    b.hidden = !n && listFilter !== 'unknown';
     b.disabled = !n;
     b.textContent = n ? `형광펜 친 단어만 테스트 (${n})` : '형광펜 친 단어가 없어요';
+    b.closest('.sticky-bottom').hidden = b.hidden && acts.hidden;
   };
-  // DAY마다 제목(단어 수)으로 나눠서
+  // DAY마다 제목(단어 수)으로 나눠서. 기록이 있는 DAY에만 '기록 지우기'
   const count = {};
   for (const w of filtered) count[w.day] = (count[w.day] || 0) + 1;
+  const hasRec = new Set(words.filter(w => view(w.id).seen).map(w => w.day));
   let lastDay = null;
-  for (const w of filtered) {
+  const add = w => {
     if (w.day !== lastDay) {
       const h = el('div', 'day-head');
       h.append(el('b', null, `DAY ${w.day}`), el('span', null, `${count[w.day]}단어`));
       const d = w.day;
-      if (dayHasRecords(d)) {
+      if (hasRec.has(d)) {
         const del = el('button', 'day-del', '기록 지우기');
         del.addEventListener('click', () => deleteDayRecords(d));
         h.appendChild(del);
@@ -2089,7 +2177,14 @@ function renderList(scrollToSel) {
       lastDay = w.day;
     }
     box.appendChild(wordItem(w, view, updateTest));
-  }
+  };
+  let i = 0;
+  const step = n => {
+    if (run !== listRun) return;
+    for (const end = Math.min(filtered.length, i + n); i < end; i++) add(filtered[i]);
+    if (i < filtered.length) setTimeout(() => step(LIST_STEP), 0);
+  };
+  step(LIST_FIRST);
   updateTest();
 }
 
@@ -2191,32 +2286,73 @@ function renderAiStatus() {
     : WORD ? 'AI 연결됨 · 규칙 채점에서 오답이 나오면 AI가 다시 확인해요' : 'AI 연결됨 · 직접 입력에서 틀리면 AI가 왜 안 맞는지 말풍선으로 알려줘요';
 }
 
+// 백업 파일 하나에 예문·단어 두 모드의 진도·학습 설정과 형광펜을 모두 담음 (예전 파일은 한 모드만 들어 있음)
 function exportProgress() {
-  const data = JSON.stringify({ app: WORD ? 'voca-word' : 'voca', v: 1, at: new Date().toISOString(), stats, settings, marks }, null, 0);
+  const mine = { stats: allStats(), settings };
+  const other = { stats: load(OTHER_P + 'stats.v1', {}), settings: load(OTHER_P + 'settings.v1', {}) };
+  const data = JSON.stringify({ app: 'voca-all', v: 2, at: new Date().toISOString(), ex: WORD ? other : mine, word: WORD ? mine : other, marks }, null, 0);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `voca-${WORD ? 'word-' : ''}backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `voca-backup-${dateStr()}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+// 백업 파일에 든 모드별 묶음 { ex?, word? }. 새 형식(두 모드)과 예전 형식(한 모드) 모두 읽음
+function backupParts(data) {
+  const okPart = p => p && p.stats && typeof p.stats === 'object' && !Array.isArray(p.stats);
+  const parts = {};
+  if (data && data.app === 'voca-all') { for (const m of ['ex', 'word']) if (okPart(data[m])) parts[m] = data[m]; }
+  else if (okPart(data)) parts[data.app === 'voca-word' ? 'word' : 'ex'] = { stats: data.stats, settings: data.settings };
+  return parts;
+}
+
 async function importProgress(file) {
   try {
     const data = JSON.parse(await file.text());
-    if (!data || typeof data.stats !== 'object') throw new Error();
-    if ((data.app === 'voca-word') !== WORD) { // 다른 모드의 백업
-      toast(WORD ? '예문 모드 백업 파일이에요. 예문 모드 설정에서 불러와 주세요' : '단어 모드 백업 파일이에요. 단어 모드 설정에서 불러와 주세요', 3500);
-      return;
+    const parts = backupParts(data);
+    const modes = Object.keys(parts);
+    if (!modes.length) throw new Error();
+    const name = m => (m === 'word' ? '단어' : '예문');
+    const count = m => Object.values(parts[m].stats).filter(v => v && !v.del).length;
+    const missing = ['ex', 'word'].filter(m => !parts[m]);
+    if (!(await ask({
+      title: '백업으로 덮어쓸까요?',
+      body: `${modes.map(m => `${name(m)} 모드 ${count(m)}단어`).join(' · ')}의 진도와 학습 설정이 백업 파일의 것으로 바뀌어요.`
+        + (missing.length ? `\n이 파일에는 ${name(missing[0])} 모드 진도가 없어서 그쪽은 그대로 둬요.` : '')
+        + (sync.enabled ? '\n동기화된 다른 기기의 진도도 백업의 것으로 바뀌어요.' : ''),
+      ok: '덮어쓰기', danger: true,
+    }))) return;
+    const now = Date.now();
+    // 동기화 중이면 '초기화한 시각'과 기록 시각을 지금으로 맞춰서, 합칠 때 다른 기기의 기록이 아니라 백업이 남게 함
+    // (그냥 두면 더 최근 기록과 섞이고, 초기화한 뒤 불러온 백업은 초기화 전 기록이라 다시 지워짐)
+    const stamp = sync.enabled;
+    const norm = st => Object.fromEntries(Object.entries(st).map(([k, v]) => [k, v && v.del ? v : normalizeStat(v)])
+      .filter(([, v]) => v).map(([k, v]) => [k, stamp ? { ...v, s: now } : v]));
+    // 되돌린 설정이 동기화에서 예전 것으로 밀리지 않게 바꾼 시각을 지금으로
+    const prefs = st => (st && typeof st === 'object' ? { ...st, prefsAt: now, examAt: now } : null);
+    const mineKey = WORD ? 'word' : 'ex';
+    for (const m of modes) {
+      const p = parts[m];
+      if (m === mineKey) {
+        setAllStats(norm(p.stats));
+        saveStats();
+        if (stamp) { resetAt = now; save(KEY.resetAt, resetAt); }
+        if (prefs(p.settings)) { Object.assign(settings, prefs(p.settings)); saveSettings(); }
+        localStorage.removeItem(KEY.session); // 하던 학습은 예전 진도 기준이라 지움
+      } else {
+        save(OTHER_P + 'stats.v1', norm(p.stats));
+        if (stamp) save(OTHER_P + 'resetAt.v1', now);
+        if (prefs(p.settings)) save(OTHER_P + 'settings.v1', { ...load(OTHER_P + 'settings.v1', {}), ...prefs(p.settings) });
+        localStorage.removeItem(OTHER_P + 'session.v1');
+      }
     }
-    if (!(await ask({ title: '백업으로 덮어쓸까요?', body: '지금 이 기기의 진도가 백업 파일의 진도로 바뀌어요.', ok: '덮어쓰기', danger: true }))) return;
-    setAllStats(Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, v && v.del ? v : normalizeStat(v)])));
-    saveStats();
     if (data.marks && typeof data.marks === 'object') { marks = mergeMarks(marks, data.marks); save(KEY.marks, marks); }
     sync.now();
-    toast('진도를 불러왔어요');
+    toast(`${modes.map(name).join('·')} 모드 진도를 불러왔어요`);
     renderSettings();
   } catch {
     toast('백업 파일을 읽을 수 없어요');
@@ -2321,7 +2457,13 @@ function bind() {
     toast('지웠어요');
   });
   $('#btn-list').addEventListener('click', () => { bookOnly = null; listFilter = 'all'; bookQuery = ''; $('#book-search').value = ''; show('list'); renderList(true); });
-  $('#book-search').addEventListener('input', e => { bookQuery = e.target.value; renderList(); });
+  // 검색: 글자를 칠 때마다 다시 그리지 않고 잠깐 멈추면 한 번
+  let searchT = null;
+  $('#book-search').addEventListener('input', e => {
+    bookQuery = e.target.value;
+    clearTimeout(searchT);
+    searchT = setTimeout(() => renderList(), 140);
+  });
   $('#btn-day-syn').addEventListener('click', () => { if (bookOnly != null) startSynSession(bookOnly); });
   $('#btn-day-study').addEventListener('click', () => { if (bookOnly != null) startDayStudy(bookOnly); });
   $('#btn-list-back').addEventListener('click', () => goHome());
@@ -2408,9 +2550,9 @@ function bind() {
   $('#import-file').addEventListener('change', e => { if (e.target.files[0]) importProgress(e.target.files[0]); e.target.value = ''; });
   $('#btn-reset').addEventListener('click', async () => {
     if (!(await ask({
-      title: '정말 모든 진도를 지울까요?',
-      body: (sync.enabled ? '동기화된 다른 기기의 진도도 함께 지워져요.\n' : '') + '지운 진도는 되돌릴 수 없어요.',
-      ok: '모두 지우기', danger: true,
+      title: `${WORD ? '단어' : '예문'} 모드 진도를 모두 지울까요?`,
+      body: `${WORD ? '예문' : '단어'} 모드 진도와 형광펜은 그대로 남아요.\n` + (sync.enabled ? '동기화된 다른 기기에서도 함께 지워져요.\n' : '') + '지운 진도는 되돌릴 수 없어요.',
+      ok: '지우기', danger: true,
     }))) return;
     stats = {}; tombs = {};
     resetAt = Date.now(); // 다른 기기의 예전 기록도 함께 지워지게
@@ -2418,7 +2560,7 @@ function bind() {
     saveStats();
     sync.now();
     localStorage.removeItem(KEY.session);
-    toast('진도를 초기화했어요');
+    toast(`${WORD ? '단어' : '예문'} 모드 진도를 초기화했어요`);
   });
   $('#btn-reload').addEventListener('click', async () => {
     await loadData();

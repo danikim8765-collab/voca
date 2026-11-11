@@ -550,3 +550,52 @@ test('동기화: 시험일은 다른 설정과 따로 examAt이 최신인 쪽으
   const cleared = mergeProgress({ stats: {}, prefs: { exam: '', examAt: 9, at: 1 } }, { stats: {}, prefs: { exam: 'B', examAt: 5, at: 2 } });
   assert.equal(cleared.prefs.exam, '');
 });
+
+test('뜻 채점: [ ] 안의 바꿔 쓸 수 있는 말도 정답', async () => {
+  const { gradeMeaning, meaningSenses } = await import('../js/core.js');
+  // 앞 낱말을 바꿈
+  assert.equal(gradeMeaning('구별하다', '1. 차별하다 2. 식별[구별]하다', 'easy').score, 2);
+  assert.equal(gradeMeaning('차별하다, 구별하다', '1. 차별하다 2. 식별[구별]하다', 'mid').score, 2);
+  assert.equal(gradeMeaning('전문 기술', '전문 지식[기술]', 'mid').score, 2);
+  assert.equal(gradeMeaning('전문기술', '전문 지식[기술]', 'mid').score, 2); // 붙여 써도
+  assert.equal(gradeMeaning('전문지식', '전문 지식[기술]', 'mid').score, 2);
+  assert.equal(gradeMeaning('화면', '관찰하다, 감시하다 / 모니터[화면], 감시 장치', 'easy').score, 2);
+  // 앞말 전체를 바꿈 · 어미만 바꿈
+  assert.equal(gradeMeaning('집착하다', '((주로 수동태로)) 사로잡다, 집착하게 하다[집착하다]', 'easy').score, 2);
+  assert.equal(gradeMeaning('진정되다', '1. 정착하다 2. 진정하다[되다]', 'easy').score, 2);
+  assert.equal(gradeMeaning('되다', '1. 정착하다 2. 진정하다[되다]', 'easy').score, 0); // 어미만 써서는 안 됨
+  // 엄격: 바꿔 쓴 꼴은 하나만 써도 그 낱말을 쓴 것
+  assert.equal(gradeMeaning('차별하다 구별하다', '1. 차별하다 2. 식별[구별]하다', 'hard').score, 2);
+  assert.equal(gradeMeaning('구별하다', '1. 차별하다 2. 식별[구별]하다', 'hard').score, 1);
+  // 분야 표시 [생물]은 뜻이 아님
+  assert.equal(gradeMeaning('생물', '1. [생물] 조직 2. 화장지, 얇은 종이', 'easy').score, 0);
+  assert.equal(gradeMeaning('조직', '1. [생물] 조직 2. 화장지, 얇은 종이', 'easy').score, 2);
+  assert.deepEqual(meaningSenses('통합[통일]하다'), [['통합', '통일']]);
+  // 오타는 자모 하나쯤만 봐줌: 한 글자가 통째로 다른 말은 다른 뜻
+  assert.equal(gradeMeaning('수출하다', '수입하다', 'easy').score, 0);
+  assert.equal(gradeMeaning('군대', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 0);
+  assert.equal(gradeMeaning('명학한', '명확한, 확고한', 'easy').score, 2); // ㅘ → ㅏ 오타
+  assert.equal(gradeMeaning('치명적잉', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 2);
+  // 상관없는 말은 여전히 오답
+  assert.equal(gradeMeaning('행복하다', '1. 차별하다 2. 식별[구별]하다', 'easy').score, 0);
+});
+
+test('4지선다 보기: 예문에서 쓰인 품사와 같은 단어부터 (문장 구조로 답이 드러나지 않게)', () => {
+  const mk = (word, meaning, ex1ko = '') => ({ id: `1|${word}`, day: 1, word, blank: word, meaning, ex1ko });
+  const pool = [
+    mk('fatal', '1. 치명적인 2. 결정적인, 중대한', '그 치명적인 사고의 원인은 안개였다.'),
+    mk('definite', '명확한, 확고한'), mk('intense', '극심한, 강렬한'), mk('abnormal', '비정상적인, 이상한'), mk('fierce', '사나운, 흉포한'),
+    mk('outlaw', '불법화하다, 금지하다'), mk('import', '수입하다 / 1. 수입, 수입품'), mk('unify', '통합하다'), mk('convict', '유죄를 선고하다'),
+    mk('organ', '장기, 기관'), mk('tissue', '조직'), mk('pollen', '꽃가루'), mk('heritage', '유산, 전통'),
+    // 뜻이 품사 둘인 단어: 예문 해석으로 동사 쪽임을 앎
+    mk('decay', '1. 부패, 부식 2. 쇠퇴 / 1. 부패하다, 썩다 2. 쇠퇴하다', '설탕은 이를 썩게 한다.'),
+  ];
+  const adj = new Set(['definite', 'intense', 'abnormal', 'fierce']);
+  for (let i = 0; i < 30; i++) {
+    const picked = pickDistractors(pool[0], pool, 3);
+    assert.ok(picked.every(w => adj.has(w.word)), `fatal: ${picked.map(w => w.word)}`);
+  }
+  // 품사를 모르는 단어(뜻 없음)는 따지지 않고 그대로 뽑힘
+  const bare = ['alpha', 'bravo', 'delta', 'gamma'].map(w => ({ id: `1|${w}`, day: 1, word: w, blank: w }));
+  assert.equal(pickDistractors(bare[0], bare, 3).length, 3);
+});
