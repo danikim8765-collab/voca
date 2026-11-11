@@ -599,3 +599,41 @@ test('4지선다 보기: 예문에서 쓰인 품사와 같은 단어부터 (문�
   const bare = ['alpha', 'bravo', 'delta', 'gamma'].map(w => ({ id: `1|${w}`, day: 1, word: w, blank: w }));
   assert.equal(pickDistractors(bare[0], bare, 3).length, 3);
 });
+
+test('단어 코치 일정: 남은 날을 배우는 날과 훑는 날로 알맞게 나눔', async () => {
+  const { coachPlan, addDays, daysBetween } = await import('../js/core.js');
+  const today = '2026-11-11';
+  const plan = (d, total, remaining) => coachPlan({ today, exam: addDays(today, d), total, remaining });
+  // 시험이 2주 남았으면 목표일이 4일 뒤처럼 너무 이르지도, 시험 전날처럼 너무 늦지도 않게
+  const p = plan(14, 200, 200);
+  assert.equal(p.learnDays + p.reviewDays, 14);
+  assert.ok(p.learnDays >= 9 && p.learnDays <= 12, `배우는 날 ${p.learnDays}`);
+  assert.ok(p.reviewDays >= 2, `훑는 날 ${p.reviewDays}`);
+  assert.equal(p.goal, addDays(today, p.learnDays));
+  assert.equal(p.perDay, Math.ceil(200 / p.learnDays));
+  assert.equal(p.load, 'ok');
+  // 많이 배워 뒀으면 훑는 날이 늘어남
+  assert.ok(plan(14, 200, 50).reviewDays > p.reviewDays);
+  // 다 배웠으면 오늘부터 훑기
+  assert.deepEqual([plan(14, 200, 0).goal, plan(14, 200, 0).perDay], [today, 0]);
+  // 시험이 멀면 늘어지지 않게 하루 10개로 당겨 끝냄
+  const far = plan(90, 200, 200);
+  assert.equal(far.perDay, 10);
+  assert.equal(far.learnDays, 20);
+  // 날이 모자라면 벅차다고 알려 줌 (그래도 훑는 날은 남김)
+  const tight = plan(14, 1000, 1000);
+  assert.equal(tight.load, 'heavy');
+  assert.ok(tight.reviewDays >= 2);
+  // 시험 전날: 훑는 날 없이 오늘 하루
+  assert.deepEqual([plan(1, 40, 40).learnDays, plan(1, 40, 40).reviewDays], [1, 0]);
+  // 목표일은 언제나 오늘 뒤 ~ 시험일 사이
+  for (const d of [1, 2, 3, 5, 7, 10, 14, 21, 30, 60]) for (const r of [1, 30, 200, 600]) {
+    const x = plan(d, 600, r);
+    assert.ok(x.goal > today && x.goal <= addDays(today, d), `${d}일, 남은 ${r}: ${x.goal}`);
+    assert.equal(daysBetween(today, x.goal), x.learnDays);
+    assert.ok(x.perDay * x.learnDays >= r);
+  }
+  // 시험일이 없거나 지났으면 일정 없음
+  assert.equal(coachPlan({ today, exam: '', total: 10, remaining: 10 }), null);
+  assert.equal(coachPlan({ today, exam: today, total: 10, remaining: 10 }), null);
+});

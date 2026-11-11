@@ -839,3 +839,23 @@ body[data-tint] {
 
 /* 예문 한 칸에 문장이 여럿일 때: 문장마다 줄을 나누고 해석을 바로 아래에 */
 .sent.multi .sent-part + .sent-part { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+
+/* 단어 코치 '콩이': 홈 맨 위에서 말풍선으로 오늘 분량을 알려 줌 */
+.kong-card { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 12px; }
+.kong-char { flex: none; width: 60px; height: 60px; padding: 0; border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.kong-svg { display: block; width: 100%; height: 100%; image-rendering: pixelated; animation: kong-bob 2.4s steps(2, end) infinite; }
+.kong-char.hop .kong-svg { animation: kong-hop .45s ease-out; }
+@keyframes kong-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes kong-hop { 0% { transform: translateY(0); } 40% { transform: translateY(-10px); } 100% { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .kong-svg, .kong-char.hop .kong-svg { animation: none; } }
+.kong-say { position: relative; flex: 1; min-width: 0; background: var(--card); border-radius: 16px 16px 16px 4px; padding: 10px 14px 12px; box-shadow: var(--shadow); }
+.kong-name { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+.kong-text { font-size: 15px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
+.kong-acts { display: flex; gap: 8px; margin-top: 10px; }
+.kong-acts .btn { width: auto; margin: 0; padding: 7px 14px; font-size: 14px; }
+.res-kong { width: 72px; height: 72px; margin: 0 auto 6px; }
+.res-kong .kong-svg { animation: kong-hop .6s ease-out 2; }
+.coach-row { margin-bottom: 6px; }
+#btn-coach-replan { margin: 0 0 8px; }
+.kp-k { fill: #4a3728; } .kp-b { fill: #ffe7b3; } .kp-s { fill: #f3c877; } .kp-w { fill: #fffaf0; } .kp-g { fill: #6fd17a; } .kp-d { fill: #35a557; }
+.kp-e { fill: #3a2a2a; } .kp-m { fill: #b5553f; } .kp-p { fill: #ff9db0; } .kp-t { fill: #6bb8ff; } .kp-z { fill: #8a93a8; } .kp-y { fill: #ffc93c; }

@@ -64,6 +64,16 @@
         </div>
       </div>
 
+      <!-- 단어 코치 '콩이': 시험일에 맞춘 오늘 분량을 말해 줌 (설정에서 끌 수 있음. 꺼져 있으면 한 번만 켤지 물어봄) -->
+      <div id="kong-card" class="kong-card" hidden>
+        <button class="kong-char" id="kong-char" aria-label="단어 코치 콩이"></button>
+        <div class="kong-say">
+          <div class="kong-name">단어 코치 콩이</div>
+          <div class="kong-text" id="kong-text" role="status"></div>
+          <div class="kong-acts" id="kong-acts"></div>
+        </div>
+      </div>
+
       <!-- 오늘: 학습 → 복습 → 더 하기 순서로 한 카드 안에서 바뀜 -->
       <div class="card today" id="card-today">
         <div class="today-head">
@@ -166,7 +176,8 @@
         </div>
       </div>
       <div id="regular-opts">
-      <div class="label">하루 새 단어 수</div>
+      <label class="switch-row coach-row"><span>단어 코치 <span class="muted">(시험일에 맞춰 목표일·하루 분량을 짜 줘요)</span></span><input type="checkbox" role="switch" class="switch" id="opt-coach-plan"></label>
+      <div class="label">하루 새 단어 수 <span class="muted" id="coach-new-note" hidden></span></div>
       <div class="seg" id="seg-new">
         <button data-v="10">10</button>
         <button data-v="20">20</button>
@@ -236,6 +247,7 @@
   <section id="result" class="screen">
     <header class="top"><h1 id="res-title">학습 끝</h1></header>
     <div class="card center res-cheer">
+      <div class="res-kong" id="res-kong" hidden></div>
       <div class="cheer">공부하느라 수고하셨어요</div>
       <div class="muted" id="res-detail"></div>
     </div>
@@ -323,10 +335,15 @@
     </div>
     <div class="card" id="srs-card">
       <div class="label">복습 방식</div>
+      <label class="switch-row"><span>단어 코치 <span class="muted">(시험일만 정하면 목표일·하루 분량을 짜 줘요)</span></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
+      <p class="muted srs-desc" id="coach-plan" hidden></p>
+      <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
+      <div id="srs-manual">
       <label class="switch-row"><span>주기 복습 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
       <p class="muted srs-desc">고른 주기대로 복습일이 된 단어를 목표일까지 계속 복습하고, 목표일부터 시험 전날까지는 학습 범위 전부를 남은 날에 나눠 한 번씩 복습해요.</p>
+      </div>
       <div class="srs-dates">
-        <label>목표일 <span class="muted">(새 단어를 끝낼 날)</span><input type="date" id="goal-date" class="date-input"></label>
+        <label id="goal-label">목표일 <span class="muted">(새 단어를 끝낼 날)</span><input type="date" id="goal-date" class="date-input"></label>
         <label>시험일<input type="date" id="srs-exam-date" class="date-input"></label>
       </div>
       <p class="srs-warn" id="srs-warn" hidden></p>

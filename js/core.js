@@ -512,6 +512,38 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
   return { review, final, fresh, examInfo };
 }
 
+/**
+ * 단어 코치의 일정: 시험일까지 남은 날을 '새 단어를 배우는 날'과 '범위 전체를 다시 훑는 날'로 나눔.
+ *  total: 학습 범위 단어 수, remaining: 아직 안 배운 단어 수 (오늘 배울 것 포함)
+ *  - 배우는 날의 하루 부담(새 단어 + 그 단어들의 주기 복습)과 훑는 날의 하루 부담(전체 ÷ 남은 날)이 비슷해지게 나눔:
+ *    새 단어 하나는 훑어보기 네 번쯤의 품이 든다고 보고, 훑는 날 : 배우는 날 = total : 4 × remaining
+ *    (처음부터면 남은 날의 1/5쯤이 훑는 날 — 2주 남았으면 11일 배우고 3일 훑음. 많이 배워 뒀으면 훑는 날이 늘어남)
+ *  - 훑는 날은 적어도 하루(엿새 넘게 남았으면 이틀)는 남김. 그래서 목표일이 시험 바로 전날이 되지 않음
+ *  - 하루 새 단어가 10개도 안 되게 늘어지면 하루 10개로 당겨 끝내고 남는 날은 훑는 데 씀
+ * 반환 { goal: 새 단어를 끝낼 날(이날부터 훑기), perDay, learnDays, reviewDays, days, finalPerDay, load: 'ok'|'busy'|'heavy' }
+ * 시험일이 없거나 오늘·지난 날이면 null
+ */
+export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0 } = {}) {
+  if (!exam || exam <= today) return null;
+  const days = daysBetween(today, exam); // 오늘부터 시험 전날까지
+  const left = Math.max(0, Math.min(total, remaining));
+  if (!left) return { goal: today, perDay: 0, learnDays: 0, reviewDays: days, days, finalPerDay: Math.ceil(total / days), load: 'ok' };
+  const minReview = days >= 6 ? 2 : days >= 2 ? 1 : 0;
+  let reviewDays = Math.min(days - 1, Math.max(minReview, Math.round(days * total / (total + 4 * left))));
+  let learnDays = days - reviewDays;
+  let perDay = Math.ceil(left / learnDays);
+  if (perDay < 10) {
+    perDay = Math.min(10, left);
+    learnDays = Math.ceil(left / perDay);
+    reviewDays = days - learnDays;
+  }
+  return {
+    goal: addDays(today, learnDays), perDay, learnDays, reviewDays, days,
+    finalPerDay: reviewDays ? Math.ceil(total / reviewDays) : 0,
+    load: perDay <= 40 ? 'ok' : perDay <= 80 ? 'busy' : 'heavy',
+  };
+}
+
 export const REVIEW_SIZE = 20; // 오늘의 복습 단어 수
 
 /**
