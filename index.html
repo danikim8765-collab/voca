@@ -340,7 +340,10 @@
       <p class="muted srs-desc" id="coach-plan" hidden></p>
       <div class="label" id="coach-chars-label" hidden>코치 캐릭터</div>
       <div class="coach-choices" id="coach-chars" role="radiogroup" aria-label="코치 캐릭터" hidden></div>
-      <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
+      <div class="row coach-btns">
+        <button class="btn ghost small" id="btn-coach-talk" hidden>일정 상의하기</button>
+        <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
+      </div>
       <div id="srs-manual">
       <label class="switch-row"><span>주기 복습 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
       <p class="muted srs-desc">고른 주기대로 복습일이 된 단어를 목표일까지 계속 복습하고, 목표일부터 시험 전날까지는 학습 범위 전부를 남은 날에 나눠 한 번씩 복습해요.</p>
@@ -470,6 +473,29 @@
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="cp-cancel">취소</button>
         <button class="btn dlg-ok" id="cp-ok">이 코치로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 일정 상의하기: 시험 전 전체 복습을 며칠 할지 코치와 정함 -->
+  <div class="dialog" id="coach-talk" role="dialog" aria-modal="true" aria-labelledby="ct-title" hidden>
+    <div class="dialog-card talk-card">
+      <div class="dlg-title" id="ct-title">코치와 일정 상의하기</div>
+      <div class="talk-say">
+        <div class="talk-char" id="ct-char"></div>
+        <div class="talk-bubble" id="ct-text" role="status"></div>
+      </div>
+      <div class="talk-label">시험 전 전체 복습</div>
+      <div class="talk-step">
+        <button class="np-key" id="ct-minus" aria-label="하루 줄이기">−</button>
+        <b id="ct-val" aria-live="polite"></b>
+        <button class="np-key" id="ct-plus" aria-label="하루 늘리기">+</button>
+      </div>
+      <div class="talk-sum" id="ct-sum"></div>
+      <button class="btn ghost small talk-auto" id="ct-auto"></button>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="ct-cancel">취소</button>
+        <button class="btn dlg-ok" id="ct-ok">이렇게 할게요</button>
       </div>
     </div>
   </div>
