@@ -219,6 +219,10 @@ button { cursor: pointer; }
 /* 컴퓨터에서 격자를 고르면 아래 고정 없이 2×2로 */
 .desk .quiz-actions[data-layout="grid"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .desk .quiz-actions[data-layout="grid"] .choice { margin: 0; }
+/* 컴퓨터: 한 줄씩 놓으면 창 아래로 넘칠 때(낮은 창, 긴 예문)는 2×2로 줄여서 한 화면에 (app.js fitChoices) */
+.desk .quiz-actions.fit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.desk .quiz-actions.fit .choice { margin: 0; padding: 11px 14px; }
+.desk #quiz.active > .quiz-actions.fit { padding-bottom: 8px; }
 /* 설정: 위쪽에 붙는 바로가기, 카드 제목은 크게 */
 .set-nav {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
@@ -594,6 +598,9 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 /* 단어장: 볼 DAY 고르기 (가로로 넘기는 한 줄) · DAY 제목 */
 .day-pick { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 10px; padding: 2px 16px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .day-pick::-webkit-scrollbar { display: none; }
+/* 컴퓨터는 마우스 휠로 옆으로 못 넘기니 DAY 줄·설정 바로가기를 여러 줄로 다 보여 줌 */
+.desk .day-pick { flex-wrap: wrap; overflow: visible; margin: 0 0 10px; padding: 2px 0 4px; }
+.desk .set-nav { flex-wrap: wrap; overflow: visible; }
 .dp { flex: none; min-width: 42px; height: 34px; padding: 0 10px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--card); color: var(--muted); font-size: 14px; font-weight: 700; }
 .dp.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .day-head { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 4px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
@@ -719,7 +726,7 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .np-display { display: flex; align-items: baseline; justify-content: center; gap: 4px; margin: 6px 0 2px; }
 .np-display b { font-size: 44px; font-weight: 800; letter-spacing: .02em; min-width: 1ch; }
 .np-display span { color: var(--muted); }
-.np-hint { font-size: 12px; margin-bottom: 10px; }
+.np-hint { font-size: 12px; margin-bottom: 10px; text-wrap: balance; word-break: keep-all; }
 .np-chips { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .np-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .np-key { height: 52px; border: 0; border-radius: 12px; background: var(--bg); color: var(--text); font-size: 22px; font-weight: 600; }
@@ -829,3 +836,38 @@ body[data-tint] {
   .kb-row { margin-bottom: 5px; }
 }
 .book-search { padding: 11px 14px; font-size: 16px; }
+
+/* 예문 한 칸에 문장이 여럿일 때: 문장마다 줄을 나누고 해석을 바로 아래에 */
+.sent.multi .sent-part + .sent-part { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+
+/* 단어 코치: 홈 맨 위에서 고른 캐릭터가 말풍선으로 오늘 분량을 알려 줌 (그림은 32×32 픽셀이라 2배·3배 크기로) */
+.buddy-card { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
+.buddy-char { flex: none; width: 64px; height: 64px; padding: 0; border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.buddy-svg { display: block; width: 100%; height: 100%; }
+.buddy-char .buddy-svg { animation: buddy-bob 2.4s steps(2, end) infinite; }
+.buddy-char.hop .buddy-svg { animation: buddy-hop .45s ease-out; }
+@keyframes buddy-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes buddy-hop { 0% { transform: translateY(0); } 40% { transform: translateY(-10px); } 100% { transform: translateY(0); } }
+.buddy-say { position: relative; flex: 1; min-width: 0; background: var(--card); border-radius: 16px 16px 16px 4px; padding: 10px 14px 12px; box-shadow: var(--shadow); }
+.buddy-name { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+.buddy-text { font-size: 15px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
+.buddy-acts { display: flex; gap: 8px; margin-top: 10px; }
+.buddy-acts .btn { width: auto; margin: 0; padding: 7px 14px; font-size: 14px; }
+.res-buddy { width: 96px; height: 96px; margin: 0 auto 4px; }
+.res-buddy .buddy-svg { animation: buddy-hop .6s ease-out 2; }
+/* 정답 시트에서 같이 반응하는 코치 */
+.fb-coach { flex: none; width: 48px; height: 48px; margin: -6px 8px -6px auto; }
+.fb-coach .buddy-svg { animation: buddy-hop .4s ease-out; }
+.fb-coach + .mark-btn { margin-left: 0; }
+/* 코치 고르기 (처음 켤 때의 창, 설정의 캐릭터 줄) */
+.coach-choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 14px 0 4px; }
+.coach-choice { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px; border: 2px solid var(--line); border-radius: 14px; background: var(--card); color: var(--muted); font-size: 12.5px; font-weight: 700; }
+.coach-choice .buddy-svg { width: 48px; height: 48px; }
+.coach-choice.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+#coach-pick .coach-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+#coach-pick .coach-choice .buddy-svg { width: 64px; height: 64px; }
+#coach-pick .coach-choice.on .buddy-svg { animation: buddy-hop .4s ease-out; }
+#settings .coach-choices { margin: 6px 0 12px; }
+@media (prefers-reduced-motion: reduce) { .buddy-svg, .buddy-char .buddy-svg, .buddy-char.hop .buddy-svg, .res-buddy .buddy-svg, .fb-coach .buddy-svg, #coach-pick .coach-choice.on .buddy-svg { animation: none; } }
+.coach-row { margin-bottom: 6px; }
+#btn-coach-replan { margin: 0 0 8px; }

@@ -2,11 +2,12 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, coachPlan,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiCoach, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
+import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
 const APP_VERSION = '202611111925';
@@ -69,6 +70,8 @@ const settings = Object.assign({
   baseAccept: 'pause', // 원형이 예문 형태의 앞부분일 때(outlaw → outlawed): pause = 0.8초 멈추면 정답, instant = 바로
   extraN: 20, // 추가 학습·복습 개수
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
+  // 단어 코치: 시험일에 맞춰 목표일(coachGoal)과 하루 새 단어 수를 정해 줌. coachBase = 일정을 짤 때의 하루 개수, coachKey = 그때의 시험일·범위
+  coach: false, coachGoal: '', coachBase: 0, coachKey: '',
 }, load(KEY.settings, {}));
 // 화면 설정 (기기마다, 예문·단어 모드가 같이 씀)
 const UI_KEY = 'voca.ui.v1';
@@ -127,7 +130,7 @@ function shareExam(v, at) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -144,6 +147,7 @@ const sync = createSync({
       Object.assign(settings, { newPerDay: p.newPerDay || 20, prefsAt: p.at });
       if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
       if (p.reviewSize) settings.reviewSize = p.reviewSize;
+      if ('coach' in p) Object.assign(settings, { coach: !!p.coach, coachGoal: p.coachGoal || '', coachBase: p.coachBase || 0, coachKey: p.coachKey || '' });
       // 학습 범위도 기기끼리 맞춤 (없는 DAY면 renderHome이 맞춰 줌)
       if (p.from != null && p.to != null) Object.assign(settings, { from: p.from, to: p.to });
       saveSettings();
@@ -312,12 +316,15 @@ function rangeWords() {
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   return words.filter(w => w.day >= from && w.day <= to);
 }
-// 주기 복습: 설정에서 켜고, 목표일·시험일이 둘 다 있고 목표일이 먼저일 때만
-const srsOn = () => !!(settings.srs && settings.goal && settings.exam && settings.goal < settings.exam);
+// 단어 코치: 켜져 있고 시험일이 앞으로 남아 있으면 코치가 목표일과 하루 새 단어 수를 정함 (복습은 주기 복습 방식으로)
+const coachActive = () => !!(settings.coach && settings.exam && settings.exam > dateStr());
+const goalDate = () => (coachActive() ? settings.coachGoal || '' : settings.goal);
+// 주기 복습: 설정에서 켜고, 목표일·시험일이 둘 다 있고 목표일이 먼저일 때만 (코치가 켜져 있으면 코치의 목표일로 언제나)
+const srsOn = () => (coachActive() ? !!settings.coachGoal : !!(settings.srs && settings.goal && settings.exam && settings.goal < settings.exam));
 const intervals = () => (srsOn() && PRESETS[settings.srsPreset]) || PRESETS.m;
 const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
 // 다음 복습일이 넘지 않을 날: 주기 복습이면 목표일 전까진 목표일, 그 뒤엔 시험일
-const deadline = (today = dateStr()) => (srsOn() && today < settings.goal ? settings.goal : settings.exam);
+const deadline = (today = dateStr()) => (srsOn() && today < goalDate() ? goalDate() : settings.exam);
 const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
 const isWrongRaw = s => !!(s && s.st === 0);        // 마지막에 틀린 단어 (0단계)
 // 다시 볼 단어: 0단계인데, '다시 볼 단어'에서 오늘 다시 맞힌 것(r = 오늘)은 뺌. 복습 일정은 그대로라 내일 복습에 다시 나옴
@@ -325,10 +332,10 @@ const isWrongNote = s => isWrongRaw(s) && s.r !== dateStr();
 // 복습도 학습 범위 안의 단어에서만 (범위 밖 DAY를 실수로 풀어도 복습에 안 섞이게)
 // 오늘 배울 새 단어 총수: 맨 위 숫자로 오늘만 바꿨으면 그 값, 아니면 하루 새 단어 수
 const newToday = () => Object.values(stats).filter(s => s && s.f === dateStr()).length;
-const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : settings.newPerDay; };
-const todayPlan = () => buildPlan(rangeWords(), rangeWords(), stats, { today: dateStr(), newPerDay: todayNewTarget(), exam: settings.exam, srs: srsOn() ? { goal: settings.goal, exam: settings.exam } : null });
+const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : coachActive() ? coachDaily() : settings.newPerDay; };
+const todayPlan = () => buildPlan(rangeWords(), rangeWords(), stats, { today: dateStr(), newPerDay: todayNewTarget(), exam: settings.exam, srs: srsOn() ? { goal: goalDate(), exam: settings.exam } : null });
 // 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서)
-const srsPick = () => pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: settings.reviewLimit ? settings.reviewSize : 0 });
+const srsPick = () => pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: goalDate(), exam: settings.exam, limit: settings.reviewLimit ? settings.reviewSize : 0 });
 const pickToday = () => (srsOn() ? srsPick().words : pickReview(rangeWords(), stats, { n: settings.reviewSize }));
 const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
@@ -417,8 +424,9 @@ function renderHome() {
     lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`,
     settings.kind === 'type' ? '직접 입력' : '4지선다',
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
-    `새 단어 ${settings.newPerDay}`,
-    srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`,
+    ...(coachActive()
+      ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 전체 복습 중'])
+      : [`새 단어 ${settings.newPerDay}`, srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`]),
   ].join(' · ');
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
@@ -571,9 +579,194 @@ function swipeHintOnce(grid) {
   io.observe(first.parentElement);
 }
 
+// ---------- 단어 코치 ----------
+// 시험일만 알려 주면 남은 날을 '새 단어를 배우는 날'과 '범위 전체를 훑는 날'로 나눠 목표일과 하루 분량을 정하고(core.js coachPlan),
+// 매일 남은 단어 ÷ 목표일까지 남은 날로 오늘 몫을 다시 계산함. 홈 맨 위에서 고른 코치 캐릭터가 말로 알려 줌. 설정에서 끌 수 있음
+const fmtDay = d => { const [, m, dd] = String(d || '').split('-'); return m ? `${+m}월 ${+dd}일` : ''; };
+const leftNew = () => rangeWords().filter(w => !stats[w.id]).length;
+// 목표일(coachGoal)은 전체 복습을 시작하는 날이라 새 단어를 보는 마지막 날은 그 전날
+const lastLearnDay = () => addDays(settings.coachGoal, -1);
+const coachKeyNow = () => [settings.exam, Math.min(settings.from, settings.to), Math.max(settings.from, settings.to)].join('|');
+// 오늘 배울 새 단어 수: (남은 새 단어 + 오늘 이미 배운 수) ÷ 목표일까지 남은 날. 밀리면 늘고 앞서가면 줄어듦
+function coachDaily() {
+  const today = dateStr(), goal = settings.coachGoal;
+  if (!goal || today >= goal) return 0;
+  return Math.ceil((leftNew() + newToday()) / daysBetween(today, goal));
+}
+// 일정 짜기. byUser: 사람이 시킨 것(켜기, 다시 짜기, 시험일 바꾸기)이면 다른 기기에도 이 일정이 가게 설정 바꾼 시각을 올림
+function planCoach(byUser) {
+  const rw = rangeWords();
+  const p = coachPlan({ today: dateStr(), exam: settings.exam, total: rw.length, remaining: leftNew() + newToday() });
+  if (!p) return null;
+  Object.assign(settings, { coachGoal: p.goal, coachBase: p.perDay, coachKey: coachKeyNow() });
+  if (byUser) settings.prefsAt = Date.now();
+  saveSettings();
+  if (byUser) sync.soon();
+  return p;
+}
+// 일정이 지금 상황과 안 맞으면 다시 짬: 처음이거나, 시험일·범위가 바뀌었거나, 목표일이 됐는데 새 단어가 남았을 때
+let coachMoved = false; // 목표일이 지나 일정을 미뤘다는 걸 말해 주려고
+function ensureCoachPlan() {
+  if (!coachActive() || !words.length) return;
+  const today = dateStr(), g = settings.coachGoal, left = leftNew();
+  if (settings.coachKey !== coachKeyNow() || !g || g > settings.exam) { planCoach(false); return; }
+  if (today >= g && left > 0) { planCoach(false); coachMoved = true; return; }
+  // 새 단어를 일찍 다 끝냈으면(오늘 끝낸 날은 빼고) 오늘부터 전체 훑기
+  if (today < g && !left && !newToday()) { settings.coachGoal = today; saveSettings(); }
+}
+// 코치 켜고 끄기. 예문·단어 모드가 같이 씀(시험일처럼): 다른 모드 설정에도 적어 두면 그 모드를 열 때 제 진도로 일정을 짬
+function setCoach(on) {
+  settings.coach = !!on;
+  settings.prefsAt = Date.now();
+  ui.coachAsked = true;
+  save(UI_KEY, ui);
+  const o = load(OTHER_P + 'settings.v1', {});
+  o.coach = settings.coach;
+  save(OTHER_P + 'settings.v1', o);
+  if (on && coachActive()) planCoach(true); else { saveSettings(); sync.soon(); }
+  coachMoved = false;
+  if (current === 'settings') renderSrs();
+  renderHome();
+}
+
+// 코치 캐릭터 (js/coach-art.js의 32×32 픽셀 그림): 고양이·햄스터·부엉이·슬라임 가운데 고름. 기기마다 저장(ui.coachChar), 두 모드가 같이 씀
+// 기분: normal 기본 · happy 기쁨(정답) · worry 걱정(오답) · sleep 졸림 · cheer 응원
+const COACH_MOOD = { normal: 'idle', happy: 'correct', worry: 'wrong', sleep: 'sleepy', cheer: 'cheer' };
+const coachChar = () => (COACH_ART[ui.coachChar] ? ui.coachChar : 'cat');
+const coachSvgCache = new Map();
+function coachSvg(mood = 'normal', char = coachChar()) {
+  const key = `${char}|${mood}`;
+  if (coachSvgCache.has(key)) return coachSvgCache.get(key);
+  const rows = COACH_ART[char][COACH_MOOD[mood]] || COACH_ART[char].idle;
+  let out = '<svg class="buddy-svg" viewBox="0 0 32 32" shape-rendering="crispEdges" aria-hidden="true">';
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length;) { // 같은 색이 이어진 칸은 한 줄로 묶어 그림
+      const c = row[x];
+      let n = 1;
+      while (x + n < row.length && row[x + n] === c) n++;
+      if (c !== '.') out += `<rect fill="${COACH_COLORS[c]}" x="${x}" y="${y}" width="${n}" height="1"/>`;
+      x += n;
+    }
+  });
+  out += '</svg>';
+  coachSvgCache.set(key, out);
+  return out;
+}
+
+// 코치 고르기 창: 처음 켤 때 뜨고, 설정에서 언제든 바꿀 수 있음. 고르면 캐릭터 이름, 취소면 null
+function pickCoach() {
+  const d = $('#coach-pick'), box = $('#cp-choices');
+  let cur = coachChar();
+  const draw = () => {
+    box.innerHTML = '';
+    for (const c of Object.keys(COACH_ART)) {
+      const b = el('button', 'coach-choice' + (c === cur ? ' on' : ''));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', c === cur);
+      b.innerHTML = coachSvg(c === cur ? 'cheer' : 'normal', c);
+      b.appendChild(el('span', null, COACH_NAMES[c]));
+      b.addEventListener('click', () => { cur = c; draw(); });
+      box.appendChild(b);
+    }
+  };
+  draw();
+  d.hidden = false;
+  return new Promise(resolve => {
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(cur); } };
+    const close = () => { d.hidden = true; d.onclick = null; document.removeEventListener('keydown', key, true); };
+    const done = v => { close(); modalDone(() => resolve(v)); };
+    modalOpen(() => { close(); resolve(null); });
+    $('#cp-ok').onclick = () => done(cur);
+    $('#cp-cancel').onclick = () => done(null);
+    d.onclick = e => { if (e.target === d) done(null); };
+    document.addEventListener('keydown', key, true);
+  });
+}
+function setCoachChar(c) {
+  ui.coachChar = c;
+  save(UI_KEY, ui);
+  if (current === 'settings') renderSrs();
+  renderCoach();
+}
+// 스위치·'켜기' 버튼: 처음 켤 땐 코치부터 고름 (취소하면 안 켬)
+async function toggleCoach(on) {
+  if (on && !COACH_ART[ui.coachChar]) {
+    const c = await pickCoach();
+    if (!c) { renderPlan(); if (current === 'settings') renderSrs(); return; } // 스위치를 원래대로
+    ui.coachChar = c;
+    save(UI_KEY, ui);
+  }
+  setCoach(on);
+}
+// 정답 시트 한쪽에서 코치가 맞았는지 틀렸는지 같이 반응 (코치가 켜져 있을 때만)
+function setFbCoach(state) {
+  const box = $('#fb-coach');
+  box.hidden = !settings.coach;
+  if (settings.coach) box.innerHTML = coachSvg(state === 'ok' ? 'happy' : state === 'bad' ? 'worry' : 'normal');
+}
+
+// 코치가 지금 할 말: { mood, text, acts: [[버튼 글자, 할 일]] }
+function coachSay() {
+  const today = dateStr();
+  const openPlan = () => { planFrom = null; show('plan'); setTimeout(() => { const i = $('#exam-date'); i.scrollIntoView({ block: 'center' }); i.focus(); }, 60); };
+  if (!settings.exam) return { mood: 'normal', text: '시험일을 알려 주면 남은 날에 맞춰 목표일과 하루 분량을 짜 줄게요.', acts: [['시험일 정하기', openPlan]] };
+  if (settings.exam === today) return { mood: 'cheer', text: '오늘이 시험 날이에요. 외운 만큼 다 쓰고 와요! 가기 전에 다시 볼 단어만 한 번 훑어도 좋아요.', acts: [] };
+  if (settings.exam < today) return { mood: 'sleep', text: '시험이 끝났어요. 수고했어요! 다음 시험일을 정하면 일정을 다시 짜 줄게요.', acts: [['시험일 정하기', openPlan]] };
+  const D = daysBetween(today, settings.exam), goal = settings.coachGoal, rd = daysBetween(goal, settings.exam);
+  const f = flowState();
+  const fresh = f.plan.fresh.length, rv = f.rv.left.length, allDone = !f.learnLeft && f.rv.done;
+  const moved = coachMoved ? '목표일이 지나서 일정을 다시 짰어요. ' : '';
+  const replan = ['일정 다시 짜기', () => { planCoach(true); coachMoved = false; renderHome(); toast('남은 날에 맞춰 일정을 다시 짰어요'); }];
+  const todo = [fresh ? `새 단어 ${fresh}개` : '', rv ? `복습 ${rv}개` : ''].filter(Boolean).join(' + ');
+  if (today >= goal) { // 범위 전체를 다시 훑는 기간
+    if (allDone) return { mood: 'happy', text: `오늘 복습 끝! 시험까지 ${D}일, 내일도 이어서 훑어요.`, acts: [] };
+    return { mood: 'normal', text: `새 단어는 다 봤어요. 시험까지 ${D}일 동안 범위 전체를 다시 훑어요. 오늘은 복습 ${rv}개예요.`, acts: [] };
+  }
+  const span = rd === 1 ? '하루' : `${rd}일`;
+  const tail = rd > 0 ? `마지막 ${span}는 전체 복습이에요`.replace('일는', '일은') : '시험 전날까지 새 단어를 봐요';
+  const last = lastLearnDay(), by = last === today ? '오늘' : fmtDay(last);
+  if (allDone) return { mood: 'happy', text: `${moved}오늘 몫 끝! ` + (last === today ? `새 단어를 다 봤어요. 내일부터 시험 전날까지는 전체 복습이에요.` : `이대로면 ${by}에 새 단어를 다 보고, ${tail}.`), acts: [] };
+  const target = todayNewTarget(), base = settings.coachBase || 0;
+  if (base && fresh && target > base * 1.25 + 2) {
+    return { mood: 'worry', text: `조금 밀렸어요. ${by}까지 새 단어를 끝내려면 오늘 ${target}개예요 (처음 계획은 하루 ${base}개). 벅차면 일정을 다시 짤게요.`, acts: [replan] };
+  }
+  if (base > 80) {
+    return { mood: 'worry', text: `${moved}시험까지 ${D}일인데 새 단어가 ${leftNew()}개 남았어요. 하루 ${target}개는 많이 빡빡해요. 학습 범위를 줄이는 걸 권해요. 오늘은 ${todo}예요.`, acts: [['학습 범위 바꾸기', () => { planFrom = null; show('plan'); }]] };
+  }
+  return { mood: 'normal', text: `${moved}시험까지 ${D}일. ${by}까지 새 단어를 끝내고 ${tail}. 오늘은 ${todo || '할 게 없어요'}${todo ? '예요' : ''}.`, acts: [] };
+}
+
+// 홈 맨 위 코치 카드. 꺼져 있으면 한 번만 켤지 물어봄(괜찮아요를 누르면 다시 안 물음)
+function renderCoach(stage = soloDay != null && days.includes(soloDay) ? 'day' : null) {
+  const card = $('#buddy-card');
+  let say = null;
+  if (stage === 'day') say = null; // DAY 단독 학습 중엔 숨김
+  else if (settings.coach) say = coachSay();
+  else if (!ui.coachAsked) {
+    say = {
+      mood: 'cheer', text: '단어 코치를 켜 볼까요? 시험일만 알려 주면 목표일과 하루 분량을 짜서 매일 알려 줄게요.',
+      acts: [['켜기', () => toggleCoach(true)], ['괜찮아요', () => { ui.coachAsked = true; save(UI_KEY, ui); renderCoach(); toast('설정 > 복습 방식에서 언제든 켤 수 있어요'); }]],
+    };
+  }
+  card.hidden = !say;
+  if (!say) return;
+  $('#buddy-char').innerHTML = coachSvg(say.mood);
+  $('#buddy-char').setAttribute('aria-label', `단어 코치 ${COACH_NAMES[coachChar()]}`);
+  $('#buddy-text').textContent = say.text;
+  const acts = $('#buddy-acts');
+  acts.innerHTML = '';
+  say.acts.forEach(([label, fn], i) => {
+    const b = el('button', 'btn small ' + (i ? 'ghost' : 'secondary'), label);
+    b.addEventListener('click', fn);
+    acts.appendChild(b);
+  });
+  acts.hidden = !say.acts.length;
+}
+
 // 홈의 오늘 카드: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기 순서로 한 카드 안에서 바뀜
 let viewStage = null; // 학습 › 복습 › 더 하기를 눌러 직접 본 단계 (세션을 시작하면 다시 자동)
 function renderPlan() {
+  ensureCoachPlan();
   const { plan, learnLeft, rv, stage: regular } = flowState();
   // 눌러서 갈 수 있는 단계: 학습·복습은 언제나(복습을 먼저 해도 됨), 더 하기는 둘 다 끝냈으면
   const can = { learn: true, review: true, extra: !learnLeft && rv.done };
@@ -614,8 +807,8 @@ function renderPlan() {
   for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
   // 주기 복습이면 목표일 전엔 목표 D-n, 그 뒤엔 시험 D-n
-  const toGoal = srsOn() && dateStr() < settings.goal;
-  const left = toGoal ? daysBetween(dateStr(), settings.goal) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
+  const toGoal = srsOn() && dateStr() < goalDate();
+  const left = toGoal ? daysBetween(dateStr(), goalDate()) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   dd.hidden = left == null || left < 0 || stage === 'day';
   if (!dd.hidden) { dd.textContent = left === 0 && !toGoal ? 'D-day' : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
   let note = '';
@@ -666,6 +859,13 @@ function renderPlan() {
     note = nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
   }
   $('#today-note').textContent = note;
+  // 코치가 켜져 있으면 하루 새 단어 수는 코치가 정함 (버튼은 흐리게)
+  const ca = coachActive();
+  $('#seg-new').classList.toggle('dim', ca);
+  $('#coach-new-note').hidden = !ca;
+  if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
+  $('#opt-coach-plan').checked = !!settings.coach;
+  renderCoach(stage);
 }
 
 // 숫자 키패드 (앱 안): await askNumber({ title, value, extra }) → 숫자, 또는 extra를 고르면 extra.value, 취소면 null
@@ -722,7 +922,7 @@ function askNumber({ title, value, hint = '', extra = null, min = 1, max = 300 }
 // 맨 위 카드의 숫자를 눌러 '오늘' 남은 새 단어·복습 개수를 바꿈 (오늘만. 매일 개수는 문제 방식 카드의 버튼으로)
 async function editNewToday() {
   const left = todayPlan().fresh.length;
-  const n = await askNumber({ title: '오늘 더 배울 새 단어', value: left, min: 0, hint: '오늘만 바뀌어요 · 매일 개수는 학습 계획의 \'하루 새 단어 수\'' });
+  const n = await askNumber({ title: '오늘 더 배울 새 단어', value: left, min: 0, hint: coachActive() ? '오늘만 바뀌어요 · 내일부터는 코치가 남은 날에 맞춰 다시 나눠요' : '오늘만 바뀌어요 · 매일 개수는 학습 계획의 \'하루 새 단어 수\'' });
   if (n == null) return;
   const day = loadDay();
   day.newTarget = newToday() + n; // 오늘 이미 배운 수 + 더 배울 수
@@ -744,7 +944,7 @@ async function editReviewToday() {
   const done = Array.isArray(day.review) ? day.review.filter(id => byId.has(id) && seenToday(id)) : [];
   const want = n < 0 ? 0 : n;
   const picked = srs
-    ? pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: settings.goal, exam: settings.exam, limit: want }).words
+    ? pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: goalDate(), exam: settings.exam, limit: want }).words
     : pickReview(rangeWords(), stats, { n: want });
   const rest = picked.map(w => w.id).filter(id => !done.includes(id));
   day.review = [...done, ...(n < 0 ? rest : rest.slice(0, want))];
@@ -887,7 +1087,7 @@ function underlineCard(b, ko, n, src, showKo) {
   const card = el('div', 'sent');
   const head = el('div', 'sent-head');
   head.appendChild(el('span', 'num', `예문 ${n}` + (src ? ` · ${src}` : '')));
-  if (showKo) head.appendChild(speakBtn(b.segs.map(x => x.v).join('')));
+  if (showKo) head.appendChild(speakBtn(speakText(b.segs)));
   card.appendChild(head);
   const en = el('div', 'en');
   for (const x of b.segs) en.appendChild(x.t === 'text' ? document.createTextNode(x.v) : el('u', 'ul', x.v));
@@ -962,6 +1162,7 @@ function renderSynQuestion(w) {
     });
     actions.appendChild(b);
   });
+  fitChoices();
 }
 
 // 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (틀리면 3~5문제 뒤에 다시)
@@ -1016,6 +1217,7 @@ function showSynFeedback(correct, given, kind, label) {
     row.appendChild(el('span', 'muted', why));
     card.appendChild(row);
   }
+  setFbCoach(state);
   openSheet(w, [card]);
 }
 
@@ -1049,7 +1251,9 @@ function renderQuestion() {
     if (!b || !b.segs.length) return;
     box.appendChild(sentenceCard(b, ko, i + 1, false, false, w, i ? w.ex2src : w.ex1src));
   });
-  document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요' : '빈칸에 공통으로 들어갈 말은?';
+  document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요'
+    : { same: '빈칸에 공통으로 들어갈 말은?', single: '빈칸에 들어갈 말은?',
+      diff: settings.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2)];
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
 
   const mEl = $('#q-meaning');
@@ -1075,7 +1279,40 @@ function renderQuestion() {
       else delete actions.dataset.lean;
       $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
     }
+    fitChoices();
   }
+}
+
+// 빈칸에 들어갈 말이 모든 문장에서 같은 꼴인지 (deteriorated / deteriorate처럼 다르면 '공통으로'라고 묻지 않음)
+// 'same' 여러 번 나오는데 다 같은 꼴 · 'diff' 꼴이 다름 · 'single' 한 번만 나옴
+function blankForms(b1, b2) {
+  const bs = [b1, b2].filter(b => b && b.ok && b.blanks.length);
+  if (!bs.length) return 'single';
+  const unit = blankUnit(bs[0].blanks).map(x => x.toLowerCase());
+  if (!bs.every(b => b.blanks.every((x, i) => x.toLowerCase() === unit[i % unit.length]))) return 'diff';
+  return bs.length > 1 || bs[0].blanks.length > unit.length ? 'same' : 'single';
+}
+
+// 4지선다 '보기 풀이': 정답과 내가 고른 보기가 각각 무슨 단어·뜻인지 (틀렸거나 힌트를 썼을 때 정답 시트에)
+function choiceNotes(choices, right, picked) {
+  const card = el('div', 'fb-card opts');
+  card.appendChild(el('b', null, '보기 풀이'));
+  for (const c of choices) {
+    const ok = c === right, mine = c === picked && !ok;
+    const row = el('div', 'opt' + (ok ? ' ok' : '') + (mine ? ' picked' : ''));
+    row.append(el('span', 'opt-ic', ok ? '✓' : mine ? '✕' : '·'), el('b', null, WORD ? c.word : displayAnswer(c)),
+      el('span', 'muted', `${shortMeaning(c.meaning) || c.meaning} · DAY ${c.day}`));
+    card.appendChild(row);
+  }
+  return card;
+}
+
+// 컴퓨터: 선지가 창 아래로 넘치면(낮은 창, 긴 예문) 2×2로 줄여서 한 화면에
+function fitChoices() {
+  if (!DESK) return;
+  const actions = $('#q-actions');
+  actions.classList.remove('fit');
+  if (actions.querySelector('.choice') && actions.getBoundingClientRect().bottom > window.innerHeight - 8) actions.classList.add('fit');
 }
 
 // ---------- 단어 모드: 단어를 보고 뜻 맞히기 ----------
@@ -1121,7 +1358,7 @@ function renderWordQuestion(w) {
   $('#quiz').classList.remove('kb-mode', 'pin-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderMeaningTyping(actions);
-  else renderMeaningChoices(actions);
+  else { renderMeaningChoices(actions); fitChoices(); }
 }
 
 function renderMeaningChoices(actions) {
@@ -1130,6 +1367,7 @@ function renderMeaningChoices(actions) {
   let opts = pickMeaningDistractors(w, pool, 3);
   if (opts.length < 3) opts = opts.concat(pickMeaningDistractors(w, words, 3).filter(o => !opts.some(x => x.meaning === o.meaning))).slice(0, 3);
   const choices = shuffle([w, ...opts]);
+  q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
     b.append(el('span', 'n', i + 1), el('span', null, c.meaning));
@@ -1141,6 +1379,7 @@ function renderMeaningChoices(actions) {
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
       q.answered = true;
+      q.picked = c;
       q.userAnswer = c.meaning; // '왜 틀렸어?'에 씀
       q.how = 'choice';
       if (ok && q.usedHint) answer(false, null, 'hint');
@@ -1227,31 +1466,66 @@ function meaningText(w) {
   return [w.pos, formatMeaning(w.meaning)].filter(Boolean).join(' ');
 }
 
+// 예문 한 칸에 문장이 여럿이면(" / "로 이어 적음) 문장마다 나눔. segs를 문장별 묶음으로
+const SENT_SEP = /\s+\/\s+/;
+function splitSegs(segs) {
+  const parts = [[]];
+  for (const s of segs) {
+    if (s.t !== 'text') { parts[parts.length - 1].push(s); continue; }
+    s.v.split(SENT_SEP).forEach((v, i) => {
+      if (i) parts.push([]);
+      if (v) parts[parts.length - 1].push({ t: 'text', v });
+    });
+  }
+  return parts.filter(p => p.length);
+}
+// 읽어 줄 때 " / "를 '슬래시'로 읽지 않게
+const speakText = segs => segs.map(s => s.v).join('').replace(/\s+\/\s+/g, '. ').replace(/\.\. /g, '. ');
+
 function sentenceCard(b, ko, n, filled, wrongAnswer, w, src) {
   const card = el('div', 'sent');
   const head = el('div', 'sent-head');
   head.appendChild(el('span', 'num', `예문 ${n}` + (src ? ` · ${src}` : '')));
-  if (filled) head.appendChild(speakBtn(b.segs.map(s => s.v).join('')));
+  if (filled) head.appendChild(speakBtn(speakText(b.segs)));
   card.appendChild(head);
-  const en = el('div', 'en');
-  for (const s of b.segs) {
-    if (s.t === 'text') en.appendChild(document.createTextNode(s.v));
-    else {
-      // 빈칸 폭 = 정답 단어 폭: 정답을 안 보이게 깔고(sz) 그 위에 입력/정답을 겹쳐 씀(fl)
-      const span = el('span', 'blank');
-      span.dataset.i = s.i;
-      span.append(el('span', 'sz', s.v || '\u00a0\u00a0\u00a0'), el('span', 'fl', filled ? s.v : ''));
-      if (filled) span.classList.add('filled');
-      if (filled && wrongAnswer) span.classList.add('bad');
-      en.appendChild(span);
+  const enLine = segs => {
+    const en = el('div', 'en');
+    for (const s of segs) {
+      if (s.t === 'text') en.appendChild(document.createTextNode(s.v));
+      else {
+        // 빈칸 폭 = 정답 단어 폭: 정답을 안 보이게 깔고(sz) 그 위에 입력/정답을 겹쳐 씀(fl)
+        const span = el('span', 'blank');
+        span.dataset.i = s.i;
+        span.append(el('span', 'sz', s.v || '\u00a0\u00a0\u00a0'), el('span', 'fl', filled ? s.v : ''));
+        if (filled) span.classList.add('filled');
+        if (filled && wrongAnswer) span.classList.add('bad');
+        en.appendChild(span);
+      }
     }
-  }
-  card.appendChild(en);
-  if (ko) {
+    return en;
+  };
+  const koLine = text => {
     const k = el('div', 'ko' + (!filled && !settings.showKo ? ' hide' : ''));
-    for (const s of highlightMeaning(ko, w && w.meaning, w && w.koMark)) k.appendChild(s.t === 'mark' ? el('b', 'ko-mark', s.v) : document.createTextNode(s.v));
+    for (const s of highlightMeaning(text, w && w.meaning, w && w.koMark)) k.appendChild(s.t === 'mark' ? el('b', 'ko-mark', s.v) : document.createTextNode(s.v));
     if (!filled && !settings.showKo) k.addEventListener('click', () => k.classList.remove('hide'));
-    card.appendChild(k);
+    return k;
+  };
+  const parts = splitSegs(b.segs);
+  const kos = ko ? String(ko).split(SENT_SEP) : [];
+  if (parts.length > 1) {
+    // 해석도 같은 수로 나뉘면 문장 바로 아래에 하나씩, 아니면 맨 아래에 한꺼번에
+    const paired = kos.length === parts.length;
+    card.classList.add('multi');
+    parts.forEach((segs, i) => {
+      const part = el('div', 'sent-part');
+      part.appendChild(enLine(segs));
+      if (paired) part.appendChild(koLine(kos[i]));
+      card.appendChild(part);
+    });
+    if (ko && !paired) card.appendChild(koLine(ko));
+  } else {
+    card.appendChild(enLine(b.segs));
+    if (ko) card.appendChild(koLine(ko));
   }
   return card;
 }
@@ -1285,6 +1559,7 @@ function renderChoices(actions) {
   let opts = pickDistractors(w, pool, 3);
   if (opts.length < 3) opts = opts.concat(pickDistractors(w, words, 3).filter(o => !opts.includes(o))).slice(0, 3);
   const choices = shuffle([w, ...opts]);
+  q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
     b.append(el('span', 'n', i + 1), el('span', null, displayAnswer(c)));
@@ -1296,6 +1571,7 @@ function renderChoices(actions) {
       if (!ok) actions.querySelectorAll('.choice')[choices.indexOf(w)].classList.add('correct');
       actions.querySelectorAll('.choice').forEach(x => (x.disabled = true));
       q.answered = true;
+      q.picked = c;
       if (ok && q.usedHint) answer(false, null, 'hint');
       else answer(ok, ok ? null : displayAnswer(c));
     });
@@ -1628,6 +1904,7 @@ function useHint() {
   if (WORD || q.syn) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
   if (q.typing) {
     if (q.revealed) return;
+    hideCoach(); // 힌트로 글자가 바뀌니 앞의 말풍선(… 한 글자 달라요)은 치움
     const target = typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks);
     const cur = q.typing.get();
     let k = 0;
@@ -1761,7 +2038,11 @@ function showFeedback(correct, given, kind, label) {
     $('.quiz-body').style.paddingBottom = '';
   }
 
-  openSheet(w, WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline() ? [explainBox(q)] : []);
+  setFbCoach(state);
+  const more = [];
+  if (q.choices && !correct) more.push(choiceNotes(q.choices, w, q.picked));
+  if (WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline()) more.push(explainBox(q));
+  openSheet(w, more);
 }
 
 // 아래 정답 시트: 단어, 발음, 뜻/예문 탭. more = 뜻 카드 바로 아래에 넣을 카드
@@ -1856,6 +2137,9 @@ function finishSession() {
   const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
   $('#res-title').textContent = `${s.label} 끝`;
   $('#res-detail').textContent = `${s.total}단어를 다 봤어요.`;
+  const rk = $('#res-buddy');
+  rk.hidden = !settings.coach;
+  if (settings.coach) rk.innerHTML = coachSvg(wrong.length ? 'normal' : 'cheer');
   $('#res-wrong-label').textContent = wrong.length ? `틀렸거나 헷갈린 단어 ${wrong.length}개 · 한 번씩만 더 보고 가요` : '';
   const list = $('#res-wrong');
   list.innerHTML = '';
@@ -1943,6 +2227,7 @@ function wordItem(w, view = bookView(), onMark) {
   head.append(main, markBtn(w.id, onMark), speakBtn(w.word));
   item.appendChild(head);
   item.addEventListener('click', () => {
+    if (!ui.bookOpened) { ui.bookOpened = true; save(UI_KEY, ui); const tip = $('#list-tip'); if (tip) tip.hidden = true; }
     if (item.classList.toggle('open')) {
       const det = el('div', 'detail');
       [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].forEach(([en, ko], i) => {
@@ -2036,9 +2321,14 @@ function renderBookDays(scrollToSel) {
   } else box.scrollLeft = keep;
 }
 
+// 단어장 목록은 길어서(1000단어) 처음 몇 십 개만 바로 그리고 나머지는 화면이 멈추지 않게 조금씩 이어 그림
+let listRun = 0;
+const LIST_FIRST = 30, LIST_STEP = 60;
 function renderList(scrollToSel) {
   renderBookDays(scrollToSel);
   setSeg('#seg-filter', listFilter);
+  $('#list-tip').hidden = !!ui.bookOpened; // '누르면 펼쳐져요' 안내는 한 번 펼쳐 보면 그만
+  const run = ++listRun; // 다시 그리기 시작하면 앞에서 이어 그리던 건 그만
   const box = $('#word-list');
   box.innerHTML = '';
   const view = bookView();
@@ -2067,20 +2357,23 @@ function renderList(scrollToSel) {
   const updateTest = () => {
     const n = bw.filter(w => isUnknown(w.id)).length;
     const b = $('#btn-unknown-test');
-    b.hidden = bookOnly != null && !n; // DAY 단어장에선 형광펜 친 단어가 있을 때만
+    // 형광펜 친 단어가 없으면 버튼을 숨겨 목록 자리를 넓힘 (형광펜 탭에서는 안내로 남김)
+    b.hidden = !n && listFilter !== 'unknown';
     b.disabled = !n;
     b.textContent = n ? `형광펜 친 단어만 테스트 (${n})` : '형광펜 친 단어가 없어요';
+    b.closest('.sticky-bottom').hidden = b.hidden && acts.hidden;
   };
-  // DAY마다 제목(단어 수)으로 나눠서
+  // DAY마다 제목(단어 수)으로 나눠서. 기록이 있는 DAY에만 '기록 지우기'
   const count = {};
   for (const w of filtered) count[w.day] = (count[w.day] || 0) + 1;
+  const hasRec = new Set(words.filter(w => view(w.id).seen).map(w => w.day));
   let lastDay = null;
-  for (const w of filtered) {
+  const add = w => {
     if (w.day !== lastDay) {
       const h = el('div', 'day-head');
       h.append(el('b', null, `DAY ${w.day}`), el('span', null, `${count[w.day]}단어`));
       const d = w.day;
-      if (dayHasRecords(d)) {
+      if (hasRec.has(d)) {
         const del = el('button', 'day-del', '기록 지우기');
         del.addEventListener('click', () => deleteDayRecords(d));
         h.appendChild(del);
@@ -2089,7 +2382,14 @@ function renderList(scrollToSel) {
       lastDay = w.day;
     }
     box.appendChild(wordItem(w, view, updateTest));
-  }
+  };
+  let i = 0;
+  const step = n => {
+    if (run !== listRun) return;
+    for (const end = Math.min(filtered.length, i + n); i < end; i++) add(filtered[i]);
+    if (i < filtered.length) setTimeout(() => step(LIST_STEP), 0);
+  };
+  step(LIST_FIRST);
   updateTest();
 }
 
@@ -2110,18 +2410,52 @@ function renderSyncStatus() {
 // 설정의 복습 방식 카드: 켜기, 목표일·시험일, 기억 유지 그래프, 복습 주기, 오늘의 복습 개수
 const PRESET_LABEL = { xs: '매우 짧게', s: '짧게', m: '보통', l: '길게', xl: '매우 길게' };
 function renderSrs() {
+  ensureCoachPlan();
   const g = settings.goal, ex = settings.exam;
   $('#goal-date').value = g || '';
   $('#srs-exam-date').value = ex || '';
   $('#opt-srs').checked = !!settings.srs;
+  // 단어 코치가 켜져 있으면 목표일은 코치가 정하니 직접 정하는 칸(주기 복습 스위치·목표일)은 숨김
+  const coach = !!settings.coach;
+  $('#opt-coach').checked = coach;
+  $('#srs-manual').hidden = coach;
+  $('#goal-label').hidden = coach;
+  const cp = $('#coach-plan');
+  cp.hidden = !coach;
+  // 코치 캐릭터: 눌러서 언제든 바꿈
+  const cc = $('#coach-chars');
+  $('#coach-chars-label').hidden = cc.hidden = !coach;
+  cc.innerHTML = '';
+  if (coach) for (const c of Object.keys(COACH_ART)) {
+    const b = el('button', 'coach-choice' + (c === coachChar() ? ' on' : ''));
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', c === coachChar());
+    b.innerHTML = coachSvg('normal', c);
+    b.appendChild(el('span', null, COACH_NAMES[c]));
+    b.addEventListener('click', () => setCoachChar(c));
+    cc.appendChild(b);
+  }
+  $('#btn-coach-replan').hidden = !coachActive();
+  if (coach) {
+    const today = dateStr();
+    if (!ex) cp.textContent = '아래에 시험일을 정하면 코치가 목표일과 하루 새 단어 수를 정해 줘요.';
+    else if (ex <= today) cp.textContent = '시험일이 지났어요. 다음 시험일을 정하면 일정을 다시 짜요. 그때까지는 기본 방식으로 해요.';
+    else {
+      const gd = settings.coachGoal, rd = daysBetween(gd, ex);
+      cp.textContent = today >= gd ? `새 단어는 끝났어요. 시험 전날까지 ${daysBetween(today, ex)}일 동안 범위 전체를 나눠 복습해요.`
+        : `시험까지 ${daysBetween(today, ex)}일 · 새 단어는 ${fmtDay(lastLearnDay())}까지(오늘 ${todayNewTarget()}개) · ` + (rd > 0 ? `마지막 ${rd === 1 ? '하루' : `${rd}일`}는 범위 전체 복습`.replace('일는', '일은') : '시험 전날까지 새 단어');
+    }
+  }
   const warn = $('#srs-warn');
-  const msg = !settings.srs ? ''
+  const msg = coach || !settings.srs ? ''
     : !g || !ex ? '목표일과 시험일을 둘 다 정해야 주기 복습이 켜져요. 그 전까지는 기본 방식으로 해요.'
       : g >= ex ? '목표일은 시험일보다 앞이어야 해요.' : '';
   warn.hidden = !msg;
   warn.textContent = msg;
-  $('#srs-opts').hidden = !settings.srs;
-  if (!settings.srs) return;
+  const on = coach ? coachActive() : settings.srs;
+  $('#srs-opts').hidden = !on;
+  if (!on) return;
   // 복습 주기 목록
   const box = $('#srs-presets');
   box.innerHTML = '';
@@ -2191,32 +2525,73 @@ function renderAiStatus() {
     : WORD ? 'AI 연결됨 · 규칙 채점에서 오답이 나오면 AI가 다시 확인해요' : 'AI 연결됨 · 직접 입력에서 틀리면 AI가 왜 안 맞는지 말풍선으로 알려줘요';
 }
 
+// 백업 파일 하나에 예문·단어 두 모드의 진도·학습 설정과 형광펜을 모두 담음 (예전 파일은 한 모드만 들어 있음)
 function exportProgress() {
-  const data = JSON.stringify({ app: WORD ? 'voca-word' : 'voca', v: 1, at: new Date().toISOString(), stats, settings, marks }, null, 0);
+  const mine = { stats: allStats(), settings };
+  const other = { stats: load(OTHER_P + 'stats.v1', {}), settings: load(OTHER_P + 'settings.v1', {}) };
+  const data = JSON.stringify({ app: 'voca-all', v: 2, at: new Date().toISOString(), ex: WORD ? other : mine, word: WORD ? mine : other, marks }, null, 0);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `voca-${WORD ? 'word-' : ''}backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `voca-backup-${dateStr()}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
+// 백업 파일에 든 모드별 묶음 { ex?, word? }. 새 형식(두 모드)과 예전 형식(한 모드) 모두 읽음
+function backupParts(data) {
+  const okPart = p => p && p.stats && typeof p.stats === 'object' && !Array.isArray(p.stats);
+  const parts = {};
+  if (data && data.app === 'voca-all') { for (const m of ['ex', 'word']) if (okPart(data[m])) parts[m] = data[m]; }
+  else if (okPart(data)) parts[data.app === 'voca-word' ? 'word' : 'ex'] = { stats: data.stats, settings: data.settings };
+  return parts;
+}
+
 async function importProgress(file) {
   try {
     const data = JSON.parse(await file.text());
-    if (!data || typeof data.stats !== 'object') throw new Error();
-    if ((data.app === 'voca-word') !== WORD) { // 다른 모드의 백업
-      toast(WORD ? '예문 모드 백업 파일이에요. 예문 모드 설정에서 불러와 주세요' : '단어 모드 백업 파일이에요. 단어 모드 설정에서 불러와 주세요', 3500);
-      return;
+    const parts = backupParts(data);
+    const modes = Object.keys(parts);
+    if (!modes.length) throw new Error();
+    const name = m => (m === 'word' ? '단어' : '예문');
+    const count = m => Object.values(parts[m].stats).filter(v => v && !v.del).length;
+    const missing = ['ex', 'word'].filter(m => !parts[m]);
+    if (!(await ask({
+      title: '백업으로 덮어쓸까요?',
+      body: `${modes.map(m => `${name(m)} 모드 ${count(m)}단어`).join(' · ')}의 진도와 학습 설정이 백업 파일의 것으로 바뀌어요.`
+        + (missing.length ? `\n이 파일에는 ${name(missing[0])} 모드 진도가 없어서 그쪽은 그대로 둬요.` : '')
+        + (sync.enabled ? '\n동기화된 다른 기기의 진도도 백업의 것으로 바뀌어요.' : ''),
+      ok: '덮어쓰기', danger: true,
+    }))) return;
+    const now = Date.now();
+    // 동기화 중이면 '초기화한 시각'과 기록 시각을 지금으로 맞춰서, 합칠 때 다른 기기의 기록이 아니라 백업이 남게 함
+    // (그냥 두면 더 최근 기록과 섞이고, 초기화한 뒤 불러온 백업은 초기화 전 기록이라 다시 지워짐)
+    const stamp = sync.enabled;
+    const norm = st => Object.fromEntries(Object.entries(st).map(([k, v]) => [k, v && v.del ? v : normalizeStat(v)])
+      .filter(([, v]) => v).map(([k, v]) => [k, stamp ? { ...v, s: now } : v]));
+    // 되돌린 설정이 동기화에서 예전 것으로 밀리지 않게 바꾼 시각을 지금으로
+    const prefs = st => (st && typeof st === 'object' ? { ...st, prefsAt: now, examAt: now } : null);
+    const mineKey = WORD ? 'word' : 'ex';
+    for (const m of modes) {
+      const p = parts[m];
+      if (m === mineKey) {
+        setAllStats(norm(p.stats));
+        saveStats();
+        if (stamp) { resetAt = now; save(KEY.resetAt, resetAt); }
+        if (prefs(p.settings)) { Object.assign(settings, prefs(p.settings)); saveSettings(); }
+        localStorage.removeItem(KEY.session); // 하던 학습은 예전 진도 기준이라 지움
+      } else {
+        save(OTHER_P + 'stats.v1', norm(p.stats));
+        if (stamp) save(OTHER_P + 'resetAt.v1', now);
+        if (prefs(p.settings)) save(OTHER_P + 'settings.v1', { ...load(OTHER_P + 'settings.v1', {}), ...prefs(p.settings) });
+        localStorage.removeItem(OTHER_P + 'session.v1');
+      }
     }
-    if (!(await ask({ title: '백업으로 덮어쓸까요?', body: '지금 이 기기의 진도가 백업 파일의 진도로 바뀌어요.', ok: '덮어쓰기', danger: true }))) return;
-    setAllStats(Object.fromEntries(Object.entries(data.stats).map(([k, v]) => [k, v && v.del ? v : normalizeStat(v)])));
-    saveStats();
     if (data.marks && typeof data.marks === 'object') { marks = mergeMarks(marks, data.marks); save(KEY.marks, marks); }
     sync.now();
-    toast('진도를 불러왔어요');
+    toast(`${modes.map(name).join('·')} 모드 진도를 불러왔어요`);
     renderSettings();
   } catch {
     toast('백업 파일을 읽을 수 없어요');
@@ -2297,7 +2672,7 @@ function bind() {
     if (sp.classList.contains('link')) { viewStage = sp.dataset.s; renderPlan(); }
     else if (!sp.classList.contains('on')) toast('오늘의 학습과 복습을 끝내면 열려요');
   });
-  const setExam = v => { settings.exam = v; settings.examAt = Date.now(); saveSettings(); shareExam(v, settings.examAt); renderPlan(); sync.soon(); };
+  const setExam = v => { settings.exam = v; settings.examAt = Date.now(); saveSettings(); shareExam(v, settings.examAt); if (coachActive()) planCoach(true); coachMoved = false; renderHome(); sync.soon(); };
   $('#exam-date').addEventListener('change', e => { if (examOk(e.target)) setExam(e.target.value); });
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });
   $('#btn-start').addEventListener('click', () => startSession('today'));
@@ -2321,7 +2696,13 @@ function bind() {
     toast('지웠어요');
   });
   $('#btn-list').addEventListener('click', () => { bookOnly = null; listFilter = 'all'; bookQuery = ''; $('#book-search').value = ''; show('list'); renderList(true); });
-  $('#book-search').addEventListener('input', e => { bookQuery = e.target.value; renderList(); });
+  // 검색: 글자를 칠 때마다 다시 그리지 않고 잠깐 멈추면 한 번
+  let searchT = null;
+  $('#book-search').addEventListener('input', e => {
+    bookQuery = e.target.value;
+    clearTimeout(searchT);
+    searchT = setTimeout(() => renderList(), 140);
+  });
   $('#btn-day-syn').addEventListener('click', () => { if (bookOnly != null) startSynSession(bookOnly); });
   $('#btn-day-study').addEventListener('click', () => { if (bookOnly != null) startDayStudy(bookOnly); });
   $('#btn-list-back').addEventListener('click', () => goHome());
@@ -2408,9 +2789,9 @@ function bind() {
   $('#import-file').addEventListener('change', e => { if (e.target.files[0]) importProgress(e.target.files[0]); e.target.value = ''; });
   $('#btn-reset').addEventListener('click', async () => {
     if (!(await ask({
-      title: '정말 모든 진도를 지울까요?',
-      body: (sync.enabled ? '동기화된 다른 기기의 진도도 함께 지워져요.\n' : '') + '지운 진도는 되돌릴 수 없어요.',
-      ok: '모두 지우기', danger: true,
+      title: `${WORD ? '단어' : '예문'} 모드 진도를 모두 지울까요?`,
+      body: `${WORD ? '예문' : '단어'} 모드 진도와 형광펜은 그대로 남아요.\n` + (sync.enabled ? '동기화된 다른 기기에서도 함께 지워져요.\n' : '') + '지운 진도는 되돌릴 수 없어요.',
+      ok: '지우기', danger: true,
     }))) return;
     stats = {}; tombs = {};
     resetAt = Date.now(); // 다른 기기의 예전 기록도 함께 지워지게
@@ -2418,7 +2799,7 @@ function bind() {
     saveStats();
     sync.now();
     localStorage.removeItem(KEY.session);
-    toast('진도를 초기화했어요');
+    toast(`${WORD ? '단어' : '예문'} 모드 진도를 초기화했어요`);
   });
   $('#btn-reload').addEventListener('click', async () => {
     await loadData();
@@ -2431,7 +2812,12 @@ function bind() {
   const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
   $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); });
   $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
-  $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); srsChanged(); });
+  $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); if (coachActive()) planCoach(true); coachMoved = false; srsChanged(); });
+  // 단어 코치: 설정과 학습 계획 화면의 스위치, 일정 다시 짜기, 캐릭터를 누르면 폴짝
+  $('#opt-coach').addEventListener('change', e => toggleCoach(e.target.checked));
+  $('#opt-coach-plan').addEventListener('change', e => toggleCoach(e.target.checked));
+  $('#btn-coach-replan').addEventListener('click', () => { if (planCoach(true)) { coachMoved = false; renderSrs(); toast('남은 날에 맞춰 일정을 다시 짰어요'); } });
+  $('#buddy-char').addEventListener('click', e => { const c = e.currentTarget; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); });
   onSeg('#seg-limit', v => { settings.reviewLimit = +v; srsChanged(); });
   $('#btn-update').addEventListener('click', async () => {
     try {

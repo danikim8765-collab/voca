@@ -512,6 +512,38 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
   return { review, final, fresh, examInfo };
 }
 
+/**
+ * 단어 코치의 일정: 시험일까지 남은 날을 '새 단어를 배우는 날'과 '범위 전체를 다시 훑는 날'로 나눔.
+ *  total: 학습 범위 단어 수, remaining: 아직 안 배운 단어 수 (오늘 배울 것 포함)
+ *  - 배우는 날의 하루 부담(새 단어 + 그 단어들의 주기 복습)과 훑는 날의 하루 부담(전체 ÷ 남은 날)이 비슷해지게 나눔:
+ *    새 단어 하나는 훑어보기 네 번쯤의 품이 든다고 보고, 훑는 날 : 배우는 날 = total : 4 × remaining
+ *    (처음부터면 남은 날의 1/5쯤이 훑는 날 — 2주 남았으면 11일 배우고 3일 훑음. 많이 배워 뒀으면 훑는 날이 늘어남)
+ *  - 훑는 날은 적어도 하루(엿새 넘게 남았으면 이틀)는 남김. 그래서 목표일이 시험 바로 전날이 되지 않음
+ *  - 하루 새 단어가 10개도 안 되게 늘어지면 하루 10개로 당겨 끝내고 남는 날은 훑는 데 씀
+ * 반환 { goal: 새 단어를 끝낼 날(이날부터 훑기), perDay, learnDays, reviewDays, days, finalPerDay, load: 'ok'|'busy'|'heavy' }
+ * 시험일이 없거나 오늘·지난 날이면 null
+ */
+export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0 } = {}) {
+  if (!exam || exam <= today) return null;
+  const days = daysBetween(today, exam); // 오늘부터 시험 전날까지
+  const left = Math.max(0, Math.min(total, remaining));
+  if (!left) return { goal: today, perDay: 0, learnDays: 0, reviewDays: days, days, finalPerDay: Math.ceil(total / days), load: 'ok' };
+  const minReview = days >= 6 ? 2 : days >= 2 ? 1 : 0;
+  let reviewDays = Math.min(days - 1, Math.max(minReview, Math.round(days * total / (total + 4 * left))));
+  let learnDays = days - reviewDays;
+  let perDay = Math.ceil(left / learnDays);
+  if (perDay < 10) {
+    perDay = Math.min(10, left);
+    learnDays = Math.ceil(left / perDay);
+    reviewDays = days - learnDays;
+  }
+  return {
+    goal: addDays(today, learnDays), perDay, learnDays, reviewDays, days,
+    finalPerDay: reviewDays ? Math.ceil(total / reviewDays) : 0,
+    load: perDay <= 40 ? 'ok' : perDay <= 80 ? 'busy' : 'heavy',
+  };
+}
+
 export const REVIEW_SIZE = 20; // 오늘의 복습 단어 수
 
 /**
@@ -594,13 +626,40 @@ export function shuffle(arr, rand = Math.random) {
   return a;
 }
 
-// 오답 보기 고르기: 덩어리 수가 같고 길이가 비슷한 단어 우선
+// 단어의 품사 묶음 (보기를 정답과 같은 품사로 맞추려고). CSV에 품사가 있으면 그걸, 없으면 한국어 뜻으로 짐작
+const POS_KEY = { 동: 'v', 명: 'n', 형: 'a', 부: 'r', v: 'v', n: 'n', a: 'a', r: 'r' };
+const posCache = new WeakMap();
+function posSet(w) {
+  if (!w || typeof w !== 'object') return new Set();
+  let set = posCache.get(w);
+  if (set) return set;
+  set = new Set();
+  for (const m of String(w.pos || '').toLowerCase().matchAll(/동사|명사|형용사|부사|verb|noun|adj|adv|[동명형부]|\b[vnar]\b/g)) {
+    const k = m[0].startsWith('adj') ? 'a' : m[0].startsWith('adv') ? 'r' : POS_KEY[m[0][0]];
+    if (k) set.add(k);
+  }
+  if (!set.size) for (const sense of senseList(w.meaning)) { const k = koPos(sense); if (k) set.add(k); }
+  posCache.set(w, set);
+  return set;
+}
+// 예문에서 쓰인 뜻의 품사 (해석으로 몇 번째 뜻인지 찾음). 모르면 그 단어의 품사 전부
+function targetPos(w) {
+  if (!w.pos && w.meaning && w.ex1ko) {
+    const i = senseOf(w.ex1ko, w.meaning);
+    const k = i ? koPos(senseList(w.meaning)[i - 1]) : '';
+    if (k) return new Set([k]);
+  }
+  return posSet(w);
+}
+
+// 오답 보기 고르기: 덩어리 수가 같고, 품사가 같고, 길이가 비슷한 단어 우선
 export function pickDistractors(target, all, n = 3, rand = Math.random) {
   const tKey = normalizeAnswer(answerParts(target.blank).join(' '));
   const tParts = answerParts(target.blank).length;
   const tLen = target.blank.length;
   const wordCount = k => k.split(' ').length;
   const tWords = wordCount(tKey);
+  const tPos = targetPos(target);
   const seen = new Set([tKey]);
   const cands = [];
   for (const w of all) {
@@ -608,8 +667,11 @@ export function pickDistractors(target, all, n = 3, rand = Math.random) {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     const p = answerParts(w.blank).length;
+    // 품사가 다르면 문장 구조만 봐도 답이 보이므로(the ___ accident ↔ 동사 보기) 같은 품사의 보기를 먼저. 품사를 모르면 따지지 않음
+    const wPos = posSet(w);
+    const posOff = tPos.size && wPos.size && ![...tPos].some(k => wPos.has(k));
     // 낱말 수가 다르면 빈칸 수만 세도 답이 보이므로(put up with ↔ fatal) 같은 낱말 수의 보기를 먼저
-    const score = (p === tParts ? 0 : 50) + Math.abs(wordCount(key) - tWords) * 60
+    const score = (p === tParts ? 0 : 50) + Math.abs(wordCount(key) - tWords) * 60 + (posOff ? 40 : 0)
       + Math.abs(w.blank.length - tLen) * 2 + (w.day === target.day ? -8 : 0) + rand() * 30;
     cands.push({ w, score });
   }
@@ -788,37 +850,90 @@ function lev(a, b) {
   }
   return prev[n];
 }
-// 오타 조금, 한쪽이 다른 쪽을 포함하면 같은 뜻으로 봄
+// 한글 음절을 자모로 풀기 (오타를 글자 단위가 아니라 자모 단위로 셈)
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+const JONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+function toJamo(s) {
+  let out = '';
+  for (const ch of s) {
+    const c = ch.charCodeAt(0) - 0xAC00;
+    out += c < 0 || c > 11171 ? ch : CHO[Math.floor(c / 588)] + JUNG[Math.floor((c % 588) / 28)] + JONG[c % 28];
+  }
+  return out;
+}
+// 오타 조금, 한쪽이 다른 쪽을 포함하면 같은 뜻으로 봄.
+// 오타는 자모 단위로: 한 글자가 통째로 다른 말(수입 ↔ 수출, 중대 ↔ 군대)은 오타가 아니라 다른 뜻이라 안 봐줌
 function nearKo(a, b) {
   if (!a || !b) return false;
   if (a === b) return true;
   if (a.length < 2 || b.length < 2) return false;
   if (b.includes(a) || a.includes(b)) return true;
-  return lev(a, b) <= Math.max(1, Math.floor(Math.max(a.length, b.length) * 0.34));
+  const ja = toJamo(a), jb = toJamo(b);
+  return lev(ja, jb) <= Math.max(1, Math.floor(Math.max(ja.length, jb.length) * 0.25));
 }
-// "1. 치명적인 2. 결정적인, 중대한 / 명사 뜻" → 뜻 갈래마다 [같은 뜻 표현들]
-export function meaningSenses(ans) {
+// 뜻의 [ ]는 바로 앞말을 바꿔 쓸 수 있다는 표시: "식별[구별]하다" → 식별하다 · 구별하다, "전문 지식[기술]" → 전문 지식 · 전문 기술.
+// 앞말 없이 쓰인 [생물] 같은 분야 표시는 그대로 둠(normKo가 지움)
+const KO_ENDING = /(하다|되다|시키다|받다|당하다)$/;
+const KO_ENDING_ONLY = /^(하다|되다|시키다|받다|당하다|하게 하다|되게 하다)$/;
+function bracketVariants(text, depth = 0) {
+  const m = depth < 3 && /(\S)\[([^\[\]]+)\]/.exec(text);
+  if (!m) return [text];
+  const pre = text.slice(0, m.index + 1), inner = m[2].trim(), post = text.slice(m.index + m[0].length);
+  const out = [pre + post];
+  if (KO_ENDING_ONLY.test(inner)) {
+    // 어미만 바꾸는 경우: 진정하다[되다] → 진정되다
+    const e = KO_ENDING.exec(pre);
+    if (e) out.push(pre.slice(0, -e[0].length) + inner + post);
+  } else if (inner) {
+    const at = pre.lastIndexOf(' ') + 1;
+    out.push(pre.slice(0, at) + inner + post);  // 바로 앞 낱말을 바꿈
+    if (at > 0) out.push(inner + post);         // 앞말 전체를 바꿈: 집착하게 하다[집착하다]
+  }
+  return out.flatMap(v => bracketVariants(v, depth + 1));
+}
+// 쉼표로 나누되 괄호 안의 쉼표는 그대로
+function splitAlts(p) {
+  const out = [];
+  let depth = 0, cur = '';
+  for (const ch of p) {
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+    if ((ch === ',' || ch === '、') && !depth) { out.push(cur); cur = ''; } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+// 뜻 갈래마다 [표현마다 [바꿔 쓸 수 있는 꼴들]]
+function senseExprs(ans) {
   const out = [];
   String(ans || '').split(/[\/;]/).forEach(block => {
     block.split(/\s*\d+\.\s*/).map(s => s.trim()).filter(Boolean).forEach(p => {
-      const alts = p.split(/[,、]/).map(normKo).filter(Boolean);
-      if (alts.length) out.push(alts);
+      const exprs = splitAlts(p).map(a => [...new Set(bracketVariants(a.trim()).map(normKo).filter(Boolean))]).filter(v => v.length);
+      if (exprs.length) out.push(exprs);
     });
   });
   return out;
+}
+// "1. 치명적인 2. 결정적인, 중대한 / 명사 뜻" → 뜻 갈래마다 [같은 뜻 표현들] ([ ]로 바꿔 쓴 꼴도 포함)
+export function meaningSenses(ans) {
+  return senseExprs(ans).map(exprs => [...new Set(exprs.flat())]);
 }
 /**
  * 직접 쓴 뜻 채점. strict: 'easy'(하나만 맞아도) | 'mid'(갈래가 여럿인 품사/뜻이면 절반 이상) | 'hard'(전부)
  * 반환 { score: 2 맞음 | 1 부분 | 0 틀림, missing: 빠진 갈래 수 }
  */
 export function gradeMeaning(user, answer, strict = 'mid') {
-  const chunks = String(user || '').split(/[\s,;\/、]+/).map(normKo).filter(Boolean);
-  const gs = meaningSenses(answer);
+  const raw = String(user || '');
+  const chunks = raw.split(/[\s,;\/、]+/).map(normKo).filter(Boolean);
+  // 띄어쓰기 없이 붙여 쓴 답도 한 덩어리로 봄: "전문기술" ↔ 전문 기술
+  for (const part of raw.split(/[,;\/、]+/)) { const c = normKo(part); if (c && !chunks.includes(c)) chunks.push(c); }
+  const gs = senseExprs(answer);
   if (!chunks.length || !gs.length) return { score: 0, missing: gs.length };
-  const said = a => chunks.some(c => nearKo(c, a));
-  const hit = gs.filter(alts => alts.some(said)).length;
+  const said = variants => variants.some(a => chunks.some(c => nearKo(c, a)));
+  const hit = gs.filter(exprs => exprs.some(said)).length;
   if (!hit) return { score: 0, missing: gs.length };
-  // 느슨: 뜻 하나만 맞아도 · 보통: 뜻 갈래(1. 2. …)마다 하나씩 · 엄격: 나와 있는 뜻 낱말 전부
+  // 느슨: 뜻 하나만 맞아도 · 보통: 뜻 갈래(1. 2. …)마다 하나씩 · 엄격: 나와 있는 뜻 낱말 전부 ([ ]로 바꿔 쓴 꼴은 하나만 써도 됨)
   if (strict === 'hard') {
     const all = gs.flat(), got = all.filter(said).length;
     return { score: got >= all.length ? 2 : 1, missing: all.length - got };

@@ -64,6 +64,16 @@
         </div>
       </div>
 
+      <!-- 단어 코치: 고른 캐릭터가 시험일에 맞춘 오늘 분량을 말해 줌 (설정에서 끌 수 있음. 꺼져 있으면 한 번만 켤지 물어봄) -->
+      <div id="buddy-card" class="buddy-card" hidden>
+        <button class="buddy-char" id="buddy-char" aria-label="단어 코치"></button>
+        <div class="buddy-say">
+          <div class="buddy-name">단어 코치</div>
+          <div class="buddy-text" id="buddy-text" role="status"></div>
+          <div class="buddy-acts" id="buddy-acts"></div>
+        </div>
+      </div>
+
       <!-- 오늘: 학습 → 복습 → 더 하기 순서로 한 카드 안에서 바뀜 -->
       <div class="card today" id="card-today">
         <div class="today-head">
@@ -166,7 +176,8 @@
         </div>
       </div>
       <div id="regular-opts">
-      <div class="label">하루 새 단어 수</div>
+      <label class="switch-row coach-row"><span>단어 코치 <span class="muted">(시험일에 맞춰 목표일·하루 분량을 짜 줘요)</span></span><input type="checkbox" role="switch" class="switch" id="opt-coach-plan"></label>
+      <div class="label">하루 새 단어 수 <span class="muted" id="coach-new-note" hidden></span></div>
       <div class="seg" id="seg-new">
         <button data-v="10">10</button>
         <button data-v="20">20</button>
@@ -216,6 +227,7 @@
             <div class="w" id="fb-word"></div>
             <div class="muted" id="fb-pron"></div>
           </div>
+          <div class="fb-coach" id="fb-coach" hidden></div>
           <button class="mark-btn" id="fb-mark" aria-label="형광펜" title="형광펜"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
         </div>
         <div class="fb-tabs" id="fb-tabs">
@@ -236,6 +248,7 @@
   <section id="result" class="screen">
     <header class="top"><h1 id="res-title">학습 끝</h1></header>
     <div class="card center res-cheer">
+      <div class="res-buddy" id="res-buddy" hidden></div>
       <div class="cheer">공부하느라 수고하셨어요</div>
       <div class="muted" id="res-detail"></div>
     </div>
@@ -263,7 +276,7 @@
       <button data-v="done">암기 완료</button>
       <button data-v="unknown">형광펜</button>
     </div>
-    <p class="muted list-note">단어를 누르면 예문이 펼쳐져요. 예문·단어 모드 기록을 합쳐서 보여줘요. <span class="syn-t">유의어</span> · <span class="ant-t">반의어</span> · 점은 복습 단계</p>
+    <p class="muted list-note"><span id="list-tip">단어를 누르면 예문이 펼쳐져요. 예문·단어 모드 기록을 합쳐서 보여줘요. </span><span class="syn-t">유의어</span> · <span class="ant-t">반의어</span> · 점은 복습 단계</p>
     <div id="word-list" class="list"></div>
     <div class="sticky-bottom">
       <!-- DAY 박스를 눌러서 열었을 때만: 그 DAY 유반의어 테스트 / 그 DAY 학습 (박스를 왼쪽·오른쪽으로 민 것과 같음) -->
@@ -323,10 +336,17 @@
     </div>
     <div class="card" id="srs-card">
       <div class="label">복습 방식</div>
+      <label class="switch-row"><span>단어 코치 <span class="muted">(시험일만 정하면 목표일·하루 분량을 짜 줘요)</span></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
+      <p class="muted srs-desc" id="coach-plan" hidden></p>
+      <div class="label" id="coach-chars-label" hidden>코치 캐릭터</div>
+      <div class="coach-choices" id="coach-chars" role="radiogroup" aria-label="코치 캐릭터" hidden></div>
+      <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
+      <div id="srs-manual">
       <label class="switch-row"><span>주기 복습 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
       <p class="muted srs-desc">고른 주기대로 복습일이 된 단어를 목표일까지 계속 복습하고, 목표일부터 시험 전날까지는 학습 범위 전부를 남은 날에 나눠 한 번씩 복습해요.</p>
+      </div>
       <div class="srs-dates">
-        <label>목표일 <span class="muted">(새 단어를 끝낼 날)</span><input type="date" id="goal-date" class="date-input"></label>
+        <label id="goal-label">목표일 <span class="muted">(새 단어를 끝낼 날)</span><input type="date" id="goal-date" class="date-input"></label>
         <label>시험일<input type="date" id="srs-exam-date" class="date-input"></label>
       </div>
       <p class="srs-warn" id="srs-warn" hidden></p>
@@ -407,13 +427,13 @@
     </div>
     <div class="card" id="set-data">
       <div class="label">진도 백업 · 데이터</div>
-      <p class="muted">진도는 이 폰의 브라우저에 저장돼요. 브라우저 데이터를 지우거나 다른 폰으로 옮길 땐 백업 파일을 써주세요.</p>
+      <p class="muted">진도는 이 폰의 브라우저에 저장돼요. 브라우저 데이터를 지우거나 다른 폰으로 옮길 땐 백업 파일을 써주세요. 백업 파일 하나에 예문·단어 두 모드의 진도와 학습 설정, 형광펜이 모두 들어가요.</p>
       <div class="row two">
         <button class="btn secondary" id="btn-export">백업 저장</button>
         <button class="btn secondary" id="btn-import">백업 불러오기</button>
       </div>
       <input type="file" id="import-file" accept=".json,application/json" hidden>
-      <button class="btn danger small" id="btn-reset">진도 전체 초기화</button>
+      <button class="btn danger small" id="btn-reset"><span data-only="ex">예문</span><span data-only="word">단어</span> 모드 진도 초기화</button>
       <div class="label mt">단어 데이터</div>
       <p class="muted" id="data-info"></p>
       <button class="btn ghost small" id="btn-reload">서버에서 다시 불러오기</button>
@@ -437,6 +457,19 @@
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="np-cancel">취소</button>
         <button class="btn dlg-ok" id="np-ok">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 코치 고르기: 단어 코치를 처음 켤 때 -->
+  <div class="dialog" id="coach-pick" role="dialog" aria-modal="true" aria-labelledby="cp-title" hidden>
+    <div class="dialog-card">
+      <div class="dlg-title" id="cp-title">함께할 코치를 골라 주세요</div>
+      <div class="dlg-body">설정에서 언제든 바꿀 수 있어요.</div>
+      <div class="coach-choices" id="cp-choices"></div>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="cp-cancel">취소</button>
+        <button class="btn dlg-ok" id="cp-ok">이 코치로</button>
       </div>
     </div>
   </div>

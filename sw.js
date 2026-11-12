@@ -3,7 +3,7 @@
 const CACHE = 'voca-v2';
 
 // 처음 연 직후에 인터넷이 끊겨도 열리게, 설치할 때 앱 파일을 미리 받아 둠 (하나가 실패해도 설치는 됨)
-const SHELL = ['./', 'index.html', 'style.css', 'js/app.js', 'js/core.js', 'js/sync.js', 'js/ai.js', 'js/files.js', 'manifest.webmanifest', 'highlights.json', 'version.txt', 'icon-192.png'];
+const SHELL = ['./', 'index.html', 'style.css', 'js/app.js', 'js/core.js', 'js/sync.js', 'js/ai.js', 'js/files.js', 'js/coach-art.js', 'manifest.webmanifest', 'highlights.json', 'version.txt', 'icon-192.png'];
 self.addEventListener('install', e => {
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u =>
