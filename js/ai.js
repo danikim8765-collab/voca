@@ -219,18 +219,26 @@ async function askClaude(c, r, signal) {
   return (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
+// 생각하는 모델(Gemini 2.5·3 flash)은 따로 정하지 않으면 오래 생각해서 시간이 넘거나 토큰이 모자라 답이 잘림.
+// 그래서 생각을 짧게: Gemini 3은 thinkingLevel, 그 밖(2.5·-latest 별칭)은 thinkingBudget (Gemini 3도 받음)
+export const geminiThinking = model => (/gemini-3/.test(model || '') ? { thinkingLevel: 'low' } : { thinkingBudget: 512 });
 async function askGemini(c, r, signal) {
-  const url = c.provider === 'vertex' ? `${VERTEX_API}/${c.model}:generateContent` : `${GEMINI_API}/models/${c.model || GEMINI_MODEL}:generateContent`;
-  const res = await fetch(url, {
+  const model = c.model || GEMINI_MODEL;
+  const url = c.provider === 'vertex' ? `${VERTEX_API}/${model}:generateContent` : `${GEMINI_API}/models/${model}:generateContent`;
+  const call = thinking => fetch(url, {
     method: 'POST', headers: geminiHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: r.system }] },
       contents: [{ role: 'user', parts: [{ text: r.user }] }],
-      generationConfig: r.json
-        ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA, maxOutputTokens: 4096 }
-        : { maxOutputTokens: 4096 }, // 생각하는 모델은 생각에도 토큰을 써서 넉넉히
+      generationConfig: {
+        ...(r.json ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA } : {}),
+        maxOutputTokens: 8192, // 생각에도 토큰을 써서 넉넉히
+        ...(thinking ? { thinkingConfig: thinking } : {}),
+      },
     }),
   });
+  let res = await call(geminiThinking(model));
+  if (res.status === 400) res = await call(null); // 생각 설정을 안 받는 모델(2.0 등)이면 빼고 다시
   if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
   const data = await res.json();
   const cand = (data.candidates || [])[0];
@@ -403,24 +411,28 @@ const SAY_SCHEMA = {
 const SAY_GSCHEMA = { type: 'OBJECT', properties: { mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' } }, required: ['mood', 'text'] };
 
 // AI 말에 나온 숫자가 전부 사실(facts)에 있는지. 없는 숫자를 지어냈으면 false
-export function numbersOk(text, facts) {
+// small: 요령을 말할 때 쓰는 작은 숫자("5분 뒤", "3가지", "2초")는 사실에 없어도 됨. 개수·날짜·횟수(개·일·번)는 그대로 막음
+const TIP_NUM = /(\d+)\s*(?:분|초|가지|단계|글자|음절|문장)/g;
+export function numbersOk(text, facts, small = false) {
   const have = new Set(String(facts).match(/\d+/g) || []);
-  return (String(text).match(/\d+/g) || []).every(n => have.has(n));
+  const t = small ? String(text).replace(TIP_NUM, (m, n) => (+n <= 10 ? '' : m)) : String(text);
+  return (t.match(/\d+/g) || []).every(n => have.has(n));
 }
 const clean = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
 
 // keep: 숫자를 지어낸 말이라도 나머지(선택지 번호 등)는 쓰고 text만 비움
-async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA, format = SAY_FORMAT, keep = false } = {}) {
+async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA, format = SAY_FORMAT, keep = false, small = false, timeout = 20000 } = {}) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   if (!takeCoachTurn()) { lastErr = 'limit'; return null; }
-  const text = await ask({ system: coachSystem(char, format), json: true, schema, gschema, user, timeout: 20000 }, coachConf());
+  const text = await ask({ system: coachSystem(char, format), json: true, schema, gschema, user, timeout }, coachConf());
   if (!text) return null;
   try {
     const out = pickJSON(text);
     out.text = clean(out.text);
     if (!MOODS.includes(out.mood)) out.mood = 'normal';
-    if (!out.text || out.text.length > 400 || !numbersOk(out.text, facts)) {
-      lastErr = out.text && !numbersOk(out.text, facts) ? 'numbers' : 'bad';
+    const numOk = numbersOk(out.text, facts, small);
+    if (!out.text || out.text.length > 400 || !numOk) {
+      lastErr = out.text && !numOk ? 'numbers' : 'bad';
       if (!keep) return null;
       out.text = '';
     }
@@ -495,7 +507,7 @@ ${hist ? `앞선 이야기:\n${hist}\n` : ''}학생이 방금 한 말:
 - rest: 쉬는 요일 (0 일, 1 월, 2 화, 3 수, 4 목, 5 금, 6 토를 쉼표로, 예 "6" 또는 "0,6"). 쉬는 요일을 없애면 "-". 안 바꾸면 ""
 - today: 오늘 배울 새 단어 총수 (오늘 이미 배운 것 포함). 안 바꾸면 -1
 쉬는 요일을 바꾸면 표의 숫자가 달라지니, 그때 text에는 숫자를 쓰지 말고 무엇을 바꿔 보는지만 말해요 (앱이 계산한 뒤 다시 설명해요).
-학습 범위나 시험일은 여기서 못 바꾸니 학습 계획 화면에서 바꾸라고 알려 줘요. text는 1~3문장(120자 안팎).`, all, { schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, format: CHAT_FORMAT, keep: true });
+학습 범위나 시험일은 여기서 못 바꾸니 학습 계획 화면에서 바꾸라고 알려 줘요. text는 1~3문장(120자 안팎).`, all, { schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, format: CHAT_FORMAT, keep: true, small: true, timeout: 30000 });
   if (!out) return null;
   const change = {};
   const r = Math.round(Number(out.review));
@@ -528,5 +540,5 @@ ${result}
 ${hist ? `앞선 이야기:\n${hist}\n` : ''}학생이 방금 한 말:
 <message>${message}</message>
 
-새로 계산한 일정이 어떤지 학생에게 설명해요: 하루에 얼마나 하게 되는지, 지금 일정과 무엇이 달라지는지, 괜찮은지(빡빡하면 솔직하게). 숫자는 위에 있는 것만. 마지막에 마음에 들면 '이렇게 할게요'를 누르라고 해요. 2~3문장(130자 안팎).`, all);
+새로 계산한 일정이 어떤지 학생에게 설명해요: 하루에 얼마나 하게 되는지, 지금 일정과 무엇이 달라지는지, 괜찮은지(빡빡하면 솔직하게). 숫자는 위에 있는 것만. 마지막에 마음에 들면 '이렇게 할게요'를 누르라고 해요. 2~3문장(130자 안팎).`, all, { timeout: 30000 });
 }
