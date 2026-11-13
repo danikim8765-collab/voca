@@ -640,7 +640,34 @@ test('단어 코치 일정: 남은 날을 배우는 날과 훑는 날로 알맞�
   // 시험이 멀어도 정한 대로 (하루 10개로 당기지 않음)
   const slow = coachPlan({ today, exam: addDays(today, 90), total: 200, remaining: 200, review: 5 });
   assert.deepEqual([slow.reviewDays, slow.learnDays, slow.perDay], [5, 85, 3]);
+  // 쉬는 요일: 하루 개수는 공부하는 날로 나눔 (2026-11-11은 수요일, 토요일 쉼)
+  const { studyDays, weekdayOf } = await import('../js/core.js');
+  assert.equal(weekdayOf('2026-11-14'), 6);
+  assert.equal(studyDays(today, addDays(today, 14), [6]), 12);
+  const sat = coachPlan({ today, exam: addDays(today, 14), total: 200, remaining: 200, review: 7, rest: [6] });
+  assert.equal(sat.learnDays, 7);
+  assert.equal(sat.perDay, Math.ceil(200 / studyDays(today, sat.goal, [6])));
+  assert.ok(sat.perDay > long.perDay);
+  assert.equal(sat.finalPerDay, Math.ceil(200 / studyDays(sat.goal, addDays(today, 14), [6])));
+  // 일주일 내내 쉬면 쉬는 날이 없는 걸로
+  assert.equal(coachPlan({ today, exam: addDays(today, 14), total: 200, remaining: 200, review: 7, rest: [0, 1, 2, 3, 4, 5, 6] }).perDay, long.perDay);
+  // 배우는 기간이 쉬는 날뿐이면 늘림: 오늘(수)·내일(목) 쉬고 시험이 3일 뒤, 복습 2일 → 배우는 날을 늘림
+  const tight2 = coachPlan({ today, exam: addDays(today, 3), total: 40, remaining: 40, review: 2, rest: [3, 4] });
+  assert.ok(studyDays(today, tight2.goal, [3, 4]) >= 1);
   // 시험일이 없거나 지났으면 일정 없음
   assert.equal(coachPlan({ today, exam: '', total: 10, remaining: 10 }), null);
   assert.equal(coachPlan({ today, exam: today, total: 10, remaining: 10 }), null);
+});
+
+test('전체 복습 기간: 쉬는 요일엔 몫이 없고, 공부하는 날로 나눔', async () => {
+  const { pickSrsReview } = await import('../js/core.js');
+  const words = Array.from({ length: 60 }, (_, i) => ({ id: `1|w${i}`, day: 1, word: `w${i}` }));
+  // 목표일 11-16(월) ~ 시험 11-23(월): 7일 중 토(21)·일(22) 쉬면 공부하는 날 5일 → 하루 12개
+  const opt = { goal: '2026-11-16', exam: '2026-11-23', rest: [0, 6] };
+  const mon = pickSrsReview(words, words, {}, { ...opt, today: '2026-11-16' });
+  assert.deepEqual([mon.days, mon.size, mon.words.length], [5, 12, 12]);
+  const sat = pickSrsReview(words, words, {}, { ...opt, today: '2026-11-21' });
+  assert.deepEqual([sat.rest, sat.words.length], [true, 0]);
+  // 금요일(다섯 번째 공부하는 날)이면 다섯 몫까지 (앞에서 안 본 것 전부)
+  assert.equal(pickSrsReview(words, words, {}, { ...opt, today: '2026-11-20' }).words.length, 60);
 });

@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachPick, numbersOk, aiCoachOnline, aiCoachName, aiName } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, aiCoachExplain, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -134,9 +134,32 @@ test('OpenRouter: 키 확인 후 :free 모델을 고르고, 앞뒤 말이 붙은
   assert.equal(JSON.parse(calls.at(-1).opts.body).response_format, undefined);
 });
 
-test('모르는 키 모양은 연결 안 함', async () => {
-  await assert.rejects(aiConnect('hello'), e => e.status === 401);
-  assert.equal(calls.length, 0);
+test('모르는 키 모양은 회사마다 물어보고, 다 안 되면 unknown', async () => {
+  reply = () => json({ error: { message: 'bad key' } }, 401);
+  await assert.rejects(aiConnect('hello'), e => e.status === 401 && e.reason === 'unknown');
+  assert.equal(calls.length, 4);
+  // Gemini가 받아 주면 Gemini로 연결 (앞뒤 공백·줄바꿈은 지움)
+  calls = [];
+  reply = url => (url.includes('generativelanguage') ? json({ name: 'models/gemini-flash-lite-latest' }) : json({}, 401));
+  await aiConnect('  newstyle-key-123\n');
+  assert.equal(aiName(), 'Gemini');
+  assert.equal(calls[0].opts.headers['x-goog-api-key'], 'newstyle-key-123');
+});
+
+test('Gemini 키 연결 실패 까닭: 틀린 키, 꺼진 API, 제한', async () => {
+  const err = (status, reason, message) => () => json({ error: { code: status, message, status: 'X', details: [{ reason }] } }, status);
+  reply = err(400, 'API_KEY_INVALID', 'API key not valid. Please pass a valid API key.');
+  await assert.rejects(aiConnect('AIzaBAD', 'coach'), e => e.reason === 'invalid' && /not valid/.test(e.detail));
+  reply = err(403, 'SERVICE_DISABLED', 'Generative Language API has not been used in project 123 before or it is disabled.');
+  await assert.rejects(aiConnect('AIzaX', 'coach'), e => e.reason === 'disabled');
+  reply = err(403, 'API_KEY_HTTP_REFERRER_BLOCKED', 'Requests from referer <empty> are blocked.');
+  await assert.rejects(aiConnect('AIzaX', 'coach'), e => e.reason === 'restricted');
+  // 코치용 Gemini 키는 flash부터
+  calls = [];
+  reply = () => json({ name: 'models/gemini-flash-latest' });
+  await aiConnect('AIzaGOOD', 'coach');
+  assert.match(calls[0].url, /models\/gemini-flash-latest$/);
+  assert.equal(aiName('coach'), 'Gemini');
 });
 
 test('스위치를 끄면 키가 있어도 AI를 안 부름', async () => {
@@ -192,14 +215,34 @@ test('코치 말: 스위치를 끄거나 하루 한도를 넘으면 안 부름',
   assert.equal(calls.length, 30);
 });
 
-test('일정 상의하기: 선택지 번호만 받고, 범위를 벗어나면 0', async () => {
+test('코치와 이야기: 바꿀 값(복습 날 수·쉬는 요일·오늘 개수)을 받아 옴, 학생이 말한 숫자는 써도 됨', async () => {
   store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
-  const options = ['코치 추천: 시험 전 전체 복습 3일', '복습 길게: 시험 전 전체 복습 6일'];
-  reply = claudeText('{"pick":2,"mood":"cheer","text":"복습을 6일 가져가요."}');
-  assert.deepEqual(await aiCoachPick({ char: 'cat', facts: '시험까지 14일', options, message: '복습 오래 하고 싶어' }), { pick: 2, mood: 'cheer', text: '복습을 6일 가져가요.' });
-  assert.match(JSON.parse(calls[0].opts.body).messages[0].content, /<message>복습 오래 하고 싶어<\/message>/);
-  reply = claudeText('{"pick":7,"mood":"normal","text":"음."}');
-  assert.equal((await aiCoachPick({ char: 'cat', facts: '', options, message: '?' })).pick, 0);
+  const args = { char: 'slime', facts: '시험까지 23일', table: '전체 복습 6일: 하루 24개\n전체 복습 10일: 하루 31개', maxReview: 22, message: '토요일날 빼고 30개씩 하면 복습 몇번' };
+  reply = claudeText('{"mood":"normal","text":"토요일을 쉬는 걸로 계산해 볼게요.","review":0,"perDay":30,"rest":"6","today":-1}');
+  const r1 = await aiCoachChat(args);
+  assert.deepEqual(r1, { mood: 'normal', text: '토요일을 쉬는 걸로 계산해 볼게요.', change: { perDay: 30, rest: [6] } });
+  const body = JSON.parse(calls.at(-1).opts.body);
+  assert.match(body.system, /JSON/);
+  assert.match(body.messages[0].content, /<message>토요일날 빼고 30개씩 하면 복습 몇번<\/message>/);
+  // 바꿀 게 없는 이야기, 요일 글자, 쉬는 요일 없애기, 범위 밖 값
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"rest":"","today":-1}');
+  assert.deepEqual((await aiCoachChat(args)).change, null);
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":40,"rest":"토,일","today":50}');
+  assert.deepEqual((await aiCoachChat(args)).change, { rest: [0, 6], today: 50 });
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"rest":"-","today":-1}');
+  assert.deepEqual((await aiCoachChat(args)).change, { rest: [] });
+  // 학생이 말한 30, 표의 31은 써도 되고, 지어낸 숫자면 말만 비움
+  reply = claudeText('{"mood":"normal","text":"30개쯤이면 하루 31개예요.","review":10,"rest":"","today":-1}');
+  assert.equal((await aiCoachChat(args)).text, '30개쯤이면 하루 31개예요.');
+  reply = claudeText('{"mood":"normal","text":"복습을 4번 돌아요.","review":10,"rest":"","today":-1}');
+  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '', change: { review: 10 } });
+  // 앱이 계산한 결과 설명
+  reply = claudeText('{"mood":"cheer","text":"토요일 쉬면 하루 33개예요."}');
+  assert.equal((await aiCoachExplain({ char: 'slime', facts: '', message: '토요일 쉴래', result: '새 단어: 하루 33개' })).text, '토요일 쉬면 하루 33개예요.');
+  // 실패 까닭
+  reply = () => json({}, 429);
+  assert.equal(await aiCoachChat(args), null);
+  assert.equal(aiCoachError(), '429');
 });
 
 test('코치용 키를 따로 넣으면 코치는 그 AI, 채점은 원래 AI', async () => {
@@ -227,4 +270,31 @@ test('코치용 키를 따로 넣으면 코치는 그 AI, 채점은 원래 AI', 
   assert.equal(aiCoachOnline(), true);
   aiDisconnect('coach');
   assert.equal(aiCoachOnline(), false);
+});
+
+test('AQ.로 시작하는 Google 키: Gemini API가 안 받으면 Vertex AI로 연결', async () => {
+  const tokErr = () => json({ error: { code: 401, message: 'API key not valid. Please pass a valid API key.', details: [{ reason: 'ACCESS_TOKEN_TYPE_UNSUPPORTED' }] } }, 401);
+  // Gemini API가 받으면 그대로 Gemini
+  reply = () => json({ name: 'models/gemini-flash-latest' });
+  await aiConnect('AQ.good', 'coach');
+  assert.equal(aiName('coach'), 'Gemini');
+  // Gemini API는 안 받고 Vertex는 받음 (없는 모델은 건너뜀)
+  calls = [];
+  reply = (url, o) => (url.includes('generativelanguage') ? tokErr() : url.includes('gemini-3-flash:') || url.includes('gemini-3-flash-preview') ? json({ error: { code: 404 } }, 404) : json({ candidates: [] }));
+  await aiConnect('AQ.vertex', 'coach');
+  assert.equal(aiName('coach'), 'Gemini(Vertex AI)');
+  assert.match(calls.at(-1).url, /aiplatform\.googleapis\.com\/v1\/publishers\/google\/models\/gemini-2\.5-flash:generateContent$/);
+  // 코치 말도 Vertex 주소로
+  reply = () => json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"mood":"happy","text":"좋아요."}' }] } }] });
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.match(calls.at(-1).url, /aiplatform\.googleapis\.com.*gemini-2\.5-flash:generateContent$/);
+  assert.equal(calls.at(-1).opts.headers['x-goog-api-key'], 'AQ.vertex');
+  // 채점용 칸이면 flash-lite부터
+  calls = [];
+  reply = (url) => (url.includes('generativelanguage') ? tokErr() : /flash-lite(-preview)?:/.test(url) && url.includes('gemini-3') ? json({ error: { code: 404 } }, 404) : json({ candidates: [] }));
+  await aiConnect('AQ.vertex');
+  assert.match(calls.at(-1).url, /gemini-2\.5-flash-lite:generateContent$/);
+  // 둘 다 안 받으면 tokentype
+  reply = () => tokErr();
+  await assert.rejects(aiConnect('AQ.bad', 'coach'), e => e.reason === 'tokentype');
 });
