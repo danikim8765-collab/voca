@@ -1,12 +1,15 @@
-# 정해진 시간 머지: 매일 12:00 · 18:30(한국 시간)에 '머지 대기' 라벨이 붙은 열린 PR을 오래된 것부터 main에 머지하고,
+# 정해진 시간 머지: 매일 07:00 · 12:00 · 18:00 · 22:30(한국 시간)에 '머지 대기' 라벨이 붙은 열린 PR을 오래된 것부터 main에 머지하고,
 # 하나라도 머지했으면 앱 버전(version.txt · js/app.js의 APP_VERSION)을 한 번만 올린다.
 # PR과 머지가 너무 잦지 않게 하려는 것. 규칙은 CLAUDE.md
 name: 정해진 시간 머지
 
 on:
   schedule:
-    - cron: '0 3 * * *'   # 12:00 KST (GitHub 사정으로 몇 분 늦게 돌 수 있음)
-    - cron: '30 9 * * *'  # 18:30 KST
+    # cron은 UTC(한국 시간 - 9시간). GitHub 사정으로 몇 분 늦게 돌 수 있음
+    - cron: '0 22 * * *'  # 07:00 KST (UTC로는 전날 22:00)
+    - cron: '0 3 * * *'   # 12:00 KST
+    - cron: '0 9 * * *'   # 18:00 KST
+    - cron: '30 13 * * *' # 22:30 KST
   workflow_dispatch: {}   # Actions 탭에서 손으로 돌릴 때
 
 permissions:
