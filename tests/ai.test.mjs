@@ -298,3 +298,30 @@ test('AQ.로 시작하는 Google 키: Gemini API가 안 받으면 Vertex AI로 �
   reply = () => tokErr();
   await assert.rejects(aiConnect('AQ.bad', 'coach'), e => e.reason === 'tokentype');
 });
+
+test('Gemini 코치: 생각을 짧게 하라고 보내고, 생각 설정을 안 받는 모델(400)이면 빼고 다시', async () => {
+  store.set('voca.ai.coach.v1', JSON.stringify({ key: 'AIza', provider: 'gemini', model: 'gemini-3-flash' }));
+  const ok = json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"mood":"happy","text":"좋아요."}' }] } }] });
+  reply = () => ok;
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  let g = JSON.parse(calls.at(-1).opts.body).generationConfig;
+  assert.deepEqual(g.thinkingConfig, { thinkingLevel: 'low' });
+  assert.ok(g.maxOutputTokens >= 8192);
+  store.set('voca.ai.coach.v1', JSON.stringify({ key: 'AIza', provider: 'gemini', model: 'gemini-flash-latest' }));
+  calls = [];
+  reply = (url, o) => (JSON.parse(o.body).generationConfig.thinkingConfig ? json({ error: {} }, 400) : ok);
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(JSON.parse(calls[0].opts.body).generationConfig.thinkingConfig, { thinkingBudget: 512 });
+});
+
+test('코치와 이야기: 요령 속 작은 숫자(3가지, 5분)는 사실에 없어도 그대로 보여 줌', async () => {
+  assert.equal(numbersOk('3가지 방법이 있어요. 5분 뒤에 다시 봐요', '', true), true);
+  assert.equal(numbersOk('5분 뒤에 다시 봐요', ''), false);
+  assert.equal(numbersOk('복습을 4번 돌아요', '', true), false);
+  assert.equal(numbersOk('하루 30개예요', '하루 25개', true), false);
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  reply = claudeText('{"mood":"cheer","text":"소리 내어 읽고 5분 뒤에 다시 떠올려 봐요.","review":0,"perDay":0,"rest":"","today":-1}');
+  const res = await aiCoachChat({ char: 'owl', facts: '시험까지 14일', table: '', maxReview: 5, message: '잘 외우는 법 알려줘' });
+  assert.equal(res.text, '소리 내어 읽고 5분 뒤에 다시 떠올려 봐요.');
+});
