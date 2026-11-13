@@ -5,6 +5,9 @@
 // 서버 없이 브라우저에서 바로 부른다. 키는 이 기기의 localStorage에만 저장 (동기화 안 함)
 
 const KEY = 'voca.ai.v1'; // { key, provider, model } 두 모드가 같이 씀
+// 코치용 키 (따로 넣었을 때만). 없으면 코치도 위의 키를 씀. 채점은 빠른 AI, 코치 말은 한국어가 자연스러운 AI처럼 나눠 쓰려고
+const COACH_KEY = 'voca.ai.coach.v1';
+const SLOT = { main: KEY, coach: COACH_KEY };
 const TIMEOUT_MS = 12000;
 
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
@@ -17,20 +20,25 @@ const OPENAI_LIKE = {
   openrouter: { api: 'https://openrouter.ai/api/v1', prefer: [/gpt-oss-120b:free$/, /gpt-oss.*:free$/, /deepseek.*:free$/, /qwen.*:free$/, /llama.*:free$/, /:free$/], json: false },
 };
 
-const loadConf = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-const saveConf = c => { try { localStorage.setItem(KEY, JSON.stringify(c)); } catch {} };
+const loadConf = (slot = 'main') => { try { return JSON.parse(localStorage.getItem(SLOT[slot])) || {}; } catch { return {}; } };
+const saveConf = (c, slot = 'main') => { try { localStorage.setItem(SLOT[slot], JSON.stringify(c)); } catch {} };
 
 export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^AIza/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
-const conf = () => { const c = loadConf(); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
-export const aiProvider = () => conf().provider || '';
+const conf = (slot = 'main') => { const c = loadConf(slot); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
+// 코치가 쓸 설정: 코치용 키가 있으면 그것, 없으면 채점용
+const coachConf = () => (conf('coach').key ? conf('coach') : conf());
+export const aiProvider = (slot = 'main') => conf(slot).provider || '';
 // 설정의 '채점에 AI 사용하기' 스위치 (키와 따로 저장: 끄고 켜도 키는 남음)
 const ON_KEY = 'voca.ai.on.v1';
 export const aiSwitch = () => { try { return localStorage.getItem(ON_KEY) === '1'; } catch { return false; } };
 export const setAiSwitch = on => { try { localStorage.setItem(ON_KEY, on ? '1' : '0'); } catch {} };
-export const aiHasKey = () => !!conf().key;
+export const aiHasKey = (slot = 'main') => !!conf(slot).key;
 export const aiEnabled = () => aiSwitch() && aiHasKey();
 export const aiOnline = () => aiEnabled() && navigator.onLine !== false;
-export const aiName = () => ({ gemini: 'Gemini', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider()] || 'AI');
+export const aiName = (slot = 'main') => ({ gemini: 'Gemini', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider(slot)] || 'AI');
+// 코치가 AI를 쓸 수 있는지 (스위치 + 코치용이나 채점용 키 + 인터넷)
+export const aiCoachOnline = () => aiSwitch() && !!coachConf().key && navigator.onLine !== false;
+export const aiCoachName = () => (aiHasKey('coach') ? aiName('coach') : aiName());
 
 const claudeHeaders = key => ({
   'content-type': 'application/json',
@@ -45,13 +53,13 @@ const bearer = key => ({ 'content-type': 'application/json', authorization: `Bea
 const fail = status => Object.assign(new Error(String(status)), { status });
 
 // 키가 맞는지 확인 (모델 정보 조회라 비용 없음). 맞으면 저장. 틀린 키는 status 401로 던짐
-export async function aiConnect(key) {
+export async function aiConnect(key, slot = 'main') {
   const provider = providerOf(key);
   if (!provider) throw fail(401);
   if (provider === 'claude') {
     const res = await fetch(`${CLAUDE_API}/models/${CLAUDE_MODEL}`, { headers: claudeHeaders(key), cache: 'no-store' });
     if (!res.ok) throw fail(res.status === 403 ? 401 : res.status);
-    saveConf({ key, provider, model: CLAUDE_MODEL });
+    saveConf({ key, provider, model: CLAUDE_MODEL }, slot);
     return;
   }
   if (OPENAI_LIKE[provider]) {
@@ -65,7 +73,7 @@ export async function aiConnect(key) {
     let model = '';
     for (const re of prefer) { model = ids.find(id => re.test(id)) || ''; if (model) break; }
     if (!model) throw fail(404);
-    saveConf({ key, provider, model });
+    saveConf({ key, provider, model }, slot);
     return;
   }
   const get = path => fetch(`${GEMINI_API}/${path}`, { headers: geminiHeaders(key), cache: 'no-store' });
@@ -83,9 +91,9 @@ export async function aiConnect(key) {
   }
   // Gemini는 틀린 키를 400(API_KEY_INVALID)으로 알려 줌
   if (!res.ok) throw fail([400, 401, 403].includes(res.status) ? 401 : res.status);
-  saveConf({ key, provider, model });
+  saveConf({ key, provider, model }, slot);
 }
-export function aiDisconnect() { saveConf({}); }
+export function aiDisconnect(slot = 'main') { saveConf({}, slot); }
 
 const STRICT_RULE = {
   // 느슨: 뜻 하나만 통하면 정답. 1점은 거의 안 주고, 0점은 완전히 다른 단어의 뜻을 썼을 때만
@@ -181,8 +189,7 @@ async function askOpenAILike(c, r, signal) {
 }
 
 // 스위치·키·인터넷을 확인하고, 시간 제한을 걸어 부름. 실패면 null
-async function ask(r) {
-  const c = conf();
+async function ask(r, c = conf()) {
   if (!aiSwitch() || !c.key || navigator.onLine === false) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -331,8 +338,8 @@ export function numbersOk(text, facts) {
 const clean = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
 
 async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA } = {}) {
-  if (!aiOnline() || !takeCoachTurn()) return null;
-  const text = await ask({ system: coachSystem(char), json: true, schema, gschema, user });
+  if (!aiCoachOnline() || !takeCoachTurn()) return null;
+  const text = await ask({ system: coachSystem(char), json: true, schema, gschema, user }, coachConf());
   if (!text) return null;
   try {
     const out = pickJSON(text);

@@ -5,7 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, coachPlan,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachPick, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachPick, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
 
@@ -796,7 +796,7 @@ function talkCoach() {
   };
   // AI가 켜져 있으면 코치에게 말로 물어볼 수 있음: 앱이 계산한 선택지 가운데서 골라 줌
   const ask = $('#ct-ask'), inp = $('#ct-input'), send = $('#ct-send');
-  ask.hidden = !aiOnline();
+  ask.hidden = !aiCoachOnline();
   inp.value = '';
   let asking = false;
   const talk = async () => {
@@ -905,7 +905,7 @@ function coachSayKey(say) {
   return [dateStr(), f.stage, !f.learnLeft && f.rv.done, settings.coachGoal, settings.exam, settings.from, settings.to, coachChar(), say.mood, coachMoved].join('|');
 }
 function aiSayFor(say) {
-  if (!aiOnline() || !settings.coach) return null;
+  if (!aiCoachOnline() || !settings.coach) return null;
   const key = coachSayKey(say), c = load(SAY_KEY, {});
   if (c.key === key && c.text) return c;
   if ((c.key === key && Date.now() - (c.at || 0) < 600000) || sayPending === key) return null;
@@ -2319,7 +2319,7 @@ function resultComment(s, wrong) {
   const box = $('#res-say');
   box.hidden = true;
   const seq = ++resultSeq;
-  if (!settings.coach || !aiOnline() || s.mode === 'syn') return;
+  if (!settings.coach || !aiCoachOnline() || s.mode === 'syn') return;
   const lines = [`방금 한 학습: ${s.label}, ${s.total}단어`];
   if (wrong.length) {
     lines.push(`틀렸거나 힌트를 본 단어 ${wrong.length}개:`);
@@ -2736,9 +2736,15 @@ function renderAiStatus() {
   $('#ai-box').hidden = !sw;
   $('#ai-off').hidden = key;
   $('#ai-on').hidden = !key;
-  if (key) $('#ai-info').textContent = navigator.onLine === false ? `AI 연결됨 · 지금은 오프라인이라 ${WORD ? '규칙대로 채점해요' : '기본 말풍선만 보여요'}`
-    : (WORD ? 'AI 연결됨 · 규칙 채점에서 오답이 나오면 AI가 다시 확인해요' : 'AI 연결됨 · 직접 입력에서 틀리면 AI가 왜 안 맞는지 말풍선으로 알려줘요')
-      + (settings.coach ? '\n단어 코치의 말도 AI가 지어요 (일정 계산은 앱이 해요)' : '');
+  if (key) $('#ai-info').textContent = navigator.onLine === false ? `${aiName()} 연결됨 · 지금은 오프라인이라 ${WORD ? '규칙대로 채점해요' : '기본 말풍선만 보여요'}`
+    : `${aiName()} 연결됨 · ` + (WORD ? '규칙 채점에서 오답이 나오면 AI가 다시 확인해요' : '직접 입력에서 틀리면 AI가 왜 안 맞는지 말풍선으로 알려줘요');
+  // 코치 AI: 따로 키를 넣으면 코치 말만 그 AI가 지음 (채점은 위의 AI 그대로)
+  const ck = aiHasKey('coach');
+  $('#ai-coach-off').hidden = ck;
+  $('#btn-ai-coach-off').hidden = !ck;
+  $('#ai-coach-info').textContent = ck ? `${aiName('coach')} 연결됨 · 단어 코치의 말은 이 AI가 지어요 (채점은 ${key ? aiName() : '규칙대로'})`
+    : key ? `지금은 채점과 같은 AI(${aiName()})가 코치 말도 지어요. 코치 말투가 어색하면 다른 키를 넣어 코치만 바꿀 수 있어요. 한국어는 Gemini(AIza…, 무료)나 Claude(sk-ant-…, 유료)가 자연스러운 편이에요.`
+      : '키를 넣으면 단어 코치의 말을 AI가 지어요. 일정 계산은 언제나 앱이 해요.';
 }
 
 // 백업 파일 하나에 예문·단어 두 모드의 진도·학습 설정과 형광펜을 모두 담음 (예전 파일은 한 모드만 들어 있음)
@@ -2984,6 +2990,32 @@ function bind() {
     }
     btn.disabled = false;
     btn.textContent = '연결';
+    renderAiStatus();
+  });
+  // 코치용 키: 연결하면 홈 말을 새 AI로 다시 짓게 저장해 둔 말을 지움
+  const forgetCoachSay = () => { localStorage.removeItem('voca.coachsay.v1'); localStorage.removeItem('voca.word.coachsay.v1'); };
+  $('#btn-ai-coach-connect').addEventListener('click', async () => {
+    const key = $('#ai-coach-key').value.trim();
+    if (!key) { toast('API 키를 붙여넣어 주세요'); return; }
+    const btn = $('#btn-ai-coach-connect');
+    btn.disabled = true;
+    btn.textContent = '확인 중…';
+    try {
+      await aiConnect(key, 'coach');
+      $('#ai-coach-key').value = '';
+      forgetCoachSay();
+      toast(`코치 말은 이제 ${aiName('coach')}가 지어요`);
+    } catch (e) {
+      toast(e.status === 404 ? '지금 쓸 수 있는 모델을 찾지 못했어요' : e.status === 401 || e.status === 403 ? 'API 키가 맞지 않아요. 다시 복사해서 붙여넣어 주세요' : '확인하지 못했어요. 인터넷과 API 키를 확인해 주세요', 3500);
+    }
+    btn.disabled = false;
+    btn.textContent = '코치 AI 연결';
+    renderAiStatus();
+  });
+  $('#btn-ai-coach-off').addEventListener('click', async () => {
+    if (!(await ask({ title: '코치 AI 연결을 끊을까요?', body: '이 기기에서 코치용 키를 지워요. 코치 말은 채점과 같은 AI가 지어요.', ok: '연결 끊기' }))) return;
+    aiDisconnect('coach');
+    forgetCoachSay();
     renderAiStatus();
   });
   $('#btn-ai-off').addEventListener('click', async () => {

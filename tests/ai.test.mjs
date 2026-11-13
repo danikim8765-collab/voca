@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachPick, numbersOk } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachPick, numbersOk, aiCoachOnline, aiCoachName, aiName } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -200,4 +200,31 @@ test('일정 상의하기: 선택지 번호만 받고, 범위를 벗어나면 0'
   assert.match(JSON.parse(calls[0].opts.body).messages[0].content, /<message>복습 오래 하고 싶어<\/message>/);
   reply = claudeText('{"pick":7,"mood":"normal","text":"음."}');
   assert.equal((await aiCoachPick({ char: 'cat', facts: '', options, message: '?' })).pick, 0);
+});
+
+test('코치용 키를 따로 넣으면 코치는 그 AI, 채점은 원래 AI', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_main', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  // 코치용 키가 없으면 코치도 채점용(Groq)을 씀
+  assert.equal(aiCoachName(), 'Groq');
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '{"mood":"happy","text":"좋아요."}' } }] });
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.match(calls.at(-1).url, /groq\.com/);
+  // 코치용 Claude 키 연결
+  reply = () => json({ id: 'claude-sonnet-5-5' });
+  await aiConnect('sk-ant-coach', 'coach');
+  assert.deepEqual([aiName(), aiName('coach'), aiCoachName()], ['Groq', 'Claude', 'Claude']);
+  reply = claudeText('{"mood":"happy","text":"좋아요."}');
+  await aiCoachSay({ char: 'cat', facts: '' });
+  assert.match(calls.at(-1).url, /anthropic\.com/);
+  assert.equal(calls.at(-1).opts.headers['x-api-key'], 'sk-ant-coach');
+  // 채점은 그대로 Groq
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '{"score":2,"missing":0,"note":""}' } }] });
+  assert.equal((await aiGradeMeaning(Q)).score, 2);
+  assert.match(calls.at(-1).url, /groq\.com/);
+  // 채점용 키 없이 코치용만 있어도 코치는 동작
+  aiDisconnect();
+  assert.equal(aiEnabled(), false);
+  assert.equal(aiCoachOnline(), true);
+  aiDisconnect('coach');
+  assert.equal(aiCoachOnline(), false);
 });
