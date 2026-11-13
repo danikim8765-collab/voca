@@ -5,7 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachExplain, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachExplain, aiCoachError, aiCoachErrorDetail, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
 
@@ -798,7 +798,9 @@ function coachErrorText() {
       : e === 'limit' ? '오늘은 코치가 AI를 부를 수 있는 횟수를 다 썼어요. 내일 다시 물어봐 주세요. 아래에서 직접 골라도 돼요.'
         : e === 'offline' || e === 'network' ? '인터넷이 안 돼서 AI와 이야기할 수 없어요. 아래에서 직접 골라 주세요.'
           : e === '401' || e === '403' ? 'AI 키가 맞지 않아요. 설정 > AI에서 다시 연결해 주세요.'
-            : '제가 말을 잘 못 알아들었어요. 조금 다르게 말해 보거나 아래에서 직접 골라 주세요.';
+            : e === 'cut' ? `AI 답이 중간에 끊겼어요 (${aiCoachName()} · ${aiCoachErrorDetail()}). 다시 보내 봐 주세요.`
+              : e === 'bad' ? `AI 답을 읽지 못했어요 (${aiCoachName()}). 다시 보내 봐 주세요.`
+                : `AI 답을 받지 못했어요 (${aiCoachName()} · ${e || '?'}${aiCoachErrorDetail() ? `: ${aiCoachErrorDetail()}` : ''}). 다시 보내 보거나 아래에서 직접 골라 주세요.`;
 }
 // 코치와 이야기하기 / 일정 상의하기.
 // AI가 없으면: 코치가 고른 선택지(복습 날 수)에서 고름. AI가 있으면: 무엇이든 말하면 AI가 답하고, 일정을 바꾸자는 말이면
@@ -920,7 +922,7 @@ function talkCoach() {
         const ex = needExplain ? await aiCoachExplain({ char: coachChar(), facts, history, message: msg, result: o.result }) : null;
         reply = ex ? [ex.mood, ex.text] : res.text && !needExplain ? [res.mood, res.text] : ['normal', o.say];
       } else reply = [res.mood, res.text || coachErrorText()];
-    } else reply = [res.mood, res.text || '음, 다시 한번 말해 줄래요?'];
+    } else reply = [res.mood, res.text || '그 숫자는 제가 정확히 확인할 수 없어요. "하루 30개씩", "복습 일주일"처럼 말해 주면 앱으로 계산해서 보여 줄게요.'];
     asking = false;
     send.disabled = false;
     if (d.hidden) { talkLog.items.push({ who: 'coach', text: reply[1] }); return; }

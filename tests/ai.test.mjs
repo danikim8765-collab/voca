@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, aiCoachExplain, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
+const { aiCoachErrorDetail, aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, aiCoachExplain, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -297,4 +297,37 @@ test('AQ.로 시작하는 Google 키: Gemini API가 안 받으면 Vertex AI로 �
   // 둘 다 안 받으면 tokentype
   reply = () => tokErr();
   await assert.rejects(aiConnect('AQ.bad', 'coach'), e => e.reason === 'tokentype');
+});
+
+test('코치 AI 실패 처리: Groq JSON 모드 400이면 JSON 모드 없이 다시, 끊기면 까닭을 남김', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  const args = { char: 'cat', facts: '', table: '', maxReview: 10, message: '하루 40개씩 하면?' };
+  let n = 0;
+  reply = (url, o) => {
+    const b = JSON.parse(o.body);
+    n++;
+    if (b.response_format) return json({ error: { message: 'Failed to generate JSON. Please adjust your prompt.', code: 'json_validate_failed' } }, 400);
+    return json({ choices: [{ finish_reason: 'stop', message: { content: '좋아요 {"mood":"normal","text":"계산해 볼게요.","review":0,"perDay":40,"rest":"","today":-1}' } }] });
+  };
+  const r = await aiCoachChat(args);
+  assert.equal(n, 2);
+  assert.deepEqual(r.change, { perDay: 40 });
+  assert.equal(JSON.parse(calls.at(-1).opts.body).max_tokens, 8192);
+  // 길이 초과로 끊김
+  reply = () => json({ choices: [{ finish_reason: 'length', message: { content: '{"mood"' } }] });
+  assert.equal(await aiCoachChat(args), null);
+  assert.deepEqual([aiCoachError(), aiCoachErrorDetail()], ['cut', 'length']);
+  // 다른 오류는 서버 말을 남김
+  reply = () => json({ error: { message: 'model overloaded' } }, 503);
+  assert.equal(await aiCoachChat(args), null);
+  assert.deepEqual([aiCoachError(), aiCoachErrorDetail()], ['503', 'model overloaded']);
+});
+
+test('Gemini가 스키마를 안 받으면(400) 스키마 없이 한 번 더', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'AIzaX', provider: 'gemini', model: 'gemini-flash-lite-latest' }));
+  reply = (url, o) => (JSON.parse(o.body).generationConfig.responseSchema
+    ? json({ error: { message: 'Invalid JSON payload' } }, 400)
+    : json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"mood":"happy","text":"좋아요."}' }] } }] }));
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.equal(calls.length, 2);
 });

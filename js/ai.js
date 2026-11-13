@@ -61,8 +61,15 @@ const bearer = key => ({ 'content-type': 'application/json', authorization: `Bea
 
 const fail = status => Object.assign(new Error(String(status)), { status });
 // 마지막으로 AI를 못 부른 까닭 (코치가 사용자에게 알려 주려고): '429' 같은 상태 코드, 'timeout', 'network', 'offline', 'cut'(답이 잘림), 'bad'(이상한 답), 'limit'(코치 하루 한도)
-let lastErr = '';
+let lastErr = '', lastDetail = '';
 export const aiCoachError = () => lastErr;
+export const aiCoachErrorDetail = () => lastDetail; // 서버가 보낸 말이나 끊긴 까닭 (화면에 같이 보여 줌)
+// 실패한 응답에서 서버가 보낸 말을 꺼내 둠
+async function noteHttp(res) {
+  lastErr = String(res.status);
+  try { const j = await res.json(); const e = j.error || j; lastDetail = String((e && (e.message || e.code)) || '').slice(0, 200); } catch { lastDetail = ''; }
+  return lastDetail;
+}
 
 // 연결 실패를 알려 줄 때 쓰는 까닭. e.status(HTTP 상태), e.reason, e.detail(서버가 보낸 말)
 // reason: invalid(틀린 키) · disabled(그 프로젝트에서 API가 꺼짐) · restricted(키에 웹사이트·API 제한) · region(지역 제한) · unknown(어느 회사 키인지 모름) · nomodel · busy(429)
@@ -207,34 +214,37 @@ async function askClaude(c, r, signal) {
     method: 'POST', headers: claudeHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
       model: c.model || CLAUDE_MODEL,
-      max_tokens: 2048,
+      max_tokens: r.maxTokens || 2048,
       system: r.system,
       output_config: r.json ? { effort: 'low', format: { type: 'json_schema', schema: r.schema || CLAUDE_SCHEMA } } : { effort: 'low' },
       messages: [{ role: 'user', content: r.user }],
     }),
   });
-  if (!res.ok) { lastErr = String(res.status); return null; }
+  if (!res.ok) { await noteHttp(res); return null; }
   const msg = await res.json();
-  if (msg.stop_reason !== 'end_turn') { lastErr = 'cut'; return null; } // refusal·max_tokens 등
+  if (msg.stop_reason !== 'end_turn') { lastErr = 'cut'; lastDetail = String(msg.stop_reason || ''); return null; } // refusal·max_tokens 등
   return (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
 async function askGemini(c, r, signal) {
   const url = c.provider === 'vertex' ? `${VERTEX_API}/${c.model}:generateContent` : `${GEMINI_API}/models/${c.model || GEMINI_MODEL}:generateContent`;
-  const res = await fetch(url, {
+  const max = r.maxTokens || 4096; // 생각하는 모델은 생각에도 토큰을 써서 넉넉히
+  const call = schema => fetch(url, {
     method: 'POST', headers: geminiHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: r.system }] },
       contents: [{ role: 'user', parts: [{ text: r.user }] }],
       generationConfig: r.json
-        ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA, maxOutputTokens: 4096 }
-        : { maxOutputTokens: 4096 }, // 생각하는 모델은 생각에도 토큰을 써서 넉넉히
+        ? { responseMimeType: 'application/json', ...(schema ? { responseSchema: r.gschema || GEMINI_SCHEMA } : {}), maxOutputTokens: max }
+        : { maxOutputTokens: max },
     }),
   });
-  if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
+  let res = await call(true);
+  if (res.status === 400 && r.json) { await noteHttp(res); res = await call(false); } // 스키마를 안 받으면 스키마 없이 한 번 더
+  if (!res.ok) { await noteHttp(res); return null; } // 429(무료 한도 초과) 등
   const data = await res.json();
   const cand = (data.candidates || [])[0];
-  if (!cand || cand.finishReason !== 'STOP') { lastErr = 'cut'; return null; }
+  if (!cand || cand.finishReason !== 'STOP') { lastErr = 'cut'; lastDetail = String((cand && cand.finishReason) || (data.promptFeedback && data.promptFeedback.blockReason) || 'no answer'); return null; }
   return ((cand.content && cand.content.parts) || []).filter(p => !p.thought && p.text).map(p => p.text).join('');
 }
 
@@ -243,21 +253,24 @@ async function askOpenAILike(c, r, signal) {
   const body = {
     model: c.model,
     messages: [{ role: 'system', content: r.system }, { role: 'user', content: r.user }],
-    max_tokens: 2048,
+    max_tokens: r.maxTokens || 2048,
   };
   if (r.json && json) body.response_format = { type: 'json_object' };
   if (/gpt-oss/.test(c.model)) body.reasoning_effort = 'low'; // 생각을 짧게 → 빠르게
-  const res = await fetch(`${api}/chat/completions`, { method: 'POST', headers: bearer(c.key), cache: 'no-store', signal, body: JSON.stringify(body) });
-  if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
+  const call = () => fetch(`${api}/chat/completions`, { method: 'POST', headers: bearer(c.key), cache: 'no-store', signal, body: JSON.stringify(body) });
+  let res = await call();
+  // Groq는 JSON 모드에서 모델이 JSON을 못 만들면 400(json_validate_failed)을 줌 → JSON 모드 없이 한 번 더 (pickJSON이 글에서 꺼냄)
+  if (res.status === 400 && body.response_format) { await noteHttp(res); delete body.response_format; res = await call(); }
+  if (!res.ok) { await noteHttp(res); return null; } // 429(무료 한도 초과) 등
   const data = await res.json();
   const ch = (data.choices || [])[0];
-  if (!ch || ch.finish_reason !== 'stop') { lastErr = 'cut'; return null; }
+  if (!ch || ch.finish_reason !== 'stop') { lastErr = 'cut'; lastDetail = String((ch && ch.finish_reason) || 'no answer'); return null; }
   return (ch.message && ch.message.content) || '';
 }
 
 // 스위치·키·인터넷을 확인하고, 시간 제한을 걸어 부름. 실패면 null
 async function ask(r, c = conf()) {
-  lastErr = '';
+  lastErr = ''; lastDetail = '';
   if (!aiSwitch() || !c.key || navigator.onLine === false) { lastErr = 'offline'; return null; }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), r.timeout || TIMEOUT_MS);
@@ -413,7 +426,7 @@ const clean = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').repl
 async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA, format = SAY_FORMAT, keep = false } = {}) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   if (!takeCoachTurn()) { lastErr = 'limit'; return null; }
-  const text = await ask({ system: coachSystem(char, format), json: true, schema, gschema, user, timeout: 20000 }, coachConf());
+  const text = await ask({ system: coachSystem(char, format), json: true, schema, gschema, user, timeout: 25000, maxTokens: 8192 }, coachConf());
   if (!text) return null;
   try {
     const out = pickJSON(text);
@@ -427,6 +440,7 @@ async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_
     return out;
   } catch {
     lastErr = 'bad';
+    lastDetail = String(text).replace(/\s+/g, ' ').slice(0, 120);
     return null;
   }
 }
