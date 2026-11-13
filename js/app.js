@@ -5,7 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachExplain, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
 
@@ -72,8 +72,9 @@ const settings = Object.assign({
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
   // 단어 코치: 시험일에 맞춰 목표일(coachGoal)과 하루 새 단어 수를 정해 줌. coachBase = 일정을 짤 때의 하루 개수, coachKey = 그때의 시험일·범위
   // coachReview = 코치와 상의해서 정한 시험 전 전체 복습 날 수 (0 = 코치가 정함)
+  // coachFix = 코치와 정한 하루 새 단어 수(0 = 고정 안 함. 고정하면 복습 날 수는 거기서 정해짐), coachTail = 남는 단어를 'last' 마지막 날에 붙임 · 'extra' 하루 더
   // coachRest = 쉬는 요일(0 일 … 6 토). 그날은 새 단어·전체 복습 몫 없이 쉼
-  coach: false, coachGoal: '', coachBase: 0, coachKey: '', coachReview: 0, coachRest: [],
+  coach: false, coachGoal: '', coachBase: 0, coachKey: '', coachReview: 0, coachRest: [], coachFix: 0, coachTail: '',
 }, load(KEY.settings, {}));
 // 화면 설정 (기기마다, 예문·단어 모드가 같이 씀)
 const UI_KEY = 'voca.ui.v1';
@@ -132,7 +133,7 @@ function shareExam(v, at) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -149,7 +150,7 @@ const sync = createSync({
       Object.assign(settings, { newPerDay: p.newPerDay || 20, prefsAt: p.at });
       if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
       if (p.reviewSize) settings.reviewSize = p.reviewSize;
-      if ('coach' in p) Object.assign(settings, { coach: !!p.coach, coachGoal: p.coachGoal || '', coachBase: p.coachBase || 0, coachKey: p.coachKey || '', coachReview: p.coachReview || 0, coachRest: cleanRest(p.coachRest) });
+      if ('coach' in p) Object.assign(settings, { coach: !!p.coach, coachGoal: p.coachGoal || '', coachBase: p.coachBase || 0, coachKey: p.coachKey || '', coachReview: p.coachReview || 0, coachRest: cleanRest(p.coachRest), coachFix: p.coachFix || 0, coachTail: p.coachTail || '' });
       // 학습 범위도 기기끼리 맞춤 (없는 DAY면 renderHome이 맞춰 줌)
       if (p.from != null && p.to != null) Object.assign(settings, { from: p.from, to: p.to });
       saveSettings();
@@ -592,18 +593,22 @@ const lastLearnDay = () => addDays(settings.coachGoal, -1);
 const coachKeyNow = () => [settings.exam, Math.min(settings.from, settings.to), Math.max(settings.from, settings.to)].join('|');
 // 오늘 배울 새 단어 수: (남은 새 단어 + 오늘 이미 배운 수) ÷ 목표일까지 남은 날. 밀리면 늘고 앞서가면 줄어듦
 // 쉬는 요일이 있으면 쉬는 날은 0개, 공부하는 날로만 나눔
+// 하루 개수를 고정했으면(coachFix) 그 개수 그대로. 마지막 날만 남는 단어에 맞춤 (그 개수로 모자라게 되면 남은 날에 고르게)
 function coachDaily() {
   const today = dateStr(), goal = settings.coachGoal, rest = restNow();
   if (!goal || today >= goal || isRestDay(today, rest)) return 0;
+  if (settings.coachFix) { const p = coachPlanNow(); if (p && p.fix) return p.todayNew; }
   return Math.ceil((leftNew() + newToday()) / Math.max(1, studyDays(today, goal, rest)));
 }
 // 쉬는 요일 (코치가 켜져 있을 때만 씀)
 const restNow = () => (coachActive() ? cleanRest(settings.coachRest) : []);
 const restLabel = rest => (rest.length ? rest.map(i => WEEKDAY[i]).join('·') + '요일' : '');
 // 일정 짜기. byUser: 사람이 시킨 것(켜기, 다시 짜기, 시험일 바꾸기)이면 다른 기기에도 이 일정이 가게 설정 바꾼 시각을 올림
-const coachPlanFor = (review, rest = restNow()) => coachPlan({ today: dateStr(), exam: settings.exam, total: rangeWords().length, remaining: leftNew() + newToday(), review, rest });
+const coachPlanFor = (review, rest = restNow(), fix = 0, tail = '') => coachPlan({ today: dateStr(), exam: settings.exam, total: rangeWords().length, remaining: leftNew() + newToday(), review, rest, fix, tail });
+// 지금 설정대로의 일정 (복습 날 수를 정했거나, 하루 개수를 고정했거나, 코치에게 맡겼거나)
+const coachPlanNow = () => coachPlanFor(settings.coachReview || 0, restNow(), settings.coachFix || 0, settings.coachTail || '');
 function planCoach(byUser) {
-  const p = coachPlanFor(settings.coachReview || 0);
+  const p = coachPlanNow();
   if (!p) return null;
   Object.assign(settings, { coachGoal: p.goal, coachBase: p.perDay, coachKey: coachKeyNow() });
   if (byUser) settings.prefsAt = Date.now();
@@ -617,6 +622,8 @@ function ensureCoachPlan() {
   if (!coachActive() || !words.length) return;
   const today = dateStr(), g = settings.coachGoal, left = leftNew();
   if (settings.coachKey !== coachKeyNow() || !g || g > settings.exam) { planCoach(false); return; }
+  // 하루 개수를 고정했으면 목표일이 진도를 따라 움직임 (덜 하면 뒤로, 더 하면 앞으로)
+  if (settings.coachFix && left > 0) { const p = coachPlanNow(); if (p && p.goal !== g) planCoach(false); return; }
   if (today >= g && left > 0) { planCoach(false); coachMoved = true; return; }
   // 새 단어를 일찍 다 끝냈으면(오늘 끝낸 날은 빼고) 오늘부터 전체 훑기
   if (today < g && !left && !newToday()) { settings.coachGoal = today; saveSettings(); }
@@ -744,6 +751,10 @@ function coachSay() {
   if (allDone) return { mood: 'happy', text: `${moved}오늘 몫 끝! ` + (last === today ? `새 단어를 다 봤어요. 내일부터 시험 전날까지는 전체 복습이에요.` : `이대로면 ${by}에 새 단어를 다 보고, ${tail}.`), acts: last === today ? chat : [talk] };
   // 밀렸는지는 코치 계산(남은 새 단어 ÷ 남은 날)으로 봄. 오늘 개수를 직접 늘린 건 밀린 게 아님
   const target = todayNewTarget(), need = coachDaily(), base = settings.coachBase || 0;
+  const fixed = settings.coachFix ? coachPlanNow() : null;
+  if (fixed && fixed.fix && !fixed.fits && fresh && !newTargetMine()) {
+    return { mood: 'worry', text: `하루 ${fixed.fix}개로는 시험 전에 새 단어를 다 못 보게 됐어요. 그래서 오늘은 ${need}개예요. 일정을 다시 상의해요.`, acts: [talk] };
+  }
   if (newTargetMine() && fresh && target !== need) {
     return {
       mood: target > need ? 'cheer' : 'normal',
@@ -793,175 +804,66 @@ function optionSay({ r, p, rec }, a) {
 // AI를 못 부른 까닭을 코치 말로
 function coachErrorText() {
   const e = aiCoachError();
-  return e === '429' ? 'AI가 지금 바쁘거나 오늘 무료 한도를 다 썼어요. 조금 뒤에 다시 물어봐 주세요. 아래에서 직접 골라도 돼요.'
-    : e === 'timeout' ? 'AI 답이 너무 늦어요. 다시 보내 보거나 아래에서 직접 골라 주세요.'
-      : e === 'limit' ? '오늘은 코치가 AI를 부를 수 있는 횟수를 다 썼어요. 내일 다시 물어봐 주세요. 아래에서 직접 골라도 돼요.'
-        : e === 'offline' || e === 'network' ? '인터넷이 안 돼서 AI와 이야기할 수 없어요. 아래에서 직접 골라 주세요.'
-          : e === '401' || e === '403' ? 'AI 키가 맞지 않아요. 설정 > AI에서 다시 연결해 주세요.'
-            : e === '404' ? `${aiCoachName()} 모델을 찾을 수 없어요. 설정 > AI에서 코치 AI를 끊고 다시 연결해 주세요.`
-              : e === 'cut' ? 'AI 답이 중간에 끊겼어요. 다시 보내 보거나 아래에서 직접 골라 주세요.'
-                : /^\d+$/.test(e) ? `AI가 오류(${e})를 냈어요. 조금 뒤에 다시 보내 보거나 아래에서 직접 골라 주세요.`
-                  : '제가 말을 잘 못 알아들었어요. 조금 다르게 말해 보거나 아래에서 직접 골라 주세요.';
+  return e === '429' ? 'AI가 지금 바쁘거나 오늘 무료 한도를 다 썼어요. 조금 뒤에 다시 보내 주세요.'
+    : e === 'timeout' ? 'AI 답이 너무 늦어요. 다시 보내 볼까요?'
+      : e === 'offline' || e === 'network' ? '인터넷이 안 돼서 AI와 이야기할 수 없어요. 연결을 확인하고 다시 보내 주세요.'
+        : e === '401' || e === '403' ? 'AI 키가 맞지 않아요. 설정 > AI에서 다시 연결해 주세요.'
+          : e === '404' ? `${aiCoachName()} 모델을 찾을 수 없어요. 설정 > AI에서 코치 AI를 끊고 다시 연결해 주세요.`
+            : e === 'cut' ? 'AI 답이 중간에 끊겼어요. 다시 보내 볼까요?'
+              : /^5\d\d$/.test(e) ? `AI 쪽에 사람이 몰려서 지금 답을 못 받았어요(${e}). 조금 뒤에 다시 보내 주세요.`
+                : /^\d+$/.test(e) ? `AI가 오류(${e})를 냈어요. 조금 뒤에 다시 보내 주세요.`
+                  : 'AI 답을 제대로 못 받았어요. 다시 보내 볼까요?';
 }
-// 코치와 이야기하기 / 일정 상의하기.
-// AI가 없으면: 코치가 고른 선택지(복습 날 수)에서 고름. AI가 있으면: 무엇이든 말하면 AI가 답하고, 일정을 바꾸자는 말이면
-// 바꿀 값(복습 날 수·쉬는 요일·오늘 새 단어 수)을 골라 줌 → 앱이 계산해 '코치 제안'으로 보여 주고 → AI가 그 결과를 설명.
-// 실제로 바뀌는 건 '이렇게 할게요'를 눌렀을 때. 이야기는 그날 안에서 이어짐
-let talkLog = { date: '', items: [] }; // [{ who: 'me'|'coach', text }]
-function talkCoach() {
-  const ai = aiCoachOnline();
-  const canPlan = coachActive() && !!leftNew() && dateStr() < settings.coachGoal;
-  const opts = canPlan ? coachOptions() : [];
-  if (!ai && opts.length < 2) { if (coachActive() && leftNew()) toast('시험이 너무 가까워서 일정을 바꿀 수 없어요'); return; }
-  if (talkLog.date !== dateStr()) talkLog = { date: dateStr(), items: [] };
-  const d = $('#coach-talk'), box = $('#ct-opts'), logBox = $('#ct-log'), live = $('#ct-text');
+// 코치와 이야기하기 / 일정 상의하기: AI가 되면 대화 화면, 아니면 선택지 창
+function talkCoach() { return aiCoachOnline() ? openCoachChat() : pickSchedule(); }
+const canPlanNow = () => coachActive() && !!leftNew() && dateStr() < settings.coachGoal;
+
+// 일정 상의하기(선택지): 시험 전 전체 복습을 며칠 할지 고름. 고르면 하루 개수 고정은 풀림
+function pickSchedule() {
+  const opts = canPlanNow() ? coachOptions() : [];
+  if (opts.length < 2) { toast(coachActive() && leftNew() ? '시험이 너무 가까워서 일정을 바꿀 수 없어요' : '지금은 바꿀 일정이 없어요'); return; }
+  const d = $('#coach-talk'), box = $('#ct-opts');
   const recOpt = opts.find(o => o.rec), a = recOpt ? recOpt.r : 0;
-  let cur = opts.find(o => o.r === (settings.coachReview || a)) || recOpt || null;
-  const now = cur;
-  let aiSay = ai && !talkLog.items.length ? ['cheer', canPlan ? '일정이든 공부 방법이든 편하게 말해 줘요. 예를 들면 "토요일은 쉬고 싶어", "복습을 오래 하고 싶어", "오늘은 50개 할래"처럼요.' : '공부 방법이든 단어 외우는 요령이든 편하게 물어봐 줘요.'] : null;
-  $('#ct-title').textContent = ai ? '코치와 이야기하기' : '코치와 일정 상의하기';
-  $('#ct-desc').textContent = ai ? (canPlan ? '말로 해도 되고, 아래에서 골라도 돼요.' : '궁금한 걸 물어봐요.') : '시험 전 전체 복습을 며칠 할지 골라요.';
-  const optDetail = o => `복습 ${o.r}일 · 새 단어 하루 ${o.p.perDay}개` + (o.rest ? (o.rest.length ? ` · ${restLabel(o.rest)} 쉼` : ' · 쉬는 날 없음') : '') + (o.today != null ? ` · 오늘 ${o.today}개` : '');
+  let cur = (!settings.coachFix && opts.find(o => o.r === (settings.coachReview || a))) || recOpt || opts[0];
   const draw = () => {
-    const [mood, say] = aiSay || (cur ? optionSay(cur, a) : ['normal', '']);
+    const [mood, say] = optionSay(cur, a);
     $('#ct-char').innerHTML = coachSvg(mood);
-    // 앞선 이야기 + 지금 말풍선
-    logBox.querySelectorAll('.talk-msg').forEach(x => x.remove());
-    for (const m of talkLog.items.slice(-8)) logBox.insertBefore(el('div', `talk-msg ${m.who === 'me' ? 'me' : 'bot'}`, m.text), live);
-    live.textContent = say;
-    live.hidden = !say;
-    logBox.scrollTop = logBox.scrollHeight;
-    box.hidden = !opts.length;
-    $('#ct-ok').hidden = !opts.length;
-    $('#ct-cancel').textContent = opts.length ? '취소' : '닫기';
+    $('#ct-text').textContent = say;
     box.innerHTML = '';
     for (const o of opts) {
-      const b = el('button', 'preset' + (o === cur ? ' on' : '') + (o.said ? ' said' : ''));
+      const b = el('button', 'preset' + (o === cur ? ' on' : ''));
       b.type = 'button';
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', o === cur);
       const main = el('span', 'p-main');
-      main.append(el('span', 'p-name', o.name), el('span', 'p-days', optDetail(o)));
+      main.append(el('span', 'p-name', o.name), el('span', 'p-days', `복습 ${o.r}일 · 새 단어 하루 ${o.p.perDay}개`));
       b.appendChild(main);
       b.appendChild(el('i', 'p-radio'));
-      b.addEventListener('click', () => { cur = o; aiSay = null; draw(); });
+      b.addEventListener('click', () => { cur = o; draw(); });
       box.appendChild(b);
     }
   };
-  // 지금 쉬는 요일로 복습 날 수마다 계산한 표 (AI가 개수로 말하면 여기서 고름)
-  const planLine = (r, p) => {
-    const end = addDays(p.goal, -1);
-    return `전체 복습 ${r}일: 새 단어는 ${end === dateStr() ? '오늘' : fmtDay(end)}까지 하루 ${p.perDay}개, 전체 복습은 ${fmtDay(p.goal)}부터 하루 ${p.finalPerDay}개쯤`;
-  };
-  const maxReview = canPlan ? coachPlanFor(0).days - 1 : 0;
-  const table = () => {
-    const out = [];
-    for (let r = 1; r <= maxReview && out.length < 60; r++) {
-      const p = coachPlanFor(r);
-      if (p.perDay <= 150 || r === a) out.push(planLine(r, p) + (now && r === now.r ? ' (지금 일정)' : '') + (r === a ? ' (코치 추천)' : ''));
-    }
-    return out.join('\n') || '(새 단어를 다 봐서 지금은 바꿀 일정이 없음)';
-  };
-  // AI가 고른 값으로 '코치 제안'을 만듦 (앱이 계산)
-  const propose = ch => {
-    const rest = ch.rest ? cleanRest(ch.rest) : restNow();
-    let review = ch.review || (ch.rest ? settings.coachReview || 0 : now ? now.r : 0);
-    // 하루 개수로 말했으면 (새 쉬는 요일로) 그 개수에 가장 가까운 복습 날 수를 찾음. 같으면 복습을 길게
-    if (ch.perDay && maxReview) {
-      let best = null;
-      for (let r = 1; r <= maxReview; r++) {
-        const q = coachPlanFor(r, rest);
-        if (q && (!best || Math.abs(q.perDay - ch.perDay) <= Math.abs(best.perDay - ch.perDay))) best = { r, perDay: q.perDay };
-      }
-      if (best) { review = best.r; ch = { ...ch, review: best.r }; }
-    }
-    const p = coachPlanFor(review, rest);
-    if (!p) return null;
-    const o = { name: '코치 제안', r: p.reviewDays, p, rec: false, said: true, rest: ch.rest ? rest : null, today: ch.today != null ? Math.max(ch.today, newToday()) : null, review: ch.review || 0 };
-    const restTxt = rest.length ? `${restLabel(rest)} 쉼` : '쉬는 요일 없음 (매일 공부)';
-    const end = addDays(p.goal, -1);
-    o.result = [
-      `시험 전 전체 복습 ${p.reviewDays}일 (${fmtDay(p.goal)}부터)`,
-      `쉬는 요일: ${restTxt}`,
-      `새 단어: ${end === dateStr() ? '오늘' : fmtDay(end)}까지 공부하는 날 ${studyDays(dateStr(), p.goal, rest)}일 동안 하루 ${p.perDay}개`,
-      p.reviewDays ? `전체 복습: 공부하는 날 ${studyDays(p.goal, settings.exam, rest)}일 동안 하루 ${p.finalPerDay}개쯤` : '',
-      o.today != null ? `오늘 새 단어: ${o.today}개 (오늘만)` : '',
-      ch.perDay ? `학생이 말한 하루 ${ch.perDay}개에 가장 가깝게 맞춘 것` : '',
-      now ? `지금 일정은: 전체 복습 ${now.r}일, 새 단어 하루 ${now.p.perDay}개, 쉬는 요일 ${restLabel(restNow()) || '없음'}` : '',
-    ].filter(Boolean).join('\n');
-    o.say = `${ch.rest ? `${rest.length ? `${restLabel(rest)}은 쉬고` : '쉬는 날 없이'} ` : ''}${end === dateStr() ? '오늘' : fmtDay(end)}까지 새 단어를 하루 ${p.perDay}개씩 보고, 마지막 ${p.reviewDays}일은 하루 ${p.finalPerDay}개쯤 전체 복습해요.` + (o.today != null ? ` 오늘은 ${o.today}개예요.` : '') + ' 마음에 들면 \'이렇게 할게요\'를 눌러요.';
-    return o;
-  };
-  const ask = $('#ct-ask'), inp = $('#ct-input'), send = $('#ct-send');
-  ask.hidden = !ai;
-  inp.value = '';
-  let asking = false;
-  const talk = async () => {
-    const msg = inp.value.trim();
-    if (!msg || asking) return;
-    asking = true;
-    send.disabled = true;
-    // 지금 말풍선을 이야기에 남기고, 학생 말을 붙임
-    if (live.textContent && !live.hidden && aiSay) talkLog.items.push({ who: 'coach', text: live.textContent });
-    const history = talkLog.items.slice();
-    talkLog.items.push({ who: 'me', text: msg });
-    inp.value = '';
-    aiSay = ['normal', '음, 생각해 볼게요…'];
-    draw();
-    const facts = coachFacts();
-    const res = await aiCoachChat({ char: coachChar(), facts, table: table(), maxReview, history, message: msg });
-    let reply;
-    if (!res) reply = ['worry', coachErrorText()];
-    else if (res.change && (canPlan || res.change.rest)) {
-      const o = propose(canPlan ? res.change : { rest: res.change.rest });
-      if (o) {
-        for (let i = opts.length - 1; i >= 0; i--) if (opts[i].said) opts.splice(i, 1);
-        opts.unshift(o);
-        cur = o;
-        // 쉬는 요일을 바꾸면 숫자가 달라지니 앱이 계산한 걸 AI가 다시 설명 (안 되면 앱이 만든 설명)
-        const needExplain = !!res.change.rest || !!res.change.perDay || !res.text;
-        const ex = needExplain ? await aiCoachExplain({ char: coachChar(), facts, history, message: msg, result: o.result }) : null;
-        reply = ex ? [ex.mood, ex.text] : res.text && !needExplain ? [res.mood, res.text] : ['normal', o.say];
-      } else reply = [res.mood, res.text || coachErrorText()];
-    } else reply = [res.mood, res.text || '음, 다시 한번 말해 줄래요?'];
-    asking = false;
-    send.disabled = false;
-    if (d.hidden) { talkLog.items.push({ who: 'coach', text: reply[1] }); return; }
-    aiSay = reply;
-    draw();
-  };
-  send.onclick = talk;
   draw();
   d.hidden = false;
-  if (ai && DESK) setTimeout(() => inp.focus(), 50); // 폰은 키보드가 바로 올라오지 않게
   return new Promise(resolve => {
     const key = e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
-      else if (e.target === inp) { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); talk(); } }
-      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(!!opts.length); }
+      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
       else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
         const i = opts.indexOf(cur) + (e.key === 'ArrowDown' ? 1 : -1);
-        if (opts[i]) { cur = opts[i]; aiSay = null; draw(); }
+        if (opts[i]) { cur = opts[i]; draw(); }
       }
     };
-    const close = () => {
-      d.hidden = true; d.onclick = null; document.removeEventListener('keydown', key, true);
-      if (aiSay && live.textContent && talkLog.items.length && talkLog.items[talkLog.items.length - 1].text !== live.textContent) talkLog.items.push({ who: 'coach', text: live.textContent });
-    };
+    const close = () => { d.hidden = true; d.onclick = null; document.removeEventListener('keydown', key, true); };
     const done = ok => {
       close();
       modalDone(() => {
         if (ok && cur) {
-          const msgs = [];
-          if (cur.rest) { settings.coachRest = cur.rest; msgs.push(cur.rest.length ? `${restLabel(cur.rest)}은 쉬어요` : '쉬는 요일 없이 해요'); }
-          if (!cur.said) settings.coachReview = cur.rec ? 0 : cur.r; // 추천이면 코치에게 맡김 (범위·진도가 바뀌면 추천도 따라 바뀌게)
-          else if (cur.review || cur.rest) { const auto = coachPlanFor(0, cleanRest(settings.coachRest)); settings.coachReview = auto && cur.r === auto.auto ? 0 : cur.r; }
-          if (cur.today != null) { const day = loadDay(); day.newTarget = cur.today; save(KEY.day, day); msgs.push(`오늘은 새 단어 ${cur.today}개`); }
+          Object.assign(settings, { coachReview: cur.rec ? 0 : cur.r, coachFix: 0, coachTail: '' }); // 추천이면 코치에게 맡김 (범위·진도가 바뀌면 추천도 따라 바뀌게)
           planCoach(true);
           coachMoved = false;
-          msgs.unshift(`시험 전 ${cur.r}일은 전체 복습`);
-          toast(msgs.join(' · '), 3000);
+          toast(`시험 전 ${cur.r}일은 전체 복습`, 3000);
           renderHome();
           if (current === 'settings') renderSrs();
         }
@@ -974,6 +876,354 @@ function talkCoach() {
     d.onclick = e => { if (e.target === d) done(false); };
     document.addEventListener('keydown', key, true);
   });
+}
+
+// ---------- 코치와 이야기하기 (AI) ----------
+// 메신저처럼 주고받는 화면. 이야기와 코치가 기억해 둔 것은 이 기기에만 저장하고(동기화 안 함) 날이 바뀌어도 이어짐.
+// 일정 얘기면 AI는 학생이 원하는 값만 뽑고(js/ai.js aiCoachChat), 계산과 숫자는 앱이 카드로 보여 줌(coachProposal).
+// 실제로 바뀌는 건 카드의 '이렇게 할게요'를 눌렀을 때
+const CHAT_KEY = P + 'coach.chat.v1'; // { items: [{ who: 'me'|'coach'|'app'|'note', text, t, mood?, err? }], notes: [{ text, t }] }
+const CHAT_KEEP = 200, NOTE_KEEP = 30;
+function loadChat() {
+  const c = load(CHAT_KEY, null) || {};
+  return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [] };
+}
+// 실패 안내(err)는 저장하지 않음: 다시 열면 사라짐
+const saveChat = c => save(CHAT_KEY, { items: c.items.filter(m => !m.err).slice(-CHAT_KEEP), notes: c.notes.slice(-NOTE_KEEP) });
+
+// 약한 단어: 틀린 적이 있는 단어를 많이 틀린 순으로 (지금 0단계면 앞으로). 코치가 짚어 주려고
+function weakWords(n = 12) {
+  return rangeWords().map(w => ({ w, s: stats[w.id] })).filter(x => x.s && x.s.w > 0)
+    .map(x => ({ ...x, score: x.s.w * 2 + (x.s.st === 0 ? 3 : 0) + 3 * x.s.w / (x.s.w + (x.s.c || 0)) }))
+    .sort((a, b) => b.score - a.score || (b.s.s || 0) - (a.s.s || 0)).slice(0, n);
+}
+function weakText() {
+  const today = dateStr();
+  const lines = weakWords().map(({ w, s }) => `- ${w.word}: ${String(w.meaning || '').slice(0, 60)} (틀림 ${s.w}번, 맞힘 ${s.c || 0}번${s.st === 0 ? ', 마지막에도 틀림' : ''})`);
+  // 복습일이 지났는데 오래 안 본 단어
+  const late = rangeWords().filter(w => { const s = stats[w.id]; return s && s.due && s.due < today; })
+    .sort((a, b) => stats[a.id].due.localeCompare(stats[b.id].due)).slice(0, 5);
+  if (late.length) lines.push(`복습일이 지났는데 아직 안 본 단어: ${late.map(w => `${w.word}(${daysBetween(stats[w.id].due, today)}일 지남)`).join(', ')}`);
+  return lines.join('\n');
+}
+// 그날 처음 열면 코치가 먼저 건네는 말 (앱이 씀. AI를 부르지 않음)
+function coachGreeting() {
+  const hello = {
+    cat: '왔어요? 딱히 기다린 건 아니에요.',
+    hamster: '왔다! 오늘도 같이 차곡차곡 모아 봐요!',
+    owl: '어서 와요. 오늘은 무슨 이야기를 해 볼까요?',
+    slime: '어서 와요~ 천천히 이야기해요.',
+  }[coachChar()];
+  const weak = weakWords(2).map(x => `'${x.w.word}'`);
+  return `${hello} ${weak.length ? `요즘 ${weak.join(', ')}에서 자주 걸리던데, 같이 볼까요? 일정 얘기도 좋아요.` : '일정이든 단어든 공부 고민이든 편하게 말해 줘요.'}`;
+}
+
+/**
+ * 학생이 원하는 값(ch: { rest?, perDay?, review?, today? })으로 일정을 계산해 카드로.
+ * 반환 { title, lines: [글자], choices?: [{ label, sub, pick }], ok?: 적용할 값, alt?: [버튼 글자, 다시 계산할 값] }
+ */
+function coachProposal(ch) {
+  if (!coachActive()) return { title: '지금은 계산할 일정이 없어요', lines: [settings.exam ? '단어 코치가 꺼져 있어요. 설정에서 켜면 같이 짤 수 있어요.' : '시험일을 먼저 정해 주세요. 학습 계획 화면에서 정할 수 있어요.'] };
+  const today = dateStr(), cur = coachPlanNow();
+  const rest = ch.rest ? cleanRest(ch.rest) : restNow();
+  const restTxt = rest.length ? `${restLabel(rest)} 쉼` : '쉬는 날 없이 매일';
+  const by = p => { const end = addDays(p.goal, -1); return end === today ? '오늘' : fmtDay(end); };
+  const span = n => (n === 1 ? '하루' : `${n}일`);
+  if (!canPlanNow()) { // 새 단어를 다 봤으면 바꿀 수 있는 건 쉬는 요일뿐
+    if (!ch.rest) return { title: '지금은 바꿀 일정이 없어요', lines: ['새 단어를 다 봐서 시험 전날까지 전체 복습만 남았어요. 쉬는 요일은 바꿀 수 있어요.'] };
+    const k = studyDays(today, settings.exam, rest);
+    return { title: restTxt, lines: [`전체 복습: 시험 전날까지 공부하는 날 ${k}일, 하루 ${Math.ceil(rangeWords().length / Math.max(1, k))}개쯤`], ok: { rest } };
+  }
+  const left = leftNew() + newToday();
+  const fix = ch.perDay || (ch.review ? 0 : settings.coachFix || 0);
+  const review = fix ? 0 : ch.review || settings.coachReview || 0;
+  const mk = tail => coachPlanFor(review, rest, fix, tail);
+  const reviewLine = p => (p.reviewDays ? `전체 복습: ${fmtDay(p.goal)}부터 ${span(p.reviewDays)} (공부하는 날 ${studyDays(p.goal, settings.exam, rest)}일), 하루 ${p.finalPerDay}개쯤` : '전체 복습: 할 날이 안 남아요 (시험 전날까지 새 단어)');
+  const curLine = cur ? `지금 일정: 하루 ${cur.perDay}개, 전체 복습 ${cur.reviewDays}일${restNow().length ? `, ${restLabel(restNow())} 쉼` : ''}` : '';
+  const todayN = ch.today != null ? Math.max(ch.today, newToday()) : null;
+  const todayLine = todayN != null ? `오늘 새 단어: ${todayN}개 (오늘만)` : '';
+  // 코치의 한마디 (앱이 씀)
+  const verdict = p => (!p.reviewDays ? '복습할 날이 하나도 안 남아서 권하고 싶진 않아요.'
+    : p.load === 'heavy' ? '솔직히 이건 너무 많아요. 범위를 줄이는 쪽을 권해요.'
+      : p.load === 'busy' ? '조금 빡빡하지만 할 수 있어요.'
+        : p.reviewDays === 1 ? '할 만해요. 다만 복습이 하루뿐이라 빠듯해요.' : '할 만해요.');
+  // 오늘 개수만 바꾸기
+  if (todayN != null && !ch.rest && !ch.perDay && !ch.review) {
+    const next = addDays(today, 1), n = studyDays(next, settings.coachGoal, rest), more = Math.max(0, left - todayN);
+    return {
+      title: `오늘만 새 단어 ${todayN}개`,
+      lines: [settings.coachFix ? `내일부터는 다시 하루 ${settings.coachFix}개` : n ? `내일부터는 하루 ${Math.ceil(more / n)}개쯤 (${fmtDay(lastLearnDay())}까지)` : '오늘이 새 단어를 보는 마지막 날이에요', `지금 계획으로는 오늘 ${coachDaily()}개`],
+      ok: { today: todayN },
+    };
+  }
+  const head = `${restTxt} · 새 단어 하루 ${fix || mk('').perDay}개`;
+  if (fix) {
+    const p = mk(ch.perDay ? '' : settings.coachTail);
+    const all = studyDays(today, settings.exam, rest);
+    if (!p.fits) {
+      return {
+        title: `하루 ${fix}개로는 모자라요`,
+        lines: [`남은 새 단어 ${left}개 · 시험 전날까지 공부하는 날 ${all}일 (${restTxt})`, `하루 ${fix}개씩이면 ${all * fix}개까지만 볼 수 있어요.`, `적어도 하루 ${p.minPerDay}개는 해야 시험 전날까지 다 볼 수 있어요.`, curLine].filter(Boolean),
+        alt: p.minPerDay !== fix ? [`하루 ${p.minPerDay}개로 계산해 보기`, { ...ch, perDay: p.minPerDay }] : null,
+      };
+    }
+    // 남는 단어: 마지막 날에 붙일지, 하루를 늘릴지 학생이 고름
+    if (p.over && ch.perDay) {
+      const a = mk('last'), b = mk('extra');
+      return {
+        title: head,
+        lines: [`남은 새 단어 ${left}개를 하루 ${fix}개씩 보면 ${p.over}개가 남아요. 어떻게 할까요?`, todayLine, curLine].filter(Boolean),
+        choices: [
+          { label: '마지막 날에 붙이기', sub: `${by(a)}에 끝 (그날만 ${a.lastDay}개) · 전체 복습 ${a.reviewDays}일`, pick: { rest: ch.rest ? rest : null, fix, tail: 'last', today: todayN } },
+          { label: '하루 늘리기', sub: `${by(b)}에 끝 (그날은 ${b.lastDay}개) · 전체 복습 ${b.reviewDays}일`, pick: { rest: ch.rest ? rest : null, fix, tail: 'extra', today: todayN } },
+        ],
+      };
+    }
+    if (p.studyN === 1) { // 남은 단어가 하루치도 안 됨
+      return {
+        title: `${restTxt} · 새 단어 하루 ${fix}개`,
+        lines: [`남은 새 단어가 ${left}개라 ${isRestDay(today, rest) ? `${by(p)} 하루에` : '오늘 하루에'} 다 보게 돼요.`, reviewLine(p), curLine, left > 80 ? '솔직히 하루에 보기엔 너무 많아요. 나눠서 보는 쪽을 권해요.' : ''].filter(Boolean),
+        ok: { rest: ch.rest ? rest : null, fix, tail: '', today: null },
+      };
+    }
+    return {
+      title: head,
+      lines: [
+        `새 단어: ${by(p)}까지 공부하는 날 ${p.studyN}일` + (p.studyN > 1 && p.lastDay !== fix ? ` (마지막 날은 ${p.lastDay}개)` : ''),
+        reviewLine(p), todayLine, curLine, verdict(p),
+      ].filter(Boolean),
+      ok: { rest: ch.rest ? rest : null, fix, tail: p.tail, today: todayN },
+    };
+  }
+  const p = mk('');
+  if (!p) return null;
+  return {
+    title: head,
+    lines: [`새 단어: ${by(p)}까지 공부하는 날 ${studyDays(today, p.goal, rest)}일 동안 하루 ${p.perDay}개`, reviewLine(p), todayLine, curLine, verdict(p)].filter(Boolean),
+    ok: { rest: ch.rest ? rest : null, review: ch.review ? p.reviewDays : null, today: todayN },
+  };
+}
+// 카드에서 '이렇게 할게요'를 눌렀을 때: 일정을 실제로 바꿈. 반환: 바뀐 것을 알리는 말
+function applyProposal(o) {
+  const msgs = [];
+  if (o.rest) { settings.coachRest = cleanRest(o.rest); msgs.push(o.rest.length ? `${restLabel(o.rest)}은 쉬어요` : '쉬는 요일 없이 해요'); }
+  if (o.fix) { Object.assign(settings, { coachFix: o.fix, coachTail: o.tail || '', coachReview: 0 }); msgs.push(`새 단어 하루 ${o.fix}개`); }
+  else if (o.review) {
+    const auto = coachPlanFor(0, cleanRest(settings.coachRest));
+    Object.assign(settings, { coachFix: 0, coachTail: '', coachReview: auto && o.review === auto.auto ? 0 : o.review });
+    msgs.push(`시험 전 ${o.review}일은 전체 복습`);
+  }
+  if (o.today != null) { const day = loadDay(); day.newTarget = o.today; save(KEY.day, day); msgs.push(`오늘은 새 단어 ${o.today}개`); }
+  if (coachActive()) planCoach(true); else { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); }
+  coachMoved = false;
+  renderHome();
+  if (current === 'settings') renderSrs();
+  return msgs.join(' · ');
+}
+
+// 지금 일정을 한 줄로 (AI가 바뀐 결과를 정확히 알게)
+function planNowText() {
+  const p = coachActive() ? coachPlanNow() : null;
+  if (!p) return '';
+  const rest = restNow();
+  return `바뀐 일정: ${p.perDay ? `새 단어는 ${fmtDay(addDays(p.goal, -1))}까지 하루 ${p.perDay}개` + (p.fix && p.fits && p.studyN > 1 && p.lastDay !== p.fix ? `(마지막 날만 ${p.lastDay}개)` : '') + ', ' : ''}전체 복습은 ${p.reviewDays}일${rest.length ? `, ${restLabel(rest)} 쉼` : ''}`;
+}
+
+function openCoachChat() {
+  const d = $('#coach-chat'), log = $('#cc-log'), inp = $('#cc-input'), send = $('#cc-send'), chips = $('#cc-chips'), mem = $('#cc-mem');
+  const chat = loadChat();
+  const today = dateStr();
+  let busy = false, card = null, mood = 'normal', open = true;
+  const last = chat.items[chat.items.length - 1];
+  if (!last || dateStr(last.t) !== today) chat.items.push({ who: 'coach', text: coachGreeting(), t: Date.now(), mood: 'cheer' });
+  $('#cc-name').textContent = `${COACH_NAMES[coachChar()]} 코치`;
+  $('#cc-sub').textContent = `${aiCoachName()} · 이 기기에만 저장`;
+  const dayLabel = t => { const x = dateStr(t); return x === today ? '오늘' : x === addDays(today, -1) ? '어제' : fmtDay(x); };
+  // AI에게 넘길 앞선 이야기 (실패 안내와 '기억해 둘게요' 줄은 뺌)
+  const forAi = () => chat.items.filter(m => !m.err && m.who !== 'note').map(m => ({ who: m.who, text: m.text, day: fmtDay(dateStr(m.t)) }));
+  const cardBox = (c, liveCard) => {
+    const box = el('div', 'chat-plan');
+    box.appendChild(el('div', 'cp-title', c.title));
+    for (const l of c.lines) box.appendChild(el('div', 'cp-line', l));
+    if (!liveCard) return box;
+    let pick = c.ok || null;
+    const okBtn = el('button', 'btn small cp-ok', '이렇게 할게요');
+    okBtn.type = 'button';
+    if (c.choices) {
+      const row = el('div', 'cp-choices');
+      for (const o of c.choices) {
+        const b = el('button', 'cp-choice');
+        b.type = 'button';
+        b.setAttribute('aria-pressed', 'false');
+        b.append(el('b', null, o.label), el('span', null, o.sub));
+        b.addEventListener('click', () => {
+          pick = o.pick;
+          row.querySelectorAll('.cp-choice').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); });
+          okBtn.disabled = false;
+        });
+        row.appendChild(b);
+      }
+      box.appendChild(row);
+      okBtn.disabled = true;
+    }
+    if (c.alt) {
+      const b = el('button', 'btn small secondary cp-alt', c.alt[0]);
+      b.type = 'button';
+      b.addEventListener('click', () => { if (!busy) showCard(c.alt[1]); });
+      box.appendChild(b);
+    }
+    if (c.ok || c.choices) {
+      okBtn.addEventListener('click', () => {
+        if (!pick) return;
+        const said = applyProposal(pick);
+        card = null;
+        chat.items.push({ who: 'note', text: `일정을 바꿨어요: ${said}`, t: Date.now() });
+        chat.items.push({ who: 'app', text: `학생이 '이렇게 할게요'를 눌러 일정을 바꿈: ${said}. ${planNowText()}`, t: Date.now(), hide: true });
+        saveChat(chat);
+        mood = 'happy';
+        draw();
+        toast(said, 3000);
+      });
+      box.appendChild(okBtn);
+    }
+    return box;
+  };
+  const draw = () => {
+    $('#cc-char').innerHTML = coachSvg(mood);
+    log.innerHTML = '';
+    let day = '';
+    for (const m of chat.items.slice(-80)) {
+      if (m.hide) continue;
+      const dl = dayLabel(m.t);
+      if (dl !== day) { day = dl; log.appendChild(el('div', 'chat-day', dl)); }
+      if (m.who === 'note') { log.appendChild(el('div', 'chat-note', m.text)); continue; }
+      if (m.who === 'app') { log.appendChild(card && card.item === m ? cardBox(card.data, true) : cardBox(m.card || { title: '코치 계산', lines: m.text.split('\n') }, false)); continue; }
+      const b = el('div', `chat-msg ${m.who === 'me' ? 'me' : 'bot'}` + (m.err ? ' err' : ''), m.text);
+      if (m.err && m.retry) {
+        const r = el('button', 'chat-retry', '다시 보내기');
+        r.type = 'button';
+        r.addEventListener('click', () => { if (busy) return; chat.items.splice(chat.items.indexOf(m), 1); talk(m.retry, true); });
+        b.appendChild(r);
+      }
+      log.appendChild(b);
+    }
+    if (busy) { const t = el('div', 'chat-msg bot typing'); t.setAttribute('aria-label', '코치가 생각하고 있어요'); t.append(el('i'), el('i'), el('i')); log.appendChild(t); }
+    log.scrollTop = log.scrollHeight;
+    send.disabled = busy || !inp.value.trim();
+  };
+  // 앱이 계산한 카드를 이야기에 붙임 (가장 최근 카드만 누를 수 있음)
+  const showCard = ch => {
+    const data = coachProposal(ch);
+    if (!data) return;
+    const text = [data.title, ...data.lines, ...(data.choices || []).map(o => `선택지 [${o.label}] ${o.sub}`)].join('\n');
+    const item = { who: 'app', text, t: Date.now(), card: { title: data.title, lines: [...data.lines, ...(data.choices || []).map(o => `${o.label}: ${o.sub}`)] } };
+    chat.items.push(item);
+    card = { item, data };
+    saveChat(chat);
+    draw();
+  };
+  const talk = async (msg, again = false) => {
+    msg = String(msg || '').trim();
+    if (!msg || busy) return;
+    busy = true;
+    if (!again) chat.items.push({ who: 'me', text: msg, t: Date.now() });
+    saveChat(chat);
+    mood = 'normal';
+    draw();
+    const history = forAi().slice(0, -1);
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(), weak: weakText(), notes: chat.notes.map(n => n.text), history, message: msg, day: fmtDay(today) });
+    busy = false;
+    if (!res) {
+      chat.items.push({ who: 'coach', text: coachErrorText(), t: Date.now(), err: true, retry: msg });
+      mood = 'worry';
+    } else {
+      mood = res.mood;
+      if (res.text) chat.items.push({ who: 'coach', text: res.text, t: Date.now(), mood: res.mood });
+      if (res.remember && !chat.notes.some(n => n.text === res.remember)) {
+        chat.notes.push({ text: res.remember, t: Date.now() });
+        chat.items.push({ who: 'note', text: `기억해 둘게요: ${res.remember}`, t: Date.now() });
+      }
+      if (res.plan) { saveChat(chat); if (open) showCard(res.plan); else { const data = coachProposal(res.plan); if (data) chat.items.push({ who: 'app', text: [data.title, ...data.lines].join('\n'), t: Date.now() }); } }
+    }
+    saveChat(chat);
+    if (open) draw();
+  };
+  // 자주 하는 말
+  const quick = ['약한 단어 짚어 줘', '오늘 뭐부터 할까?', ...(canPlanNow() ? ['일정을 바꾸고 싶어'] : []), '퀴즈 내 줘'];
+  chips.innerHTML = '';
+  for (const q of quick) {
+    const b = el('button', 'chip', q);
+    b.type = 'button';
+    b.addEventListener('click', () => talk(q));
+    chips.appendChild(b);
+  }
+  if (canPlanNow() && coachOptions().length > 1) {
+    const b = el('button', 'chip', '선택지에서 고르기');
+    b.type = 'button';
+    b.addEventListener('click', () => { done(); setTimeout(pickSchedule, 350); });
+    chips.appendChild(b);
+  }
+  // 기억: 코치가 기억해 둔 것 보기·지우기
+  const drawMem = () => {
+    const list = $('#cc-mem-list');
+    list.innerHTML = '';
+    if (!chat.notes.length) list.appendChild(el('p', 'muted', '아직 기억해 둔 게 없어요. 이야기하다가 알아 두면 좋은 사정(예: 수요일은 학원)이 나오면 코치가 적어 둬요.'));
+    chat.notes.forEach((n, i) => {
+      const row = el('div', 'mem-row');
+      row.appendChild(el('span', null, n.text));
+      const x = el('button', 'mem-del', '지우기');
+      x.type = 'button';
+      x.addEventListener('click', () => { chat.notes.splice(i, 1); saveChat(chat); drawMem(); });
+      row.appendChild(x);
+      list.appendChild(row);
+    });
+    const wipe = $('#cc-wipe');
+    wipe.textContent = '이야기와 기억 모두 지우기';
+    wipe.dataset.sure = '';
+  };
+  $('#cc-menu').onclick = () => { mem.hidden = !mem.hidden; if (!mem.hidden) drawMem(); };
+  $('#cc-mem-close').onclick = () => { mem.hidden = true; };
+  $('#cc-wipe').onclick = e => {
+    const b = e.currentTarget;
+    if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '한 번 더 누르면 지워요'; return; }
+    chat.items = [{ who: 'coach', text: '다 지웠어요. 처음부터 다시 이야기해요.', t: Date.now() }];
+    chat.notes = [];
+    card = null;
+    saveChat(chat);
+    mem.hidden = true;
+    draw();
+  };
+  mem.hidden = true;
+  inp.value = '';
+  const grow = () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 120) + 'px'; send.disabled = busy || !inp.value.trim(); };
+  inp.oninput = grow;
+  const submit = () => { const v = inp.value; inp.value = ''; grow(); talk(v); };
+  send.onclick = () => { submit(); if (DESK) inp.focus(); };
+  // 폰에서 키보드가 올라오면 보이는 높이에 맞춤
+  const vv = window.visualViewport;
+  const fit = () => { if (!vv) return; d.style.height = vv.height + 'px'; d.style.top = vv.offsetTop + 'px'; log.scrollTop = log.scrollHeight; };
+  if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit(); }
+  saveChat(chat);
+  d.hidden = false;
+  draw();
+  grow();
+  if (DESK) setTimeout(() => inp.focus(), 50); // 폰은 키보드가 바로 올라오지 않게
+  const key = e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!mem.hidden) mem.hidden = true; else done(); }
+    else if (e.target === inp && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.stopPropagation(); submit(); }
+    else if (e.target !== inp) e.stopPropagation(); // 뒤 화면의 단축키가 눌리지 않게
+  };
+  const close = () => {
+    open = false;
+    d.hidden = true; d.onclick = null; d.style.height = d.style.top = '';
+    document.removeEventListener('keydown', key, true);
+    if (vv) { vv.removeEventListener('resize', fit); vv.removeEventListener('scroll', fit); }
+  };
+  function done() { close(); modalDone(() => {}); }
+  modalOpen(close);
+  $('#cc-close').onclick = done;
+  d.onclick = e => { if (e.target === d) done(); };
+  document.addEventListener('keydown', key, true);
 }
 
 // ---------- 코치 + AI ----------
@@ -996,7 +1246,7 @@ function coachFacts() {
     if (g && today >= g) lines.push('지금은 전체 복습 기간: 새 단어는 다 봤고, 시험 전날까지 범위 전체를 날마다 나눠 복습');
     else if (g) {
       const rd = daysBetween(g, ex), base = settings.coachBase || 0, need = coachDaily(), target = todayNewTarget();
-      lines.push(`일정: ${fmtDay(lastLearnDay())}까지 새 단어, ${fmtDay(g)}부터 ${rd}일 전체 복습 (${settings.coachReview ? '복습 날 수는 학생이 정함' : '코치가 추천한 일정'})`);
+      lines.push(`일정: ${fmtDay(lastLearnDay())}까지 새 단어, ${fmtDay(g)}부터 ${rd}일 전체 복습 (${settings.coachFix ? `학생이 하루 새 단어를 ${settings.coachFix}개로 고정함` : settings.coachReview ? '복습 날 수는 학생이 정함' : '코치가 추천한 일정'})`);
       lines.push(`처음 계획은 하루 새 단어 ${base}개, 코치 계산으로 오늘 필요한 건 ${need}개` + (base && need > base * 1.25 + 2 ? ' (밀려서 늘어남)' : base && need < base ? ' (앞서 있어서 줄어듦)' : ' (계획대로)'));
       if (newTargetMine() && target !== need) lines.push(`학생이 오늘만 새 단어 목표를 ${target}개로 직접 정함 (${target > need ? '계획보다 많이 하려는 것, 밀린 게 아님' : '오늘은 덜 하려는 것'})`);
     }
@@ -1028,7 +1278,7 @@ const SAY_KEY = P + 'coachsay.v1';
 let sayPending = '';
 function coachSayKey(say) {
   const f = flowState();
-  return [dateStr(), f.stage, !f.learnLeft && f.rv.done, todayNewTarget(), restNow().join(''), settings.coachGoal, settings.exam, settings.from, settings.to, coachChar(), say.mood, coachMoved].join('|');
+  return [dateStr(), f.stage, !f.learnLeft && f.rv.done, todayNewTarget(), restNow().join(''), settings.coachFix || 0, settings.coachGoal, settings.exam, settings.from, settings.to, coachChar(), say.mood, coachMoved].join('|');
 }
 function aiSayFor(say) {
   if (!aiCoachOnline() || !settings.coach) return null;
@@ -1049,7 +1299,11 @@ function renderCoach(stage = soloDay != null && days.includes(soloDay) ? 'day' :
   const card = $('#buddy-card');
   let say = null;
   if (stage === 'day') say = null; // DAY 단독 학습 중엔 숨김
-  else if (settings.coach) say = coachSay();
+  else if (settings.coach) {
+    say = coachSay();
+    // AI가 되면 언제든 코치에게 말을 걸 수 있게
+    if (aiCoachOnline() && !say.acts.some(a => a[1] === talkCoach)) say = { ...say, acts: [...say.acts, ['코치와 이야기하기', talkCoach]] };
+  }
   else if (!ui.coachAsked) {
     say = {
       mood: 'cheer', text: '단어 코치를 켜 볼까요? 시험일만 알려 주면 목표일과 하루 분량을 짜서 매일 알려 줄게요.',
@@ -2797,7 +3051,7 @@ function renderSrs() {
       rb.appendChild(b);
     });
   }
-  $('#btn-coach-talk').hidden = !coachActive() || (!aiCoachOnline() && (dateStr() >= settings.coachGoal || !leftNew()));
+  $('#btn-coach-talk').hidden = aiCoachOnline() ? !coach : !coachActive() || dateStr() >= settings.coachGoal || !leftNew();
   $('#btn-coach-talk').textContent = aiCoachOnline() ? '코치와 이야기하기' : '일정 상의하기';
   if (coach) {
     const today = dateStr();
@@ -2807,7 +3061,7 @@ function renderSrs() {
       const gd = settings.coachGoal, rd = daysBetween(gd, ex);
       cp.textContent = today >= gd ? `새 단어는 끝났어요. 시험 전날까지 ${daysBetween(today, ex)}일 동안 범위 전체를 나눠 복습해요.`
         : `시험까지 ${daysBetween(today, ex)}일 · 새 단어는 ${fmtDay(lastLearnDay())}까지(오늘 ${todayNewTarget()}개) · ` + (rd > 0 ? `마지막 ${rd === 1 ? '하루' : `${rd}일`}는 범위 전체 복습`.replace('일는', '일은') : '시험 전날까지 새 단어')
-          + (settings.coachReview ? ' (복습 날 수는 직접 정함)' : '') + (restNow().length ? ` · ${restLabel(restNow())}은 쉼` : '');
+          + (settings.coachFix ? ` (하루 ${settings.coachFix}개로 고정)` : settings.coachReview ? ' (복습 날 수는 직접 정함)' : '') + (restNow().length ? ` · ${restLabel(restNow())}은 쉼` : '');
     }
   }
   const warn = $('#srs-warn');
