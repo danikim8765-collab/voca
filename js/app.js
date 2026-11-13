@@ -3135,7 +3135,8 @@ function bind() {
       case 'disabled': return `이 키를 만든 프로젝트에서 AI API가 꺼져 있어요. Gemini라면 aistudio.google.com/apikey 에서 새로 만든 키를 넣어 주세요.${d}`;
       case 'restricted': return `키에 사용 제한(웹사이트·API 제한)이 걸려 있어요. 제한 없는 키를 만들거나 제한을 풀어 주세요.${d}`;
       case 'region': return `이 지역에서는 쓸 수 없는 키래요.${d}`;
-      case 'unknown': return '어느 회사 키인지 알 수 없어요. 키를 처음부터 끝까지 다시 복사해 주세요. (Gemini AIza…, Groq gsk_…, OpenRouter sk-or-…, Claude sk-ant-…)';
+      case 'tokentype': return `Google이 이 키 종류를 받지 않았어요 (Gemini API·Vertex AI 둘 다 해 봤어요). aistudio.google.com/apikey 에서 'API 키 만들기'로 새로 만든 키를 넣어 주세요.${d}`;
+      case 'unknown': return '어느 회사 키인지 알 수 없어요. 키를 처음부터 끝까지 다시 복사해 주세요. (Gemini AIza…·AQ.…, Groq gsk_…, OpenRouter sk-or-…, Claude sk-ant-…)';
       case 'busy': return `요청이 너무 많대요. 조금 뒤에 다시 해 주세요.${d}`;
       case 'nomodel': return '지금 쓸 수 있는 모델을 찾지 못했어요.';
       case 'invalid': return `키가 맞지 않대요. 앞뒤가 잘리지 않게 처음부터 끝까지 다시 복사해 주세요.${d}`;

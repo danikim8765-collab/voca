@@ -271,3 +271,25 @@ test('코치용 키를 따로 넣으면 코치는 그 AI, 채점은 원래 AI', 
   aiDisconnect('coach');
   assert.equal(aiCoachOnline(), false);
 });
+
+test('AQ.로 시작하는 Google 키: Gemini API가 안 받으면 Vertex AI로 연결', async () => {
+  const tokErr = () => json({ error: { code: 401, message: 'API key not valid. Please pass a valid API key.', details: [{ reason: 'ACCESS_TOKEN_TYPE_UNSUPPORTED' }] } }, 401);
+  // Gemini API가 받으면 그대로 Gemini
+  reply = () => json({ name: 'models/gemini-flash-latest' });
+  await aiConnect('AQ.good', 'coach');
+  assert.equal(aiName('coach'), 'Gemini');
+  // Gemini API는 안 받고 Vertex는 받음 (없는 모델은 건너뜀)
+  calls = [];
+  reply = (url, o) => (url.includes('generativelanguage') ? tokErr() : url.includes('gemini-3-flash:') || url.includes('gemini-3-flash-preview') ? json({ error: { code: 404 } }, 404) : json({ candidates: [] }));
+  await aiConnect('AQ.vertex', 'coach');
+  assert.equal(aiName('coach'), 'Gemini(Vertex AI)');
+  assert.match(calls.at(-1).url, /aiplatform\.googleapis\.com\/v1\/publishers\/google\/models\/gemini-2\.5-flash:generateContent$/);
+  // 코치 말도 Vertex 주소로
+  reply = () => json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"mood":"happy","text":"좋아요."}' }] } }] });
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.match(calls.at(-1).url, /aiplatform\.googleapis\.com.*gemini-2\.5-flash:generateContent$/);
+  assert.equal(calls.at(-1).opts.headers['x-goog-api-key'], 'AQ.vertex');
+  // 둘 다 안 받으면 tokentype
+  reply = () => tokErr();
+  await assert.rejects(aiConnect('AQ.bad', 'coach'), e => e.reason === 'tokentype');
+});

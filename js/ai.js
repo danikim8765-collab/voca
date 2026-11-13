@@ -24,7 +24,8 @@ const OPENAI_LIKE = {
 const loadConf = (slot = 'main') => { try { return JSON.parse(localStorage.getItem(SLOT[slot])) || {}; } catch { return {}; } };
 const saveConf = (c, slot = 'main') => { try { localStorage.setItem(SLOT[slot], JSON.stringify(c)); } catch {} };
 
-export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^AIza/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
+// Google 키: AIza… 또는 AQ.… (AQ.는 Gemini API 키일 수도, Vertex AI 키일 수도 있어서 연결할 때 둘 다 해 봄)
+export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^(AIza|AQ\.)/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
 const conf = (slot = 'main') => { const c = loadConf(slot); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
 // 코치가 쓸 설정: 코치용 키가 있으면 그것, 없으면 채점용
 const coachConf = () => (conf('coach').key ? conf('coach') : conf());
@@ -36,7 +37,7 @@ export const setAiSwitch = on => { try { localStorage.setItem(ON_KEY, on ? '1' :
 export const aiHasKey = (slot = 'main') => !!conf(slot).key;
 export const aiEnabled = () => aiSwitch() && aiHasKey();
 export const aiOnline = () => aiEnabled() && navigator.onLine !== false;
-export const aiName = (slot = 'main') => ({ gemini: 'Gemini', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider(slot)] || 'AI');
+export const aiName = (slot = 'main') => ({ gemini: 'Gemini', vertex: 'Gemini(Vertex AI)', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider(slot)] || 'AI');
 // 코치가 AI를 쓸 수 있는지 (스위치 + 코치용이나 채점용 키 + 인터넷)
 export const aiCoachOnline = () => aiSwitch() && !!coachConf().key && navigator.onLine !== false;
 export const aiCoachName = () => (aiHasKey('coach') ? aiName('coach') : aiName());
@@ -49,6 +50,9 @@ const claudeHeaders = key => ({
   'anthropic-dangerous-direct-browser-access': 'true',
 });
 const geminiHeaders = key => ({ 'content-type': 'application/json', 'x-goog-api-key': key });
+// Vertex AI(Google Cloud) express 모드: 같은 Gemini 모델을 다른 주소로. 요청·응답 모양은 Gemini API와 같음
+const VERTEX_API = 'https://aiplatform.googleapis.com/v1/publishers/google/models';
+const VERTEX_MODELS = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
 const bearer = key => ({ 'content-type': 'application/json', authorization: `Bearer ${key}` });
 
 const fail = status => Object.assign(new Error(String(status)), { status });
@@ -68,6 +72,7 @@ async function failFrom(res) {
   } catch {}
   const t = `${why} ${msg}`;
   const reason = res.status === 429 ? 'busy'
+    : /ACCESS_TOKEN_TYPE_UNSUPPORTED/.test(t) ? 'tokentype'
     : /SERVICE_DISABLED|has not been used|is disabled|not been enabled/i.test(t) ? 'disabled'
       : /REFERRER|referer|referrer|API_KEY_.*BLOCKED|blocked|restrict/i.test(t) ? 'restricted'
         : /location is not supported|region|country/i.test(t) ? 'region'
@@ -109,8 +114,29 @@ async function connectGemini(key, slot) {
     }
   }
   // Gemini는 틀린 키를 400(API_KEY_INVALID)으로, 꺼진 API는 403(SERVICE_DISABLED)으로 알려 줌
-  if (!res.ok) throw await failFrom(res);
+  if (!res.ok) {
+    const e = await failFrom(res);
+    // AQ.로 시작하는 키는 Vertex AI 키일 수 있어서 그쪽으로도 해 봄
+    if (/^AQ\./.test(key)) {
+      try { await connectVertex(key, slot); return; } catch (v) { throw v.reason && v.reason !== 'invalid' && v.reason !== 'tokentype' ? v : e; }
+    }
+    throw e;
+  }
   saveConf({ key, provider: 'gemini', model }, slot);
+}
+// Vertex AI express: 모델 정보 조회가 없어서 아주 짧게 한 번 불러 봄(토큰 몇 개). 없는 모델(404)이면 다음 모델로
+async function connectVertex(key, slot) {
+  let last = null;
+  for (const model of VERTEX_MODELS) {
+    const res = await fetch(`${VERTEX_API}/${model}:generateContent`, {
+      method: 'POST', headers: geminiHeaders(key), cache: 'no-store',
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { maxOutputTokens: 16 } }),
+    });
+    if (res.ok) { saveConf({ key, provider: 'vertex', model }, slot); return; }
+    last = await failFrom(res);
+    if (res.status !== 404) throw last;
+  }
+  throw last || Object.assign(fail(404), { reason: 'nomodel' });
 }
 const CONNECT = {
   claude: connectClaude, gemini: connectGemini,
@@ -190,14 +216,15 @@ async function askClaude(c, r, signal) {
 }
 
 async function askGemini(c, r, signal) {
-  const res = await fetch(`${GEMINI_API}/models/${c.model || GEMINI_MODEL}:generateContent`, {
+  const url = c.provider === 'vertex' ? `${VERTEX_API}/${c.model}:generateContent` : `${GEMINI_API}/models/${c.model || GEMINI_MODEL}:generateContent`;
+  const res = await fetch(url, {
     method: 'POST', headers: geminiHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: r.system }] },
       contents: [{ role: 'user', parts: [{ text: r.user }] }],
       generationConfig: r.json
-        ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA, maxOutputTokens: 2048 }
-        : { maxOutputTokens: 2048 },
+        ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA, maxOutputTokens: 4096 }
+        : { maxOutputTokens: 4096 }, // 생각하는 모델은 생각에도 토큰을 써서 넉넉히
     }),
   });
   if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
@@ -231,7 +258,7 @@ async function ask(r, c = conf()) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), r.timeout || TIMEOUT_MS);
   try {
-    const fn = c.provider === 'gemini' ? askGemini : OPENAI_LIKE[c.provider] ? askOpenAILike : askClaude;
+    const fn = c.provider === 'gemini' || c.provider === 'vertex' ? askGemini : OPENAI_LIKE[c.provider] ? askOpenAILike : askClaude;
     return await fn(c, r, ctrl.signal);
   } catch {
     lastErr = ctrl.signal.aborted ? 'timeout' : 'network';
