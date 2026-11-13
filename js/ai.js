@@ -1,7 +1,7 @@
 // 단어 모드 직접 입력의 AI 재확인. 규칙 채점(core.js의 gradeMeaning)이 정답이 아니라고 할 때만,
 // 인터넷이 되고 API 키가 있으면 부른다. 안 되거나 실패하면 null → 규칙 채점 결과 그대로.
 // 키 앞부분으로 회사를 고른다: gsk_… = Groq(무료), sk-or-… = OpenRouter(무료 모델),
-// AIza… = Google Gemini(무료 등급), sk-ant-… = Anthropic Claude(유료)
+// AIza… = Google Gemini(무료 등급), sk-ant-… = Anthropic Claude(유료: 가벼운 일은 Haiku, 코치와 이야기하기만 Sonnet)
 // 서버 없이 브라우저에서 바로 부른다. 키는 이 기기의 localStorage에만 저장 (동기화 안 함)
 
 const KEY = 'voca.ai.v1'; // { key, provider, model } 두 모드가 같이 씀
@@ -14,7 +14,10 @@ const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_MODEL = 'gemini-flash-lite-latest'; // 가장 빠르고 무료 한도가 넉넉한 쪽. 없으면 연결할 때 목록에서 고름
 const GEMINI_COACH_MODEL = 'gemini-flash-latest'; // 코치용 키: 말이 더 자연스러운 flash (없으면 목록에서 flash → flash-lite)
 const CLAUDE_API = 'https://api.anthropic.com/v1';
-const CLAUDE_MODEL = 'claude-sonnet-5-5';
+// Claude는 일마다 모델을 나눔: 채점·풀이·홈 말풍선·학습 끝 한마디는 싸고 빠른 Haiku, 코치와 이야기하기만 Sonnet
+// (Sonnet이 막히면 Haiku로). 예전에 저장된 모델 이름과 상관없이 이 둘을 씀
+const CLAUDE_MODEL = 'claude-haiku-5-5';
+const CLAUDE_CHAT_MODEL = 'claude-sonnet-5-5';
 // OpenAI 형식(chat/completions)을 쓰는 곳. 모델은 연결할 때 목록에서 앞쪽 것부터 고름
 const OPENAI_LIKE = {
   groq: { api: 'https://api.groq.com/openai/v1', prefer: [/^openai\/gpt-oss-120b$/, /^openai\/gpt-oss-20b$/, /gpt-oss/, /^qwen/, /llama/], json: true },
@@ -26,7 +29,11 @@ const saveConf = (c, slot = 'main') => { try { localStorage.setItem(SLOT[slot], 
 
 // Google 키: AIza… 또는 AQ.… (AQ.는 Gemini API 키일 수도, Vertex AI 키일 수도 있어서 연결할 때 둘 다 해 봄)
 export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^(AIza|AQ\.)/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
-const conf = (slot = 'main') => { const c = loadConf(slot); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
+const conf = (slot = 'main') => {
+  let c = loadConf(slot);
+  if (c.key && !c.provider) c = { ...c, provider: providerOf(c.key) || 'claude' };
+  return c.provider === 'claude' ? { ...c, model: CLAUDE_MODEL } : c;
+};
 // 코치가 쓸 설정: 코치용 키가 있으면 그것, 없으면 채점용
 const coachConf = () => (conf('coach').key ? conf('coach') : conf());
 export const aiProvider = (slot = 'main') => conf(slot).provider || '';
@@ -283,14 +290,16 @@ async function ask(r, c = conf()) {
 // 코치가 부를 때: 고른 모델이 막히면(사람이 몰림 503, 한도 429, 너무 늦음, 없어진 모델 404) 다른 모델로 넘어감.
 // 무료 등급은 모델마다 한도가 따로라 flash가 막혀도 flash-lite는 되는 일이 많음. 막힌 모델은 5분 동안 뒤로 미룸
 const GEMINI_SPARE = 'gemini-flash-lite-latest';
-export const coachModels = c => [...new Set((c.provider === 'gemini' ? [c.model || GEMINI_COACH_MODEL, GEMINI_SPARE]
-  : c.provider === 'vertex' ? [c.model, ...VERTEX_MODELS.main] : [c.model]).filter(Boolean))];
+// chat = 코치와 이야기하기 (Claude면 이때만 Sonnet)
+export const coachModels = (c, chat = false) => [...new Set((c.provider === 'gemini' ? [c.model || GEMINI_COACH_MODEL, GEMINI_SPARE]
+  : c.provider === 'vertex' ? [c.model, ...VERTEX_MODELS.main]
+    : c.provider === 'claude' ? (chat ? [CLAUDE_CHAT_MODEL, CLAUDE_MODEL] : [CLAUDE_MODEL]) : [c.model]).filter(Boolean))];
 const resting = new Map(); // 모델 → 이 시각까지 건너뜀
 const SWITCH = /^(429|404|5\d\d|timeout|cut|network)$/;
 async function askCoach(r) {
   const c = coachConf();
   // 방금 막혔던 모델은 맨 뒤로 (다른 모델도 안 되면 그때 다시 해 봄)
-  const all = coachModels(c), asleep = m => resting.get(m) > Date.now();
+  const all = coachModels(c, !!r.chat), asleep = m => resting.get(m) > Date.now();
   const models = [...all.filter(m => !asleep(m)), ...all.filter(asleep)].slice(0, 3);
   if (models.length < 3) models.push(models[0]); // 다 안 됐는데 서버 오류(5xx)였으면 잠깐 쉬고 처음 모델로 한 번 더
   for (let i = 0; i < models.length; i++) {
@@ -564,7 +573,7 @@ export async function aiCoachChat({ char, facts, weak = '', notes = [], history 
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   const hist = chatTranscript(history);
   const raw = await askCoach({
-    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 40000,
+    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 40000, chat: true,
     user: `<facts>
 ${facts}
 </facts>

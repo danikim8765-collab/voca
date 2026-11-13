@@ -25,10 +25,10 @@ test('키 연결: 맞으면 저장, 401이면 저장 안 함', async () => {
   reply = () => json({}, 401);
   await assert.rejects(aiConnect('bad'), e => e.status === 401);
   assert.equal(aiEnabled(), false);
-  reply = () => json({ id: 'claude-sonnet-5-5' });
+  reply = () => json({ id: 'claude-haiku-5-5' });
   await aiConnect('sk-ant-x');
   assert.equal(aiEnabled(), true);
-  assert.match(calls.at(-1).url, /models\/claude-sonnet-5-5$/);
+  assert.match(calls.at(-1).url, /models\/claude-haiku-5-5$/);
   aiDisconnect();
   assert.equal(aiEnabled(), false);
 });
@@ -46,7 +46,7 @@ test('AI 응답을 점수로', async () => {
   reply = () => json({ stop_reason: 'end_turn', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: '{"score":2,"missing":1,"note":""}' }] });
   assert.deepEqual(await aiGradeMeaning(Q), { score: 2, missing: 1, note: '' });
   const body = JSON.parse(calls[0].opts.body);
-  assert.equal(body.model, 'claude-sonnet-5-5');
+  assert.equal(body.model, 'claude-haiku-5-5');
   assert.equal(body.output_config.format.type, 'json_schema');
   assert.equal(calls[0].opts.headers['x-api-key'], 'k');
   assert.match(body.messages[0].content, /죽음을 부르는/);
@@ -279,6 +279,9 @@ test('코치: 고른 모델이 막히면(503·429·시간 초과) 다른 모델�
   assert.deepEqual(coachModels({ provider: 'gemini', model: 'gemini-flash-latest' }), ['gemini-flash-latest', 'gemini-flash-lite-latest']);
   assert.deepEqual(coachModels({ provider: 'gemini', model: 'gemini-flash-lite-latest' }), ['gemini-flash-lite-latest']);
   assert.deepEqual(coachModels({ provider: 'groq', model: 'openai/gpt-oss-120b' }), ['openai/gpt-oss-120b']);
+  // Claude: 말풍선은 Haiku만, 코치와 이야기하기는 Sonnet → 막히면 Haiku
+  assert.deepEqual(coachModels({ provider: 'claude', model: 'claude-haiku-5-5' }), ['claude-haiku-5-5']);
+  assert.deepEqual(coachModels({ provider: 'claude', model: 'claude-haiku-5-5' }, true), ['claude-sonnet-5-5', 'claude-haiku-5-5']);
   store.set('voca.ai.coach.v1', JSON.stringify({ key: 'AIzaCoach', provider: 'gemini', model: 'gemini-flash-latest' }));
   const good = t => json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: t }] } }] });
   const say = '{"mood":"normal","text":"좋아요.","rest":"","perDay":0,"review":0,"today":-1,"remember":""}';
@@ -391,4 +394,27 @@ test('코치와 이야기: 요령 속 작은 숫자(3가지, 5분)는 사실에 
   reply = claudeText('{"mood":"cheer","text":"소리 내어 읽고 5분 뒤에 다시 떠올려 봐요.","review":0,"perDay":0,"rest":"","today":-1}');
   const res = await aiCoachChat({ char: 'owl', facts: '시험까지 14일', table: '', maxReview: 5, message: '잘 외우는 법 알려줘' });
   assert.equal(res.text, '소리 내어 읽고 5분 뒤에 다시 떠올려 봐요.');
+});
+
+test('Claude: 채점·말풍선은 Haiku, 코치와 이야기하기는 Sonnet (예전에 Sonnet으로 저장된 키도)', async t => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'sk-ant-old', provider: 'claude', model: 'claude-sonnet-5-5' }));
+  // 앞선 테스트에서 막혀 잠시 쉬는 모델이 있을 수 있어서 시각을 1시간 뒤로
+  const realNow = Date.now;
+  Date.now = () => realNow() + 3600000;
+  t.after(() => { Date.now = realNow; });
+  const model = () => JSON.parse(calls.at(-1).opts.body).model;
+  reply = claudeText('{"score":2,"missing":0,"note":""}');
+  assert.equal((await aiGradeMeaning(Q)).score, 2);
+  assert.equal(model(), 'claude-haiku-5-5');
+  reply = claudeText('{"mood":"happy","text":"좋아요."}');
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.equal(model(), 'claude-haiku-5-5');
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"perDay":0,"rest":"","today":-1,"remember":""}');
+  assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '좋아요!');
+  assert.equal(model(), 'claude-sonnet-5-5');
+  // Sonnet이 붐비면(529) Haiku로 넘어감
+  calls = [];
+  reply = (url, opts) => (JSON.parse(opts.body).model === 'claude-sonnet-5-5' ? json({ error: {} }, 529) : claudeText('{"mood":"normal","text":"대신 답해요.","review":0,"perDay":0,"rest":"","today":-1,"remember":""}')());
+  assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '대신 답해요.');
+  assert.deepEqual(calls.map(c => JSON.parse(c.opts.body).model), ['claude-sonnet-5-5', 'claude-haiku-5-5']);
 });
