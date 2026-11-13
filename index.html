@@ -399,13 +399,18 @@
         <p class="muted">키는 이 기기에만 저장돼요. 비밀번호처럼 다른 사람에게 보내지 마세요.</p>
         <button class="btn ghost small" id="btn-ai-off">연결 끊기</button>
       </div>
-      <div class="label mt">코치 AI <span class="muted">(코치 말만 다른 AI로)</span></div>
+      <!-- AI 고급 설정: 숨겨 둔 메뉴. 설정 맨 아래 '새 버전 확인'을 빠르게 7번 누르면 열림 -->
+      <div id="ai-adv" hidden>
+      <div class="label mt">AI 고급 설정</div>
+      <div class="label">코치 AI <span class="muted">(코치 말만 다른 AI로)</span></div>
       <p class="muted" id="ai-coach-info"></p>
       <div id="ai-coach-off">
         <input id="ai-coach-key" class="type-input" type="password" placeholder="코치에 쓸 키 (AIza…, sk-ant-…, gsk_…, sk-or-…)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
         <button class="btn secondary" id="btn-ai-coach-connect">코치 AI 연결</button>
       </div>
       <button class="btn ghost small" id="btn-ai-coach-off" hidden>코치 AI 연결 끊기</button>
+      <button class="btn ghost small" id="btn-ai-adv-hide">고급 설정 숨기기</button>
+      </div>
       </div>
     </div>
     <div class="card" id="set-screen">

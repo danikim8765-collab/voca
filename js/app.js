@@ -2730,6 +2730,11 @@ function renderSettings() {
   $('#data-info').style.whiteSpace = 'pre-line';
 }
 
+// AI 고급 설정(숨긴 메뉴)이 열렸는지. 이 기기에만 저장
+const ADV_KEY = 'voca.ai.adv.v1';
+const aiAdvOn = () => { try { return localStorage.getItem(ADV_KEY) === '1'; } catch { return false; } };
+const setAiAdv = on => { try { localStorage.setItem(ADV_KEY, on ? '1' : '0'); } catch {} };
+
 function renderAiStatus() {
   const sw = aiSwitch(), key = aiHasKey();
   $('#opt-ai').checked = sw;
@@ -2738,12 +2743,14 @@ function renderAiStatus() {
   $('#ai-on').hidden = !key;
   if (key) $('#ai-info').textContent = navigator.onLine === false ? `${aiName()} 연결됨 · 지금은 오프라인이라 ${WORD ? '규칙대로 채점해요' : '기본 말풍선만 보여요'}`
     : `${aiName()} 연결됨 · ` + (WORD ? '규칙 채점에서 오답이 나오면 AI가 다시 확인해요' : '직접 입력에서 틀리면 AI가 왜 안 맞는지 말풍선으로 알려줘요');
-  // 코치 AI: 따로 키를 넣으면 코치 말만 그 AI가 지음 (채점은 위의 AI 그대로)
+  // 코치 AI: 따로 키를 넣으면 코치 말만 그 AI가 지음 (채점은 위의 AI 그대로). 숨겨 둔 'AI 고급 설정'에서만 보임
   const ck = aiHasKey('coach');
+  $('#ai-adv').hidden = !aiAdvOn();
+  if (key && ck) $('#ai-info').textContent += ` · 코치 말은 ${aiName('coach')}`;
   $('#ai-coach-off').hidden = ck;
   $('#btn-ai-coach-off').hidden = !ck;
   $('#ai-coach-info').textContent = ck ? `${aiName('coach')} 연결됨 · 단어 코치의 말은 이 AI가 지어요 (채점은 ${key ? aiName() : '규칙대로'})`
-    : key ? `지금은 채점과 같은 AI(${aiName()})가 코치 말도 지어요. 코치 말투가 어색하면 다른 키를 넣어 코치만 바꿀 수 있어요. 한국어는 Gemini(AIza…, 무료)나 Claude(sk-ant-…, 유료)가 자연스러운 편이에요.`
+    : key ? `지금은 채점과 같은 AI(${aiName()})가 코치 말도 지어요. 다른 키를 넣으면 코치 말만 그 AI가 지어요.`
       : '키를 넣으면 단어 코치의 말을 AI가 지어요. 일정 계산은 언제나 앱이 해요.';
 }
 
@@ -3018,6 +3025,11 @@ function bind() {
     forgetCoachSay();
     renderAiStatus();
   });
+  $('#btn-ai-adv-hide').addEventListener('click', () => {
+    setAiAdv(false);
+    renderAiStatus();
+    toast(aiHasKey('coach') ? `숨겼어요. 코치 말은 계속 ${aiName('coach')}가 지어요` : '숨겼어요', 2500);
+  });
   $('#btn-ai-off').addEventListener('click', async () => {
     if (!(await ask({ title: 'AI 재확인 연결을 끊을까요?', body: '이 기기에서 API 키를 지우고 규칙대로 채점해요.', ok: '연결 끊기' }))) return;
     aiDisconnect();
@@ -3068,7 +3080,23 @@ function bind() {
   $('#btn-coach-replan').addEventListener('click', () => { if (planCoach(true)) { coachMoved = false; renderSrs(); toast('남은 날에 맞춰 일정을 다시 짰어요'); } });
   $('#buddy-char').addEventListener('click', e => { const c = e.currentTarget; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); });
   onSeg('#seg-limit', v => { settings.reviewLimit = +v; srsChanged(); });
+  // '새 버전 확인'을 빠르게(1.5초 안에 이어서) 7번 누르면 AI 고급 설정이 열림. 4번째부터 몇 번 남았는지 알려 줌
+  let advTaps = 0, advAt = 0;
   $('#btn-update').addEventListener('click', async () => {
+    const now = Date.now();
+    advTaps = now - advAt < 1500 ? advTaps + 1 : 1;
+    advAt = now;
+    if (advTaps >= 4) {
+      if (aiAdvOn()) { toast('AI 고급 설정은 이미 열려 있어요'); advTaps = 0; return; }
+      if (advTaps < 7) { toast(`${7 - advTaps}번 더 누르면 AI 고급 설정이 열려요`, 1200); return; }
+      advTaps = 0;
+      setAiAdv(true);
+      renderAiStatus();
+      if (aiSwitch()) { toast('AI 고급 설정이 열렸어요'); $('#ai-adv').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+      else toast('AI 고급 설정이 열렸어요. AI 사용하기를 켜면 보여요', 3000);
+      return;
+    }
+    if (advTaps > 1) return; // 이어서 누르는 중엔 다시 확인하지 않음
     try {
       const v = await latestVersion();
       if (v && v !== APP_VERSION) { location.reload(); return; }
