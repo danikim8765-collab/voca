@@ -293,6 +293,20 @@ test('모름 표시: 기기끼리 더 최근에 바꾼 쪽으로', async () => {
   assert.ok(!sameMarks(m, a));
 });
 
+test('코치 캐릭터: 동기화할 때 더 최근에 고른 쪽으로, 한쪽만 골랐으면 그쪽', async () => {
+  const { mergeCoach, sameCoach } = await import('../js/core.js');
+  assert.deepEqual(mergeCoach({ char: 'owl', at: 5 }, { char: 'cat', at: 3 }), { char: 'owl', at: 5 });
+  assert.deepEqual(mergeCoach({ char: 'owl', at: 5 }, { char: 'cat', at: 9 }), { char: 'cat', at: 9 });
+  assert.deepEqual(mergeCoach(null, { char: 'slime', at: 0 }), { char: 'slime', at: 0 });
+  assert.deepEqual(mergeCoach({ char: 'hamster' }, null), { char: 'hamster', at: 0 });
+  assert.equal(mergeCoach(null, null), null);
+  // 둘 다 언제 골랐는지 모르면 Gist 쪽 (기기끼리 서로 덮어쓰지 않게)
+  assert.deepEqual(mergeCoach({ char: 'owl', at: 0 }, { char: 'cat', at: 0 }), { char: 'cat', at: 0 });
+  assert.ok(sameCoach({ char: 'owl', at: 1 }, { char: 'owl', at: 1 }));
+  assert.ok(!sameCoach({ char: 'owl', at: 1 }, { char: 'owl', at: 2 }));
+  assert.ok(sameCoach(null, undefined));
+});
+
 test('유의어·반의어 골라내기', async () => {
   const { synAnt } = await import('../js/core.js');
   const r = synAnt([['유의어', 'preoccupy'], ['반의어', 'ignore'], ['파생어', 'obsession']]);

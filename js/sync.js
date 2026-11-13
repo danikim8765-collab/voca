@@ -1,16 +1,16 @@
 // 기기 간 진도 동기화: 내 GitHub 계정의 비밀 Gist 하나(voca-progress.json)에 진도를 저장하고 합친다.
-import { mergeProgress, sameStats, samePrefs, mergeMarks, sameMarks } from './core.js';
+import { mergeProgress, sameStats, samePrefs, mergeMarks, sameMarks, mergeCoach, sameCoach } from './core.js';
 
 const API = 'https://api.github.com';
 // 예문 모드 진도는 voca-progress.json, 단어 모드는 같은 Gist의 voca-word-progress.json
 const FILES = ['voca-progress.json', 'voca-word-progress.json'];
-const MARKS = 'voca-marks.json'; // 단어장 '모름' 표시: 두 모드가 같이 씀
+const MARKS = 'voca-marks.json'; // 단어장 '모름' 표시와 고른 코치 캐릭터: 두 모드가 같이 씀
 const KEY = 'voca.sync.v1'; // 토큰·Gist는 두 모드가 같이 씀
 
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 
-// marks: { get, set } 모름 표시. other: { get, set } 다른 모드 진도(단어장에서 두 모드 기록을 합쳐 보여 주려고 받아만 둠)
-export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, other = null }) {
+// marks: { get, set } 모름 표시. coach: { get, set } 고른 코치 캐릭터 { char, at } (토큰을 넣어 동기화할 때만 다른 기기와 맞춰짐). other: { get, set } 다른 모드 진도(단어장에서 두 모드 기록을 합쳐 보여 주려고 받아만 둠)
+export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, other = null }) {
   const FILE = file;
   const OTHER = FILES.find(f => f !== FILE);
   let conf = load(); // { token, gistId, login, last }
@@ -65,12 +65,22 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       const files = {};
       if (differs(local)) applyMerged(merged);
       if (differs(remote)) files[FILE] = { content: JSON.stringify(merged) };
-      if (marks) {
-        const rm = (await readFile(g, MARKS)).marks || {};
-        const lm = marks.get();
-        const mm = mergeMarks(lm, rm);
-        if (!sameMarks(mm, lm)) marks.set(mm);
-        if (!sameMarks(mm, rm)) files[MARKS] = { content: JSON.stringify({ v: 1, marks: mm }) };
+      if (marks || coach) {
+        const rf = await readFile(g, MARKS);
+        const rm = rf.marks || {}, rc = rf.coach || null;
+        let mm = rm, mc = rc;
+        if (marks) {
+          const lm = marks.get();
+          mm = mergeMarks(lm, rm);
+          if (!sameMarks(mm, lm)) marks.set(mm);
+        }
+        if (coach) {
+          const lc = coach.get();
+          mc = mergeCoach(lc, rc);
+          if (mc && !sameCoach(mc, lc)) coach.set(mc);
+        }
+        // 한 파일에 같이 들어 있어서, 하나만 바뀌어도 둘 다 적어 올림
+        if (!sameMarks(mm, rm) || !sameCoach(mc, rc)) files[MARKS] = { content: JSON.stringify({ v: 1, marks: mm, ...(mc ? { coach: mc } : {}) }) };
       }
       if (other && g.files && g.files[OTHER]) {
         const lo = other.get();

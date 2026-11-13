@@ -162,6 +162,18 @@ const sync = createSync({
     get: () => marks,
     set: m => { marks = m; save(KEY.marks, marks); if (current === 'list') renderList(); },
   },
+  // 고른 코치 캐릭터: 동기화(토큰)를 켰을 때만 다른 기기와 맞춰짐. 안 켰으면 이 기기에만
+  coach: {
+    get: () => (COACH_ART[ui.coachChar] ? { char: ui.coachChar, at: ui.coachCharAt || 0 } : null),
+    set: c => {
+      if (!COACH_ART[c.char]) return; // 모르는 캐릭터(새 버전에서 고른 것 등)는 그대로 둠
+      ui.coachChar = c.char;
+      ui.coachCharAt = c.at;
+      save(UI_KEY, ui);
+      if (current === 'settings') renderSrs();
+      if (current === 'home') renderCoach();
+    },
+  },
   other: { get: otherProgress, set: st => save(OTHER_P + 'stats.v1', st) },
 });
 const saveSettings = () => save(KEY.settings, settings);
@@ -643,7 +655,8 @@ function setCoach(on) {
   renderHome();
 }
 
-// 코치 캐릭터 (js/coach-art.js의 32×32 픽셀 그림): 고양이·햄스터·부엉이·슬라임 가운데 고름. 기기마다 저장(ui.coachChar), 두 모드가 같이 씀
+// 코치 캐릭터 (js/coach-art.js의 32×32 픽셀 그림): 고양이·햄스터·부엉이·슬라임 가운데 고름. 기기에 저장(ui.coachChar, 고른 때 ui.coachCharAt), 두 모드가 같이 씀.
+// 동기화를 켰으면 더 최근에 고른 쪽으로 다른 기기와 맞춰짐(Gist의 voca-marks.json)
 // 기분: normal 기본 · happy 기쁨(정답) · worry 걱정(오답) · sleep 졸림 · cheer 응원
 const COACH_MOOD = { normal: 'idle', happy: 'correct', worry: 'wrong', sleep: 'sleepy', cheer: 'cheer' };
 const coachChar = () => (COACH_ART[ui.coachChar] ? ui.coachChar : 'cat');
@@ -698,7 +711,9 @@ function pickCoach() {
 }
 function setCoachChar(c) {
   ui.coachChar = c;
+  ui.coachCharAt = Date.now();
   save(UI_KEY, ui);
+  sync.soon();
   if (current === 'settings') renderSrs();
   renderCoach();
 }
@@ -708,6 +723,7 @@ async function toggleCoach(on) {
     const c = await pickCoach();
     if (!c) { renderPlan(); if (current === 'settings') renderSrs(); return; } // 스위치를 원래대로
     ui.coachChar = c;
+    ui.coachCharAt = Date.now();
     save(UI_KEY, ui);
   }
   setCoach(on);
