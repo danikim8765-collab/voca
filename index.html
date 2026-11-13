@@ -501,18 +501,38 @@
       <div class="dlg-body" id="ct-desc">시험 전 전체 복습을 며칠 할지 골라요.</div>
       <div class="talk-say">
         <div class="talk-char" id="ct-char"></div>
-        <div class="talk-log" id="ct-log" aria-live="polite">
-          <div class="talk-bubble" id="ct-text"></div>
-        </div>
-      </div>
-      <div class="talk-ask" id="ct-ask" hidden>
-        <input id="ct-input" class="type-input" type="text" placeholder="예: 토요일은 쉬고 하루 30개씩 할래" autocomplete="off" enterkeyhint="send" maxlength="200">
-        <button class="btn secondary small" id="ct-send">보내기</button>
+        <div class="talk-bubble" id="ct-text" aria-live="polite"></div>
       </div>
       <div class="srs-presets talk-opts" id="ct-opts" role="radiogroup" aria-label="시험 전 전체 복습"></div>
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="ct-cancel">취소</button>
         <button class="btn dlg-ok" id="ct-ok">이렇게 할게요</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 코치와 이야기하기 (AI): 메신저처럼 주고받는 화면. 일정은 앱이 계산해 카드로 보여 줌 -->
+  <div class="dialog chat-dialog" id="coach-chat" role="dialog" aria-modal="true" aria-labelledby="cc-name" hidden>
+    <div class="chat-card">
+      <div class="chat-head">
+        <div class="chat-char" id="cc-char"></div>
+        <div class="chat-who"><b id="cc-name">코치</b><span id="cc-sub"></span></div>
+        <button class="chat-top-btn" id="cc-menu" type="button">기억</button>
+        <button class="chat-top-btn" id="cc-close" type="button" aria-label="닫기">닫기</button>
+      </div>
+      <div class="chat-body">
+        <div class="chat-log" id="cc-log" aria-live="polite"></div>
+        <div class="chat-mem" id="cc-mem" hidden>
+          <div class="chat-mem-head"><b>코치가 기억하는 것</b><button class="chat-top-btn" id="cc-mem-close" type="button">돌아가기</button></div>
+          <p class="muted">이 기기에만 저장돼요. 다른 기기로 옮겨지지 않아요.</p>
+          <div id="cc-mem-list"></div>
+          <button class="btn ghost small" id="cc-wipe" type="button">이야기와 기억 모두 지우기</button>
+        </div>
+      </div>
+      <div class="chat-chips" id="cc-chips"></div>
+      <div class="chat-ask">
+        <textarea id="cc-input" class="type-input" rows="1" placeholder="코치에게 말하기" autocomplete="off" enterkeyhint="send" maxlength="1000" aria-label="코치에게 말하기"></textarea>
+        <button class="btn secondary small" id="cc-send" type="button">보내기</button>
       </div>
     </div>
   </div>

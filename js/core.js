@@ -547,10 +547,14 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
  *  - 하루 새 단어가 10개도 안 되게 늘어지면 하루 10개로 당겨 끝내고 남는 날은 훑는 데 씀
  *  review: 사람이 코치와 정한 훑는 날 수(0 = 코치가 정함). 정했으면 그대로 따름(배우는 날은 적어도 하루 남김, 10개 당기기 없음)
  *  rest: 쉬는 요일(0 일 … 6 토). 날 나누기는 달력으로 하고, 하루 개수는 쉬는 날을 빼고 공부하는 날로 나눔
+ *  fix: 하루 새 단어 수를 이 개수로 고정(0 = 고정 안 함). 고정하면 review는 안 보고, 배우는 날 수가 개수에서 정해지고 남는 날이 훑는 날
+ *    딱 나눠떨어지지 않아 남는 단어는 tail로: 'last' = 마지막 날에 붙임(날 수 그대로), 그 밖 = 하루를 더 씀(마지막 날은 남는 단어만)
+ *    그 개수로는 시험 전날까지 다 못 보면 fits: false, 그때의 일정은 시험 전날까지 고르게 나눈 것(minPerDay개씩)
  * 반환 { goal: 새 단어를 끝낼 날(이날부터 훑기), perDay, learnDays, reviewDays, days, finalPerDay, load: 'ok'|'busy'|'heavy', auto: 코치가 정했을 훑는 날 수 }
+ *  고정이면 더해서 { fix, fits, over: 남는 단어 수, tail, studyN: 배우는 공부일 수, lastDay: 마지막 날 개수, todayNew: 오늘 개수(쉬는 날은 따로 봄), minPerDay }
  * 시험일이 없거나 오늘·지난 날이면 null
  */
-export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, review = 0, rest = [] } = {}) {
+export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, review = 0, rest = [], fix = 0, tail = '' } = {}) {
   if (!exam || exam <= today) return null;
   rest = cleanRest(rest);
   const days = daysBetween(today, exam); // 오늘부터 시험 전날까지
@@ -567,6 +571,29 @@ export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, r
     reviewDays = days - learnDays;
   }
   const auto = reviewDays;
+  const loadOf = n => (n <= 40 ? 'ok' : n <= 80 ? 'busy' : 'heavy');
+  fix = Math.round(Number(fix)) || 0;
+  if (fix > 0) {
+    const all = study(today, exam);                   // 시험 전날까지 공부하는 날
+    const full = Math.floor(left / fix);
+    const over = full ? left % fix : 0;               // 하루 몫을 다 채우고 남는 단어 (하루치도 안 되면 그날 다 봄)
+    const last = over > 0 && tail === 'last';
+    const studyN = !full ? 1 : over && !last ? full + 1 : full;
+    const minPerDay = Math.ceil(left / Math.max(1, all));
+    const extra = { fix, over, tail: over ? (last ? 'last' : 'extra') : '', studyN, minPerDay };
+    if (studyN > all) { // 그 개수로는 모자람: 시험 전날까지 고르게
+      return { goal: exam, perDay: minPerDay, learnDays: days, reviewDays: 0, days, finalPerDay: 0, load: loadOf(minPerDay), auto, ...extra, fits: false, lastDay: minPerDay, todayNew: minPerDay };
+    }
+    learnDays = calendarFor(today, studyN, rest);
+    reviewDays = days - learnDays;
+    const goal = addDays(today, learnDays);
+    const lastDay = studyN === 1 ? left : last ? fix + over : over || fix;
+    return {
+      goal, perDay: fix, learnDays, reviewDays, days,
+      finalPerDay: reviewDays ? Math.ceil(total / Math.max(1, study(goal, exam))) : 0,
+      load: loadOf(Math.max(fix, last ? lastDay : 0)), auto, ...extra, fits: true, lastDay, todayNew: studyN === 1 ? left : fix,
+    };
+  }
   if (review > 0) {
     reviewDays = Math.min(days - 1, Math.round(review));
     learnDays = days - reviewDays;
@@ -578,7 +605,7 @@ export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, r
   return {
     goal, perDay, learnDays, reviewDays, days,
     finalPerDay: reviewDays ? Math.ceil(total / Math.max(1, study(goal, exam))) : 0,
-    load: perDay <= 40 ? 'ok' : perDay <= 80 ? 'busy' : 'heavy', auto,
+    load: loadOf(perDay), auto,
   };
 }
 

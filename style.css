@@ -875,23 +875,70 @@ body[data-tint] {
 .talk-say { display: flex; align-items: flex-end; gap: 8px; margin: 12px 0 4px; text-align: left; }
 .talk-char { flex: none; width: 56px; height: 56px; }
 .talk-char .buddy-svg { animation: buddy-hop .4s ease-out; }
-.talk-bubble { align-self: stretch; min-width: 0; background: var(--bg); border-radius: 14px 14px 14px 4px; padding: 9px 12px; font-size: 14px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; min-height: 3em; }
+.talk-bubble { flex: 1; align-self: stretch; min-width: 0; background: var(--bg); border-radius: 14px 14px 14px 4px; padding: 9px 12px; font-size: 14px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; min-height: 3em; }
 .talk-opts { margin-top: 4px; text-align: left; }
-.talk-log { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; max-height: 34vh; overflow-y: auto; text-align: left; }
-.talk-msg { font-size: 13.5px; line-height: 1.5; padding: 7px 11px; border-radius: 14px 14px 14px 4px; background: var(--bg); color: var(--muted); word-break: keep-all; overflow-wrap: anywhere; max-width: 92%; }
-.talk-msg.me { align-self: flex-end; border-radius: 14px 14px 4px 14px; background: var(--primary-soft); color: var(--primary); }
-.talk-opts .preset.said .p-name { color: var(--primary); }
 .rest-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
 .rest-chip { min-width: 38px; justify-content: center; }
 .rest-chip.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
-.talk-ask { display: flex; gap: 6px; margin: 8px 0 2px; }
-.talk-ask .type-input { flex: 1; min-width: 0; margin: 0; padding: 9px 12px; font-size: 14px; }
-.talk-ask .btn { flex: none; margin: 0; }
 .res-say { position: relative; max-width: 420px; margin: 4px auto 10px; padding: 10px 14px; background: var(--bg); border-radius: 14px; font-size: 14.5px; line-height: 1.55; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
 .res-say.wait { text-align: center; color: var(--muted); }
 .talk-opts .preset { padding: 10px 2px; }
 .talk-opts .p-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .talk-opts .p-name { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .buddy-svg, .buddy-char .buddy-svg, .buddy-char.hop .buddy-svg, .res-buddy .buddy-svg, .fb-coach .buddy-svg, #coach-pick .coach-choice.on .buddy-svg, .talk-char .buddy-svg { animation: none; } }
+/* 코치와 이야기하기: 폰은 화면 가득, 넓은 화면은 가운데 카드 */
+.chat-dialog { padding: 0; align-items: stretch; }
+.chat-card { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--card); color: var(--text); }
+.chat-head { flex: none; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px; border-bottom: 1px solid var(--line); }
+.chat-char { flex: none; width: 44px; height: 44px; }
+.chat-who { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
+.chat-who b { font-size: 16px; }
+.chat-who span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-top-btn { flex: none; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 7px 12px; font-size: 13px; }
+.chat-top-btn:active { background: var(--primary-soft); }
+.chat-body { flex: 1; min-height: 0; position: relative; display: flex; }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 14px 12px; background: var(--bg); }
+.chat-day { align-self: center; font-size: 12px; color: var(--muted); margin: 4px 0; }
+.chat-note { align-self: center; max-width: 92%; font-size: 12.5px; color: var(--muted); text-align: center; }
+.chat-msg { max-width: 86%; padding: 9px 13px; border-radius: 16px 16px 16px 4px; background: var(--card); font-size: 15px; line-height: 1.55; text-align: left; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; align-self: flex-start; box-shadow: var(--shadow); }
+.chat-msg.me { align-self: flex-end; border-radius: 16px 16px 4px 16px; background: var(--primary); color: var(--on-primary); box-shadow: none; }
+.chat-msg.err { color: var(--muted); }
+.chat-retry { display: block; margin-top: 6px; border: 1px solid var(--line); background: transparent; color: var(--text); border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+.chat-msg.typing { display: flex; gap: 4px; padding: 14px 14px; }
+.chat-msg.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: chat-dot 1s infinite ease-in-out; }
+.chat-msg.typing i:nth-child(2) { animation-delay: .15s; }
+.chat-msg.typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes chat-dot { 0%, 60%, 100% { opacity: .3; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
+/* 앱이 계산한 일정 카드 */
+.chat-plan { align-self: stretch; margin: 0 2px; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--line); text-align: left; display: flex; flex-direction: column; gap: 5px; }
+.cp-title { font-weight: 800; font-size: 15px; }
+.cp-line { font-size: 14px; line-height: 1.5; color: var(--text); word-break: keep-all; overflow-wrap: anywhere; }
+.cp-choices { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.cp-choice { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--text); }
+.cp-choice b { font-size: 14.5px; }
+.cp-choice span { font-size: 13px; color: var(--muted); }
+.cp-choice.on { border-color: var(--primary); background: var(--primary-soft); }
+.chat-plan .btn { margin: 6px 0 0; }
+.chat-plan .cp-ok { background: var(--primary); color: var(--on-primary); }
+.chat-plan .cp-ok:disabled { opacity: .45; }
+.chat-chips { flex: none; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 8px 12px 0; }
+.chat-chips::-webkit-scrollbar { display: none; }
+.chat-chips .chip { flex: none; color: var(--text); background: var(--card); white-space: nowrap; }
+.chat-ask { flex: none; display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 10px); }
+.chat-ask .type-input { flex: 1; min-width: 0; margin: 0; padding: 10px 12px; font-size: 16px; line-height: 1.4; resize: none; max-height: 120px; text-align: left; font-family: inherit; }
+.chat-ask .btn { flex: none; margin: 0; padding: 11px 14px; }
+.chat-mem { position: absolute; inset: 0; overflow-y: auto; padding: 14px; background: var(--card); text-align: left; display: flex; flex-direction: column; gap: 8px; }
+.chat-mem[hidden] { display: none; }
+.chat-mem-head { display: flex; align-items: center; justify-content: space-between; }
+.mem-row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+.mem-row span { flex: 1; min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
+.mem-del { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 6px; }
+#cc-wipe { align-self: flex-start; margin-top: 8px; }
+@media (min-width: 640px) {
+  .chat-dialog { padding: 24px; align-items: center; }
+  .chat-card { max-width: 480px; height: min(760px, 100%); border-radius: 22px; overflow: hidden; box-shadow: 0 24px 60px rgba(8, 14, 30, .3); }
+  .chat-head { padding-top: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .chat-msg.typing i { animation: none; } }
 .coach-row { margin-bottom: 6px; }
 #btn-coach-replan { margin: 0 0 8px; }

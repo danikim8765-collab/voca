@@ -219,18 +219,26 @@ async function askClaude(c, r, signal) {
   return (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
+// 생각하는 모델(Gemini 2.5·3 flash)은 따로 정하지 않으면 오래 생각해서 시간이 넘거나 토큰이 모자라 답이 잘림.
+// 그래서 생각을 짧게: Gemini 3은 thinkingLevel, 그 밖(2.5·-latest 별칭)은 thinkingBudget (Gemini 3도 받음)
+export const geminiThinking = model => (/gemini-3/.test(model || '') ? { thinkingLevel: 'low' } : { thinkingBudget: 512 });
 async function askGemini(c, r, signal) {
-  const url = c.provider === 'vertex' ? `${VERTEX_API}/${c.model}:generateContent` : `${GEMINI_API}/models/${c.model || GEMINI_MODEL}:generateContent`;
-  const res = await fetch(url, {
+  const model = c.model || GEMINI_MODEL;
+  const url = c.provider === 'vertex' ? `${VERTEX_API}/${model}:generateContent` : `${GEMINI_API}/models/${model}:generateContent`;
+  const call = thinking => fetch(url, {
     method: 'POST', headers: geminiHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: r.system }] },
       contents: [{ role: 'user', parts: [{ text: r.user }] }],
-      generationConfig: r.json
-        ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA, maxOutputTokens: 4096 }
-        : { maxOutputTokens: 4096 }, // 생각하는 모델은 생각에도 토큰을 써서 넉넉히
+      generationConfig: {
+        ...(r.json ? { responseMimeType: 'application/json', responseSchema: r.gschema || GEMINI_SCHEMA } : {}),
+        maxOutputTokens: 8192, // 생각에도 토큰을 써서 넉넉히
+        ...(thinking ? { thinkingConfig: thinking } : {}),
+      },
     }),
   });
+  let res = await call(geminiThinking(model));
+  if (res.status === 400) res = await call(null); // 생각 설정을 안 받는 모델(2.0 등)이면 빼고 다시
   if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
   const data = await res.json();
   const cand = (data.candidates || [])[0];
@@ -270,6 +278,35 @@ async function ask(r, c = conf()) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// 코치가 부를 때: 고른 모델이 막히면(사람이 몰림 503, 한도 429, 너무 늦음, 없어진 모델 404) 다른 모델로 넘어감.
+// 무료 등급은 모델마다 한도가 따로라 flash가 막혀도 flash-lite는 되는 일이 많음. 막힌 모델은 5분 동안 뒤로 미룸
+const GEMINI_SPARE = 'gemini-flash-lite-latest';
+export const coachModels = c => [...new Set((c.provider === 'gemini' ? [c.model || GEMINI_COACH_MODEL, GEMINI_SPARE]
+  : c.provider === 'vertex' ? [c.model, ...VERTEX_MODELS.main] : [c.model]).filter(Boolean))];
+const resting = new Map(); // 모델 → 이 시각까지 건너뜀
+const SWITCH = /^(429|404|5\d\d|timeout|cut|network)$/;
+async function askCoach(r) {
+  const c = coachConf();
+  // 방금 막혔던 모델은 맨 뒤로 (다른 모델도 안 되면 그때 다시 해 봄)
+  const all = coachModels(c), asleep = m => resting.get(m) > Date.now();
+  const models = [...all.filter(m => !asleep(m)), ...all.filter(asleep)].slice(0, 3);
+  if (models.length < 3) models.push(models[0]); // 다 안 됐는데 서버 오류(5xx)였으면 잠깐 쉬고 처음 모델로 한 번 더
+  for (let i = 0; i < models.length; i++) {
+    const tried = models.slice(0, i);
+    if (tried.includes(models[i])) {
+      if (!/^5\d\d$/.test(lastErr)) break;
+      await new Promise(done => setTimeout(done, 800));
+    }
+    const spare = models.slice(i + 1).some(m => m !== models[i] && !tried.includes(m)); // 넘어갈 다른 모델이 있으면 오래 기다리지 않음
+    const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, 15000) : r.timeout }, { ...c, model: models[i] });
+    if (out) return out;
+    if (out === '') lastErr = 'bad';
+    if (!SWITCH.test(lastErr) || navigator.onLine === false) break;
+    if (spare && /^(429|5\d\d|timeout)$/.test(lastErr)) resting.set(models[i], Date.now() + 300000);
+  }
+  return null;
 }
 
 // 응답 글자에서 JSON 하나 꺼내기 (```json … ``` 이나 앞뒤 말이 붙어 와도)
@@ -361,8 +398,8 @@ export async function aiHint({ word, meaning, sentences, answers, user }) {
 }
 
 // ---------- 단어 코치: AI가 코치 캐릭터의 말투로 말함 ----------
-// 일정·개수 계산은 앱(core.js coachPlan)이 하고, AI는 그 사실만 보고 말을 지음. 사실에 없는 숫자를 말하면 버리고 기본 말로.
-// 무료 한도를 채점에 남겨 두려고 코치가 부르는 횟수는 하루 COACH_DAILY번까지
+// 홈 말풍선·학습 끝 한마디: 앱이 정리한 사실(facts)만 보고 짧게 말함. 사실에 없는 숫자를 말하면 버리고 기본 말로.
+// 이 둘은 앱이 알아서 부르는 거라, 무료 한도를 남겨 두려고 하루 횟수를 둠. 코치와 이야기하기(사람이 보낸 말)는 세지 않음
 
 // 코치용 키를 따로 넣었으면 채점과 한도를 나눠 쓰지 않으니 더 넉넉하게
 const coachDaily = () => (aiHasKey('coach') ? 100 : 30);
@@ -378,7 +415,7 @@ function takeCoachTurn() {
 }
 
 export const COACH_PERSONA = {
-  cat: '고양이 코치. 살짝 시크하고 말이 짧지만 은근히 잘 챙겨 줘요. 칭찬은 담백하게, 가끔 "냥" 같은 말버릇은 아주 가끔만.',
+  cat: '고양이 코치. 살짝 시크하고 말수가 적지만(그래도 반말은 안 쓰고 해요체) 은근히 잘 챙겨 줘요. 칭찬은 담백하게, 가끔 "냥" 같은 말버릇은 아주 가끔만.',
   hamster: '햄스터 코치. 부지런하고 늘 들떠 있어요. 작은 진도도 크게 기뻐하고, 씨앗을 모으듯 조금씩 쌓자고 말해요.',
   owl: '부엉이 코치. 차분하고 지혜로운 선생님 같아요. 상황을 짚어 주고, 외우는 요령이나 공부 습관 팁을 하나씩 알려 줘요.',
   slime: '슬라임 코치. 말랑하고 느긋해요. 부담을 덜어 주고, 밀려도 괜찮다며 다시 시작하게 다독여요.',
@@ -388,7 +425,7 @@ const MOODS = ['normal', 'happy', 'worry', 'sleep', 'cheer'];
 const SAY_FORMAT = '{"mood": "normal"|"happy"|"worry"|"sleep"|"cheer", "text": "…"}';
 const coachSystem = (char, format = SAY_FORMAT) => `영단어 시험을 준비하는 학생의 단어 앱 속 코치예요. ${COACH_PERSONA[char] || COACH_PERSONA.cat}
 - 학생에게 직접 말하듯 해요체로 써요. 마크다운·이모지·목록 없이 문장으로만.
-- 아래 <facts>에 있는 사실만 말해요. 숫자(개수·날짜·날 수)는 <facts>에 그대로 있는 것만 쓰고, 계산해서 새 숫자를 만들지 마요.
+- 아래 <facts>에 있는 사실만 말해요. 숫자(개수·날짜·날 수)는 <facts>에 그대로 있는 것만 쓰고, 계산해서 새 숫자를 만들지 마요. 숫자는 한글로 풀어 쓰지 말고 <facts>에 적힌 모양(13개, 18일)대로 써요.
 - 일정을 바꾸거나 개수를 정하는 건 앱이 해요. 코치는 지금 상황을 짚고, 오늘 무엇부터 하면 좋은지, 응원이나 요령을 말해요.
 - 같은 말을 되풀이하지 말고, 그날 상황(밀렸는지, 앞서가는지, 다 했는지, 시험이 가까운지)에 맞게 구체적으로 말해요.
 - mood는 말에 어울리는 표정 하나: normal(보통), happy(기쁨), worry(걱정), sleep(졸림·끝남), cheer(응원).
@@ -403,27 +440,26 @@ const SAY_SCHEMA = {
 const SAY_GSCHEMA = { type: 'OBJECT', properties: { mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' } }, required: ['mood', 'text'] };
 
 // AI 말에 나온 숫자가 전부 사실(facts)에 있는지. 없는 숫자를 지어냈으면 false
-export function numbersOk(text, facts) {
+// small: 요령을 말할 때 쓰는 작은 숫자("5분 뒤", "3가지", "2초")는 사실에 없어도 됨. 개수·날짜·횟수(개·일·번)는 그대로 막음
+const TIP_NUM = /(\d+)\s*(?:분|초|가지|단계|글자|음절|문장)/g;
+export function numbersOk(text, facts, small = false) {
   const have = new Set(String(facts).match(/\d+/g) || []);
-  return (String(text).match(/\d+/g) || []).every(n => have.has(n));
+  const t = small ? String(text).replace(TIP_NUM, (m, n) => (+n <= 10 ? '' : m)) : String(text);
+  return (t.match(/\d+/g) || []).every(n => have.has(n));
 }
 const clean = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
 
-// keep: 숫자를 지어낸 말이라도 나머지(선택지 번호 등)는 쓰고 text만 비움
-async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA, format = SAY_FORMAT, keep = false } = {}) {
+async function coachAsk(char, user, facts, small = false) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   if (!takeCoachTurn()) { lastErr = 'limit'; return null; }
-  const text = await ask({ system: coachSystem(char, format), json: true, schema, gschema, user, timeout: 20000 }, coachConf());
+  const text = await askCoach({ system: coachSystem(char), json: true, schema: SAY_SCHEMA, gschema: SAY_GSCHEMA, user, timeout: 20000 });
   if (!text) return null;
   try {
     const out = pickJSON(text);
     out.text = clean(out.text);
     if (!MOODS.includes(out.mood)) out.mood = 'normal';
-    if (!out.text || out.text.length > 400 || !numbersOk(out.text, facts)) {
-      lastErr = out.text && !numbersOk(out.text, facts) ? 'numbers' : 'bad';
-      if (!keep) return null;
-      out.text = '';
-    }
+    const numOk = numbersOk(out.text, facts, small);
+    if (!out.text || out.text.length > 400 || !numOk) { lastErr = out.text && !numOk ? 'numbers' : 'bad'; return null; }
     return out;
   } catch {
     lastErr = 'bad';
@@ -444,89 +480,122 @@ export function aiCoachSay({ char, facts, fallback = '' }) {
  * 틀린 단어가 있으면 그중 하나를 골라 외우는 요령을 짧게
  */
 export function aiCoachResult({ char, facts }) {
-  return coachAsk(char, `<facts>\n${facts}\n</facts>\n\n방금 학습을 끝냈어요. 결과 화면에 보여 줄 말을 2~3문장(110자 안팎)으로 써요. 틀린 단어가 있으면 그중 하나를 골라 뜻을 떠올리기 쉬운 요령(어원, 비슷한 단어와 구별, 짧은 장면)을 알려 줘요. 단어 철자는 <facts>에 있는 그대로 써요.`, facts);
+  return coachAsk(char, `<facts>\n${facts}\n</facts>\n\n방금 학습을 끝냈어요. 결과 화면에 보여 줄 말을 2~3문장(110자 안팎)으로 써요. 틀린 단어가 있으면 그중 하나를 골라 뜻을 떠올리기 쉬운 요령(어원, 비슷한 단어와 구별, 짧은 장면)을 알려 줘요. 단어 철자는 <facts>에 있는 그대로 써요.`, facts, true);
 }
 
 // ---------- 코치와 이야기하기 ----------
-// 학생이 무엇이든 말하면 AI가 답하고, 일정을 바꾸자는 말이면 바꿀 값(복습 날 수·쉬는 요일·오늘 새 단어 수)을 골라 줌.
-// 그 값으로 앱이 일정을 계산해 보여 주고, AI가 그 결과를 다시 설명함(aiCoachExplain). 바꾸는 건 학생이 '이렇게 할게요'를 눌러야
-const CHAT_FORMAT = '{"mood": "…", "text": "…", "review": 숫자, "perDay": 숫자, "rest": "…", "today": 숫자}';
+// 학생이 무엇이든 말하면 AI가 코치로서 답함. AI는 한 번만 부름.
+// 일정 얘기면 AI는 학생이 원하는 것(쉬는 요일·하루 개수·복습 날 수·오늘 개수)만 뽑고, 계산과 숫자가 든 설명은 앱이 카드로 보여 줌
+// (그래서 AI 말의 숫자를 검사하지 않음). 바꾸는 건 학생이 카드의 '이렇게 할게요'를 눌러야
+const chatSystem = char => `영단어 시험을 준비하는 학생의 단어 앱 속 코치예요. ${COACH_PERSONA[char] || COACH_PERSONA.cat}
+말풍선만 읽어 주는 도우미가 아니라, 자기 생각이 있는 코치예요.
+- 자기 의견을 말해요. 학생 계획이 무리이거나 너무 느슨하면 솔직하게 그렇다고 하고 까닭을 대요. 맞장구만 치지 않아요. 그래도 정하는 건 학생이라, 학생이 하겠다고 하면 따르고 응원해요.
+- 좋아하는 공부법과 싫어하는 것(예: 벼락치기), 말버릇, 그날의 기분이 있어요. 캐릭터다운 자기 이야기도 가끔 살짝 해요. 과하지 않게.
+- 앞에서 한 이야기와 <memory>에 이어지게 말해요. 전에 한 약속이나 학생 사정을 먼저 꺼내도 좋아요.
+- 주제는 무엇이든 돼요: 단어 뜻·어원·예문·비슷한 단어 구별, 공부 방법, 일정, 고민, 잡담. 길이는 내용에 맞게 써요(잡담은 짧게, 설명은 필요한 만큼 길게).
+- 해요체. 줄바꿈과 '- '로 시작하는 목록은 써도 되지만, 굵게·제목·표 같은 마크다운 기호와 이모지는 쓰지 마요.
+- <facts>는 앱이 계산한 지금 상황이에요. 진도·개수·날짜를 말할 땐 <facts>에 있는 것을 그대로 써요.
+- <weak>는 학생이 약한 단어예요. 학생이 묻거나 흐름에 맞으면 몇 개를 짚어서 외우는 요령(어원, 비슷한 단어와 구별, 짧은 장면)을 알려 줘요. 퀴즈를 내 달라고 하면 여기서 한 문제씩 내고, 학생이 답하면 맞았는지 봐 준 다음 다음 문제로 가요.
+
+일정:
+- 일정 계산은 앱이 해요. 학생이 일정을 바꾸고 싶어 하거나 "~하면 어떻게 돼?", "~하면 복습이 며칠이야?"처럼 물으면 아래 값에 학생이 말한 것을 그대로 넣어요. 앱이 정확히 계산해서 말풍선 바로 아래에 카드로 보여 주고, 학생이 카드의 버튼을 눌러야 바뀌어요.
+  rest: 쉬는 요일. 0 일, 1 월, 2 화, 3 수, 4 목, 5 금, 6 토를 쉼표로(예 "6", "0,6"). 쉬는 요일을 없애면 "-". 말 안 했으면 ""
+  perDay: 앞으로 매일 볼 하루 새 단어 수(예 "하루 40개씩", "매일 40개" → 40). 앱이 그 개수를 그대로 두고 계산해요. 말 안 했으면 0
+  review: 학생이 말한 시험 전 전체 복습 날 수(예 "복습은 일주일" → 7). 말 안 했으면 0. perDay와 같이 넣지 마요(개수를 말했으면 perDay만)
+  today: 오늘 하루만 다르게 할 때 오늘 배울 새 단어 총수(예 "오늘은 60개 할래", "오늘만 10개" → 60, 10. 이때 perDay는 0). 말 안 했으면 -1
+- 값을 넣었을 땐 text에 계산 결과(끝나는 날, 복습 날 수, 하루 개수)를 짐작해서 쓰지 마요. 무엇을 계산해 보는지와 코치로서의 생각만 짧게 말해요. 계산 결과는 다음부터 앞선 이야기의 [앱 계산]에서 볼 수 있으니 그때 의견을 말해요.
+- 일정 얘기가 아니면 값은 비워 둬요(rest "", perDay 0, review 0, today -1). 학생이 뭘 원하는지 모호하면 값을 넣지 말고 되물어요.
+- 학습 범위와 시험일은 여기서 못 바꿔요. 학습 계획 화면에서 바꾸라고 알려 줘요.
+
+기억:
+- 앞으로도 알아 두면 좋은 학생 사정이나 취향(예: 수요일은 학원이라 늦게 옴, 소리 내어 외우는 걸 좋아함, 목표는 만점)을 새로 알게 되면 remember에 짧은 한 문장으로 적어요. 이미 <memory>에 있거나 오늘만의 일이면 "". 일정(쉬는 요일, 하루 개수, 복습 날 수)은 앱이 따로 기억하니 적지 마요.
+
+mood는 말에 어울리는 표정 하나: normal(보통), happy(기쁨), worry(걱정), sleep(졸림), cheer(응원).
+답은 JSON 하나로만: {"mood": "…", "text": "…", "rest": "…", "perDay": 숫자, "review": 숫자, "today": 숫자, "remember": "…"}`;
 const CHAT_SCHEMA = {
   type: 'object',
   properties: {
     mood: { type: 'string', enum: MOODS },
     text: { type: 'string' },
-    review: { type: 'integer', description: '시험 전 전체 복습 날 수. 안 바꾸면 0' },
-    perDay: { type: 'integer', description: '학생이 원하는 하루 새 단어 수. 개수로 말하지 않았으면 0' },
-    rest: { type: 'string', description: '쉬는 요일 번호를 쉼표로(0 일 … 6 토). 안 바꾸면 빈 글자, 쉬는 요일을 없애면 -' },
-    today: { type: 'integer', description: '오늘 배울 새 단어 총수(이미 배운 것 포함). 안 바꾸면 -1' },
+    rest: { type: 'string', description: '쉬는 요일 번호를 쉼표로(0 일 … 6 토). 말 안 했으면 빈 글자, 쉬는 요일을 없애면 -' },
+    perDay: { type: 'integer', description: '학생이 말한 하루 새 단어 수. 말 안 했으면 0' },
+    review: { type: 'integer', description: '학생이 말한 시험 전 전체 복습 날 수. 말 안 했으면 0' },
+    today: { type: 'integer', description: '오늘만 배울 새 단어 총수. 말 안 했으면 -1' },
+    remember: { type: 'string', description: '오래 기억해 둘 학생 사정 한 문장. 없으면 빈 글자' },
   },
-  required: ['mood', 'text', 'review', 'perDay', 'rest', 'today'],
+  required: ['mood', 'text', 'rest', 'perDay', 'review', 'today', 'remember'],
   additionalProperties: false,
 };
 const CHAT_GSCHEMA = {
   type: 'OBJECT',
-  properties: { mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' }, review: { type: 'INTEGER' }, perDay: { type: 'INTEGER' }, rest: { type: 'STRING' }, today: { type: 'INTEGER' } },
-  required: ['mood', 'text', 'review', 'perDay', 'rest', 'today'],
+  properties: { mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' }, rest: { type: 'STRING' }, perDay: { type: 'INTEGER' }, review: { type: 'INTEGER' }, today: { type: 'INTEGER' }, remember: { type: 'STRING' } },
+  required: ['mood', 'text', 'rest', 'perDay', 'review', 'today', 'remember'],
 };
 const WEEK = '일월화수목금토';
-const histText = history => history.slice(-8).map(h => `${h.who === 'me' ? '학생' : '코치'}: ${h.text}`).join('\n');
+const CHAT_MAX = 4000; // 코치 말 한 번의 길이 (넘으면 자름)
 
-/**
- * 코치와 이야기하기. facts: 오늘 상황, table: 지금 쉬는 요일로 복습 날 수마다 계산한 일정표(글자), maxReview: 복습 날 수 최대,
- * history: [{ who: 'me'|'coach', text }] 앞선 이야기, message: 학생이 방금 한 말
- * 반환 { mood, text, change: { review?, rest?, today? } | null } 또는 null(실패, aiCoachError()로 까닭)
- */
-export async function aiCoachChat({ char, facts, table, maxReview, history = [], message }) {
-  const hist = histText(history);
-  const all = `${facts}\n${table}\n${hist}\n${message}`; // 학생이 말한 숫자·표의 숫자는 써도 됨
-  const out = await coachAsk(char, `<facts>
-${facts}
-지금 쉬는 요일로 계산한 일정표 (앱이 계산, 숫자는 이 표에 있는 것만 써요):
-${table}
-</facts>
-${hist ? `앞선 이야기:\n${hist}\n` : ''}학생이 방금 한 말:
-<message>${message}</message>
-
-학생 말에 코치로서 답해요. 공부 방법, 단어 외우는 요령, 일정 질문, 기분 이야기 등 무엇이든 돼요. 영어 공부와 상관없는 말이면 짧게 받아 주고 공부 이야기로 돌아와요.
-앱이 바꿀 수 있는 건 아래 값들이에요. 학생이 바꾸고 싶어 하거나 "~하면 어때?"처럼 물어보면 그 값을 넣어요 (앱이 계산해서 보여 주고, 학생이 확인해야 바뀌어요):
-- review: 시험 전 전체 복습 날 수 (1~${maxReview}). "복습 일주일"처럼 날 수로 말했을 때. 안 바꾸면 0
-- perDay: "하루 30개씩"처럼 하루 새 단어 수로 말했을 때 그 개수 (앱이 그 개수에 가장 가깝게 복습 날 수를 맞춰요). 아니면 0
-- rest: 쉬는 요일 (0 일, 1 월, 2 화, 3 수, 4 목, 5 금, 6 토를 쉼표로, 예 "6" 또는 "0,6"). 쉬는 요일을 없애면 "-". 안 바꾸면 ""
-- today: 오늘 배울 새 단어 총수 (오늘 이미 배운 것 포함). 안 바꾸면 -1
-쉬는 요일을 바꾸면 표의 숫자가 달라지니, 그때 text에는 숫자를 쓰지 말고 무엇을 바꿔 보는지만 말해요 (앱이 계산한 뒤 다시 설명해요).
-학습 범위나 시험일은 여기서 못 바꾸니 학습 계획 화면에서 바꾸라고 알려 줘요. text는 1~3문장(120자 안팎).`, all, { schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, format: CHAT_FORMAT, keep: true });
-  if (!out) return null;
-  const change = {};
-  const r = Math.round(Number(out.review));
-  if (r >= 1 && r <= maxReview) change.review = r;
-  const pd = Math.round(Number(out.perDay));
-  if (pd >= 1 && pd <= 500 && !change.review) change.perDay = pd;
-  const rs = String(out.rest == null ? '' : out.rest).trim();
-  if (rs === '-' || rs === '없음') change.rest = [];
-  else if (rs) {
-    const nums = rs.split(/[ ,/]+/).map(x => (/^[0-6]$/.test(x) ? +x : WEEK.indexOf(x.replace(/요일$/, '')))).filter(n => n >= 0 && n <= 6);
-    if (nums.length) change.rest = [...new Set(nums)].sort();
+// 앞선 이야기를 글로. history: [{ who: 'me'|'coach'|'app', text, day?: 'YYYY-MM-DD' }] (app = 앱이 계산해 보여 준 카드)
+// 날짜가 바뀌면 사이에 날짜를 적어 줌. 너무 길면 오래된 것부터 뺌
+export function chatTranscript(history, { max = 40, chars = 7000 } = {}) {
+  const lines = [], items = history.slice(-max);
+  let from = items.length, size = 0, day = null;
+  while (from > 0 && (items.length - from < 2 || size + items[from - 1].text.length <= chars)) size += items[--from].text.length;
+  for (const h of items.slice(from)) {
+    if (h.day && h.day !== day) { day = h.day; lines.push(`(${h.day})`); }
+    lines.push(`${h.who === 'me' ? '학생' : h.who === 'app' ? '[앱 계산]' : '코치'}: ${h.text}`);
   }
-  const t = Math.round(Number(out.today));
-  if (Number.isFinite(t) && t >= 0 && t <= 500) change.today = t;
-  return { mood: out.mood, text: out.text, change: Object.keys(change).length ? change : null };
+  return lines.join('\n');
+}
+
+// JSON이 깨져 왔을 때: "text" 값만이라도 건지고, 그것도 없으면 온 글 그대로를 코치 말로
+function looseChat(raw) {
+  const t = clean(raw).replace(/^json\s*/i, '');
+  const m = t.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (m) { try { return { mood: 'normal', text: JSON.parse(`"${m[1].replace(/\\$/, '')}"`) }; } catch {} }
+  return /^\s*[{[]/.test(t) ? null : { mood: 'normal', text: t };
 }
 
 /**
- * 앱이 계산한 새 일정을 코치 말로 설명. result: 앱이 계산한 결과(글자)
- * 반환 { mood, text } 또는 null(→ 앱이 만든 설명)
+ * 코치와 이야기하기. facts: 오늘 상황, weak: 약한 단어 목록(글자), notes: 기억해 둔 것 [글자],
+ * history: 앞선 이야기(chatTranscript 참고), message: 학생이 방금 한 말, day: 오늘 날짜
+ * 반환 { mood, text, plan: { rest?, perDay?, review?, today? } | null, remember: 글자 } 또는 null(실패, aiCoachError()로 까닭)
  */
-export function aiCoachExplain({ char, facts, history = [], message, result }) {
-  const hist = histText(history);
-  const all = `${facts}\n${result}\n${hist}\n${message}`;
-  return coachAsk(char, `<facts>
+export async function aiCoachChat({ char, facts, weak = '', notes = [], history = [], message, day = '' }) {
+  if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
+  const hist = chatTranscript(history);
+  const raw = await askCoach({
+    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 40000,
+    user: `<facts>
 ${facts}
-학생 말에 맞춰 앱이 새로 계산한 일정 (아직 안 바뀜, 학생이 '이렇게 할게요'를 누르면 바뀜):
-${result}
 </facts>
-${hist ? `앞선 이야기:\n${hist}\n` : ''}학생이 방금 한 말:
-<message>${message}</message>
-
-새로 계산한 일정이 어떤지 학생에게 설명해요: 하루에 얼마나 하게 되는지, 지금 일정과 무엇이 달라지는지, 괜찮은지(빡빡하면 솔직하게). 숫자는 위에 있는 것만. 마지막에 마음에 들면 '이렇게 할게요'를 누르라고 해요. 2~3문장(130자 안팎).`, all);
+<weak>
+${weak || '(아직 틀린 단어 기록이 없음)'}
+</weak>
+<memory>
+${notes.length ? notes.map(n => `- ${n}`).join('\n') : '(아직 없음)'}
+</memory>
+${hist ? `앞선 이야기:\n${hist}\n` : ''}${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
+<message>${message}</message>`,
+  });
+  if (!raw) return null;
+  let out = null;
+  try { out = pickJSON(raw); } catch { out = looseChat(raw); }
+  if (!out || typeof out !== 'object') { lastErr = 'bad'; return null; }
+  const text = String(out.text == null ? '' : out.text).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|`|^#+\s*/gm, '').replace(/^\s*\*\s+/gm, '- ').trim().slice(0, CHAT_MAX);
+  const plan = {};
+  const pd = Math.round(Number(out.perDay));
+  if (pd >= 1 && pd <= 500) plan.perDay = pd;
+  const r = Math.round(Number(out.review));
+  if (r >= 1 && r <= 365 && !plan.perDay) plan.review = r;
+  const rs = String(out.rest == null ? '' : out.rest).trim();
+  if (rs === '-' || rs === '없음') plan.rest = [];
+  else if (rs) {
+    const nums = rs.split(/[ ,/·]+/).map(x => (/^[0-6]$/.test(x) ? +x : WEEK.indexOf(x.replace(/요일$/, '')))).filter(n => n >= 0 && n <= 6);
+    if (nums.length) plan.rest = [...new Set(nums)].sort();
+  }
+  const t = Math.round(Number(out.today));
+  if (out.today != null && out.today !== '' && Number.isFinite(t) && t >= 0 && t <= 500) plan.today = t;
+  const has = Object.keys(plan).length > 0;
+  if (!text && !has) { lastErr = 'bad'; return null; }
+  return { mood: MOODS.includes(out.mood) ? out.mood : 'normal', text, plan: has ? plan : null, remember: clean(out.remember).slice(0, 120) };
 }

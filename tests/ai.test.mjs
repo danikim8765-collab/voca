@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, aiCoachExplain, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, chatTranscript, coachModels, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -215,34 +215,101 @@ test('코치 말: 스위치를 끄거나 하루 한도를 넘으면 안 부름',
   assert.equal(calls.length, 30);
 });
 
-test('코치와 이야기: 바꿀 값(복습 날 수·쉬는 요일·오늘 개수)을 받아 옴, 학생이 말한 숫자는 써도 됨', async () => {
+test('코치와 이야기: AI는 한 번만 부르고, 학생이 원하는 값(쉬는 요일·하루 개수·복습 날 수·오늘 개수)만 뽑음', async () => {
   store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
-  const args = { char: 'slime', facts: '시험까지 23일', table: '전체 복습 6일: 하루 24개\n전체 복습 10일: 하루 31개', maxReview: 22, message: '토요일날 빼고 30개씩 하면 복습 몇번' };
-  reply = claudeText('{"mood":"normal","text":"토요일을 쉬는 걸로 계산해 볼게요.","review":0,"perDay":30,"rest":"6","today":-1}');
-  const r1 = await aiCoachChat(args);
-  assert.deepEqual(r1, { mood: 'normal', text: '토요일을 쉬는 걸로 계산해 볼게요.', change: { perDay: 30, rest: [6] } });
-  const body = JSON.parse(calls.at(-1).opts.body);
-  assert.match(body.system, /JSON/);
-  assert.match(body.messages[0].content, /<message>토요일날 빼고 30개씩 하면 복습 몇번<\/message>/);
-  // 바꿀 게 없는 이야기, 요일 글자, 쉬는 요일 없애기, 범위 밖 값
-  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"rest":"","today":-1}');
-  assert.deepEqual((await aiCoachChat(args)).change, null);
-  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":40,"rest":"토,일","today":50}');
-  assert.deepEqual((await aiCoachChat(args)).change, { rest: [0, 6], today: 50 });
-  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"rest":"-","today":-1}');
-  assert.deepEqual((await aiCoachChat(args)).change, { rest: [] });
-  // 학생이 말한 30, 표의 31은 써도 되고, 지어낸 숫자면 말만 비움
-  reply = claudeText('{"mood":"normal","text":"30개쯤이면 하루 31개예요.","review":10,"rest":"","today":-1}');
-  assert.equal((await aiCoachChat(args)).text, '30개쯤이면 하루 31개예요.');
-  reply = claudeText('{"mood":"normal","text":"복습을 4번 돌아요.","review":10,"rest":"","today":-1}');
-  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '', change: { review: 10 } });
-  // 앱이 계산한 결과 설명
-  reply = claudeText('{"mood":"cheer","text":"토요일 쉬면 하루 33개예요."}');
-  assert.equal((await aiCoachExplain({ char: 'slime', facts: '', message: '토요일 쉴래', result: '새 단어: 하루 33개' })).text, '토요일 쉬면 하루 33개예요.');
+  const args = { char: 'slime', facts: '시험까지 23일', weak: '- fatal: 치명적인 (틀림 3번, 맞힘 1번)', notes: ['수요일은 학원'], message: '토요일날 빼고 40개씩 하면 복습 며칠' };
+  reply = claudeText('{"mood":"normal","text":"토요일을 쉬고 40개씩으로 계산해 볼게요.","review":0,"perDay":40,"rest":"6","today":-1,"remember":""}');
+  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '토요일을 쉬고 40개씩으로 계산해 볼게요.', plan: { perDay: 40, rest: [6] }, remember: '' });
+  assert.equal(calls.length, 1);
+  const body = JSON.parse(calls[0].opts.body);
+  assert.match(body.system, /슬라임/);
+  assert.match(body.system, /자기 생각이 있는 코치/);
+  assert.match(body.messages[0].content, /<message>토요일날 빼고 40개씩 하면 복습 며칠<\/message>/);
+  assert.match(body.messages[0].content, /fatal/);
+  assert.match(body.messages[0].content, /- 수요일은 학원/);
+  // 일정 얘기가 아니면 값 없음. 요일 글자, 쉬는 요일 없애기, 개수와 복습 날 수를 같이 주면 개수만
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"perDay":0,"rest":"","today":-1,"remember":""}');
+  assert.equal((await aiCoachChat(args)).plan, null);
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":7,"perDay":0,"rest":"토,일","today":50,"remember":""}');
+  assert.deepEqual((await aiCoachChat(args)).plan, { review: 7, rest: [0, 6], today: 50 });
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":7,"perDay":30,"rest":"-","today":-1,"remember":""}');
+  assert.deepEqual((await aiCoachChat(args)).plan, { perDay: 30, rest: [] });
+});
+
+test('코치와 이야기: 숫자·길이·형식으로 말을 버리지 않고, 하루 횟수도 세지 않음', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  const args = { char: 'owl', facts: '시험까지 23일', message: '요령 좀' };
+  // 사실에 없는 숫자, 긴 답, 줄바꿈·목록도 그대로. 굵게 표시 같은 기호만 뺌
+  const long = '하루에 3번, 5분씩 소리 내어 읽어 봐요.\n- **fatal**은 fate(운명)에서 왔어요.\n* 빈칸 문제: The wound was ___.\n' + '가'.repeat(600);
+  reply = claudeText(JSON.stringify({ mood: 'cheer', text: long, rest: '', perDay: 0, review: 0, today: -1, remember: '소리 내어 외우는 걸 좋아함' }));
+  const r = await aiCoachChat(args);
+  assert.match(r.text, /^하루에 3번, 5분씩 소리 내어 읽어 봐요\.\n- fatal은 fate\(운명\)에서 왔어요\.\n- 빈칸 문제: The wound was ___\./);
+  assert.ok(r.text.length > 600);
+  assert.equal(r.remember, '소리 내어 외우는 걸 좋아함');
+  // JSON이 깨져 와도 말은 살림: 글만 온 경우, 중간에 끊긴 JSON
+  reply = claudeText('그냥 글로 답했어요.');
+  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '그냥 글로 답했어요.', plan: null, remember: '' });
+  reply = claudeText('{"mood":"happy","text":"여기까지는 왔는데');
+  assert.equal((await aiCoachChat(args)).text, '여기까지는 왔는데');
+  // 홈 말풍선의 하루 한도(30번)를 다 써도 대화는 됨
+  store.set('voca.ai.coachuse.v1', JSON.stringify({ d: new Date().toLocaleDateString('sv'), n: 999 }));
+  reply = claudeText('{"mood":"normal","text":"좋아요."}');
+  assert.equal(await aiCoachSay({ char: 'cat', facts: '' }), null);
+  assert.equal(aiCoachError(), 'limit');
+  assert.equal((await aiCoachChat(args)).text, '좋아요.');
   // 실패 까닭
   reply = () => json({}, 429);
   assert.equal(await aiCoachChat(args), null);
   assert.equal(aiCoachError(), '429');
+});
+
+test('코치와 이야기: 앞선 이야기는 날짜를 적어 넘기고, 길면 오래된 것부터 뺌', () => {
+  const h = [
+    { who: 'me', text: '수요일은 학원이야', day: '11월 12일' }, { who: 'coach', text: '알겠어요.', day: '11월 12일' },
+    { who: 'me', text: '하루 40개씩 하면?', day: '11월 13일' }, { who: 'app', text: '토요일 쉼 · 새 단어 하루 40개', day: '11월 13일' },
+  ];
+  assert.equal(chatTranscript(h), '(11월 12일)\n학생: 수요일은 학원이야\n코치: 알겠어요.\n(11월 13일)\n학생: 하루 40개씩 하면?\n[앱 계산]: 토요일 쉼 · 새 단어 하루 40개');
+  assert.equal(chatTranscript(h, { max: 2 }), '(11월 13일)\n학생: 하루 40개씩 하면?\n[앱 계산]: 토요일 쉼 · 새 단어 하루 40개');
+  const big = Array.from({ length: 30 }, (_, i) => ({ who: 'me', text: `${i}`.padEnd(500, '가') }));
+  assert.equal(chatTranscript(big, { chars: 2000 }).split('\n').length, 4);
+  assert.equal(chatTranscript(big, { chars: 10 }).split('\n').length, 2); // 아무리 길어도 마지막 둘은 남김
+});
+
+test('코치: 고른 모델이 막히면(503·429·시간 초과) 다른 모델로 넘어가고, 막힌 모델은 잠깐 건너뜀', async () => {
+  assert.deepEqual(coachModels({ provider: 'gemini', model: 'gemini-flash-latest' }), ['gemini-flash-latest', 'gemini-flash-lite-latest']);
+  assert.deepEqual(coachModels({ provider: 'gemini', model: 'gemini-flash-lite-latest' }), ['gemini-flash-lite-latest']);
+  assert.deepEqual(coachModels({ provider: 'groq', model: 'openai/gpt-oss-120b' }), ['openai/gpt-oss-120b']);
+  store.set('voca.ai.coach.v1', JSON.stringify({ key: 'AIzaCoach', provider: 'gemini', model: 'gemini-flash-latest' }));
+  const good = t => json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: t }] } }] });
+  const say = '{"mood":"normal","text":"좋아요.","rest":"","perDay":0,"review":0,"today":-1,"remember":""}';
+  reply = url => (/flash-latest/.test(url) ? json({ error: { code: 503 } }, 503) : good(say));
+  assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '좋아요.');
+  assert.deepEqual(calls.map(c => c.url.match(/models\/([^:]+)/)[1]), ['gemini-flash-latest', 'gemini-flash-lite-latest']);
+  // 요청 모양: 생각은 짧게, 답은 JSON 스키마로
+  const body = JSON.parse(calls[1].opts.body);
+  assert.deepEqual(body.generationConfig.thinkingConfig, { thinkingBudget: 512 });
+  assert.ok(body.generationConfig.responseSchema.properties.perDay);
+  // 방금 막혔던 모델은 뒤로 미루고 바로 다른 모델부터
+  calls = [];
+  assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '좋아요.');
+  assert.deepEqual(calls.map(c => c.url.match(/models\/([^:]+)/)[1]), ['gemini-flash-lite-latest']);
+  // 그 모델마저 막히면 미뤄 둔 모델을 다시 해 봄
+  calls = [];
+  reply = url => (/flash-lite/.test(url) ? json({ error: { code: 503 } }, 503) : good(say));
+  assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '좋아요.');
+  assert.deepEqual(calls.map(c => c.url.match(/models\/([^:]+)/)[1]), ['gemini-flash-lite-latest', 'gemini-flash-latest']);
+  // 모델이 하나뿐이면(Groq) 서버 오류일 때만 한 번 더, 한도 초과(429)는 다시 안 부름
+  store.delete('voca.ai.coach.v1');
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_main', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  calls = [];
+  let n = 0;
+  reply = () => (n++ ? json({ choices: [{ finish_reason: 'stop', message: { content: say } }] }) : json({}, 502));
+  assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '좋아요.');
+  assert.equal(calls.length, 2);
+  calls = [];
+  reply = () => json({}, 429);
+  assert.equal(await aiCoachChat({ char: 'cat', facts: '', message: '안녕' }), null);
+  assert.equal(calls.length, 1);
 });
 
 test('코치용 키를 따로 넣으면 코치는 그 AI, 채점은 원래 AI', async () => {
@@ -297,4 +364,31 @@ test('AQ.로 시작하는 Google 키: Gemini API가 안 받으면 Vertex AI로 �
   // 둘 다 안 받으면 tokentype
   reply = () => tokErr();
   await assert.rejects(aiConnect('AQ.bad', 'coach'), e => e.reason === 'tokentype');
+});
+
+test('Gemini 코치: 생각을 짧게 하라고 보내고, 생각 설정을 안 받는 모델(400)이면 빼고 다시', async () => {
+  store.set('voca.ai.coach.v1', JSON.stringify({ key: 'AIza', provider: 'gemini', model: 'gemini-3-flash' }));
+  const ok = json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: '{"mood":"happy","text":"좋아요."}' }] } }] });
+  reply = () => ok;
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  let g = JSON.parse(calls.at(-1).opts.body).generationConfig;
+  assert.deepEqual(g.thinkingConfig, { thinkingLevel: 'low' });
+  assert.ok(g.maxOutputTokens >= 8192);
+  store.set('voca.ai.coach.v1', JSON.stringify({ key: 'AIza', provider: 'gemini', model: 'gemini-flash-latest' }));
+  calls = [];
+  reply = (url, o) => (JSON.parse(o.body).generationConfig.thinkingConfig ? json({ error: {} }, 400) : ok);
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(JSON.parse(calls[0].opts.body).generationConfig.thinkingConfig, { thinkingBudget: 512 });
+});
+
+test('코치와 이야기: 요령 속 작은 숫자(3가지, 5분)는 사실에 없어도 그대로 보여 줌', async () => {
+  assert.equal(numbersOk('3가지 방법이 있어요. 5분 뒤에 다시 봐요', '', true), true);
+  assert.equal(numbersOk('5분 뒤에 다시 봐요', ''), false);
+  assert.equal(numbersOk('복습을 4번 돌아요', '', true), false);
+  assert.equal(numbersOk('하루 30개예요', '하루 25개', true), false);
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  reply = claudeText('{"mood":"cheer","text":"소리 내어 읽고 5분 뒤에 다시 떠올려 봐요.","review":0,"perDay":0,"rest":"","today":-1}');
+  const res = await aiCoachChat({ char: 'owl', facts: '시험까지 14일', table: '', maxReview: 5, message: '잘 외우는 법 알려줘' });
+  assert.equal(res.text, '소리 내어 읽고 5분 뒤에 다시 떠올려 봐요.');
 });

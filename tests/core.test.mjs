@@ -659,6 +659,35 @@ test('단어 코치 일정: 남은 날을 배우는 날과 훑는 날로 알맞�
   assert.equal(coachPlan({ today, exam: today, total: 10, remaining: 10 }), null);
 });
 
+test('단어 코치 일정: 하루 개수를 고정하면 그 개수 그대로, 남는 단어는 마지막 날에 붙이거나 하루를 늘림', async () => {
+  const { coachPlan, addDays } = await import('../js/core.js');
+  const today = '2026-11-11', exam = addDays(today, 14); // 수요일, 시험은 2주 뒤. 토요일(14·21일) 쉼
+  const plan = o => coachPlan({ today, exam, total: 200, remaining: 175, rest: [6], ...o });
+  // 175 = 40 × 4 + 15 → 하루 늘리기(기본): 수·목·금·일·월 닷새, 마지막 날은 15개
+  const extra = plan({ fix: 40 });
+  assert.deepEqual([extra.perDay, extra.over, extra.tail, extra.studyN, extra.lastDay, extra.goal, extra.reviewDays, extra.fits], [40, 15, 'extra', 5, 15, '2026-11-17', 8, true]);
+  assert.equal(extra.todayNew, 40);
+  // 마지막 날에 붙이기: 나흘, 마지막 날 55개. 복습이 하루 늘어남
+  const last = plan({ fix: 40, tail: 'last' });
+  assert.deepEqual([last.perDay, last.tail, last.studyN, last.lastDay, last.goal, last.reviewDays, last.load], [40, 'last', 4, 55, '2026-11-16', 9, 'busy']);
+  // 복습 날 수를 정해 둔 건 안 봄 (개수가 먼저)
+  assert.equal(plan({ fix: 40, review: 3 }).reviewDays, 8);
+  // 딱 나눠떨어지면 남는 단어 없음
+  const even = plan({ fix: 35 });
+  assert.deepEqual([even.over, even.tail, even.studyN, even.lastDay], [0, '', 5, 35]);
+  // 하루치도 안 남았으면 그날 다 봄
+  const small = coachPlan({ today, exam, total: 200, remaining: 25, fix: 40 });
+  assert.deepEqual([small.over, small.studyN, small.lastDay, small.todayNew, small.goal], [0, 1, 25, 25, '2026-11-12']);
+  // 진도가 나가도 개수는 그대로: 다음 날 135개 남으면 40·40·40·15
+  const next = coachPlan({ today: addDays(today, 1), exam, total: 200, remaining: 135, rest: [6], fix: 40 });
+  assert.deepEqual([next.perDay, next.studyN, next.lastDay, next.goal], [40, 4, 15, '2026-11-17']);
+  // 그 개수로는 시험 전날까지 다 못 보면: fits false, 시험 전날까지 고르게
+  const tight = coachPlan({ today, exam: addDays(today, 3), total: 200, remaining: 175, fix: 40 });
+  assert.deepEqual([tight.fits, tight.minPerDay, tight.perDay, tight.todayNew, tight.reviewDays, tight.goal], [false, 59, 59, 59, 0, addDays(today, 3)]);
+  // 고정하지 않으면 예전 그대로
+  assert.equal(plan({}).fix, undefined);
+});
+
 test('전체 복습 기간: 쉬는 요일엔 몫이 없고, 공부하는 날로 나눔', async () => {
   const { pickSrsReview } = await import('../js/core.js');
   const words = Array.from({ length: 60 }, (_, i) => ({ id: `1|w${i}`, day: 1, word: `w${i}` }));
