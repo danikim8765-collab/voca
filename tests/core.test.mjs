@@ -633,6 +633,13 @@ test('단어 코치 일정: 남은 날을 배우는 날과 훑는 날로 알맞�
     assert.equal(daysBetween(today, x.goal), x.learnDays);
     assert.ok(x.perDay * x.learnDays >= r);
   }
+  // 코치와 정한 훑는 날 수는 그대로 따름 (배우는 날은 적어도 하루)
+  const long = coachPlan({ today, exam: addDays(today, 14), total: 200, remaining: 200, review: 7 });
+  assert.deepEqual([long.reviewDays, long.learnDays, long.perDay, long.goal, long.auto], [7, 7, 29, addDays(today, 7), p.reviewDays]);
+  assert.equal(coachPlan({ today, exam: addDays(today, 14), total: 200, remaining: 200, review: 30 }).learnDays, 1);
+  // 시험이 멀어도 정한 대로 (하루 10개로 당기지 않음)
+  const slow = coachPlan({ today, exam: addDays(today, 90), total: 200, remaining: 200, review: 5 });
+  assert.deepEqual([slow.reviewDays, slow.learnDays, slow.perDay], [5, 85, 3]);
   // 시험일이 없거나 지났으면 일정 없음
   assert.equal(coachPlan({ today, exam: '', total: 10, remaining: 10 }), null);
   assert.equal(coachPlan({ today, exam: today, total: 10, remaining: 10 }), null);

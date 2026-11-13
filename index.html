@@ -68,7 +68,7 @@
       <div id="buddy-card" class="buddy-card" hidden>
         <button class="buddy-char" id="buddy-char" aria-label="단어 코치"></button>
         <div class="buddy-say">
-          <div class="buddy-name">단어 코치</div>
+          <div class="buddy-name" id="buddy-name">단어 코치</div>
           <div class="buddy-text" id="buddy-text" role="status"></div>
           <div class="buddy-acts" id="buddy-acts"></div>
         </div>
@@ -249,6 +249,7 @@
     <header class="top"><h1 id="res-title">학습 끝</h1></header>
     <div class="card center res-cheer">
       <div class="res-buddy" id="res-buddy" hidden></div>
+      <div class="res-say" id="res-say" role="status" hidden></div>
       <div class="cheer">공부하느라 수고하셨어요</div>
       <div class="muted" id="res-detail"></div>
     </div>
@@ -340,7 +341,10 @@
       <p class="muted srs-desc" id="coach-plan" hidden></p>
       <div class="label" id="coach-chars-label" hidden>코치 캐릭터</div>
       <div class="coach-choices" id="coach-chars" role="radiogroup" aria-label="코치 캐릭터" hidden></div>
-      <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
+      <div class="row coach-btns">
+        <button class="btn ghost small" id="btn-coach-talk" hidden>일정 상의하기</button>
+        <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
+      </div>
       <div id="srs-manual">
       <label class="switch-row"><span>주기 복습 <span class="muted">(끄면 기본: 전에 한 단어 20개)</span></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
       <p class="muted srs-desc">고른 주기대로 복습일이 된 단어를 목표일까지 계속 복습하고, 목표일부터 시험 전날까지는 학습 범위 전부를 남은 날에 나눠 한 번씩 복습해요.</p>
@@ -377,7 +381,7 @@
     <!-- AI: 두 모드 공용 (키·스위치도 같이 씀) -->
     <div class="card" id="ai-card">
       <div class="label">AI</div>
-      <label class="switch-row"><span>AI 사용하기 <span class="muted" data-only="word">(오답일 때만 다시 채점·설명)</span><span class="muted" data-only="ex">(틀린 답 풀이 말풍선)</span></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
+      <label class="switch-row"><span>AI 사용하기 <span class="muted" data-only="word">(오답 다시 채점·설명, 코치 말)</span><span class="muted" data-only="ex">(틀린 답 풀이 말풍선, 코치 말)</span></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
       <div id="ai-box" hidden>
       <div id="ai-off">
         <p class="muted" data-only="word">API 키를 넣으면 위 규칙대로 바로 채점하다가, 오답(부분 정답 포함)이 나왔을 때만 AI가 뜻을 이해해서 다시 확인해요. 단어장과 표현이 달라도 같은 뜻이면 정답으로 바뀌어요. 인터넷이 안 되면 규칙 채점 결과 그대로예요.</p>
@@ -394,6 +398,18 @@
         <p class="muted" id="ai-info"></p>
         <p class="muted">키는 이 기기에만 저장돼요. 비밀번호처럼 다른 사람에게 보내지 마세요.</p>
         <button class="btn ghost small" id="btn-ai-off">연결 끊기</button>
+      </div>
+      <!-- AI 고급 설정: 숨겨 둔 메뉴. 설정 맨 아래 '새 버전 확인'을 빠르게 7번 누르면 열림 -->
+      <div id="ai-adv" hidden>
+      <div class="label mt">AI 고급 설정</div>
+      <div class="label">코치 AI <span class="muted">(코치 말만 다른 AI로)</span></div>
+      <p class="muted" id="ai-coach-info"></p>
+      <div id="ai-coach-off">
+        <input id="ai-coach-key" class="type-input" type="password" placeholder="코치에 쓸 키 (AIza…, sk-ant-…, gsk_…, sk-or-…)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button class="btn secondary" id="btn-ai-coach-connect">코치 AI 연결</button>
+      </div>
+      <button class="btn ghost small" id="btn-ai-coach-off" hidden>코치 AI 연결 끊기</button>
+      <button class="btn ghost small" id="btn-ai-adv-hide">고급 설정 숨기기</button>
       </div>
       </div>
     </div>
@@ -470,6 +486,27 @@
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="cp-cancel">취소</button>
         <button class="btn dlg-ok" id="cp-ok">이 코치로</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 일정 상의하기: 시험 전 전체 복습을 며칠 할지 코치와 정함 -->
+  <div class="dialog" id="coach-talk" role="dialog" aria-modal="true" aria-labelledby="ct-title" hidden>
+    <div class="dialog-card talk-card">
+      <div class="dlg-title" id="ct-title">코치와 일정 상의하기</div>
+      <div class="dlg-body">시험 전 전체 복습을 며칠 할지 골라요.</div>
+      <div class="talk-say">
+        <div class="talk-char" id="ct-char"></div>
+        <div class="talk-bubble" id="ct-text" role="status"></div>
+      </div>
+      <div class="talk-ask" id="ct-ask" hidden>
+        <input id="ct-input" class="type-input" type="text" placeholder="예: 복습을 오래 하고 싶어" autocomplete="off" enterkeyhint="send" maxlength="200">
+        <button class="btn secondary small" id="ct-send">보내기</button>
+      </div>
+      <div class="srs-presets talk-opts" id="ct-opts" role="radiogroup" aria-label="시험 전 전체 복습"></div>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="ct-cancel">취소</button>
+        <button class="btn dlg-ok" id="ct-ok">이렇게 할게요</button>
       </div>
     </div>
   </div>

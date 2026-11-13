@@ -5,6 +5,9 @@
 // 서버 없이 브라우저에서 바로 부른다. 키는 이 기기의 localStorage에만 저장 (동기화 안 함)
 
 const KEY = 'voca.ai.v1'; // { key, provider, model } 두 모드가 같이 씀
+// 코치용 키 (따로 넣었을 때만). 없으면 코치도 위의 키를 씀. 채점은 빠른 AI, 코치 말은 한국어가 자연스러운 AI처럼 나눠 쓰려고
+const COACH_KEY = 'voca.ai.coach.v1';
+const SLOT = { main: KEY, coach: COACH_KEY };
 const TIMEOUT_MS = 12000;
 
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
@@ -17,20 +20,25 @@ const OPENAI_LIKE = {
   openrouter: { api: 'https://openrouter.ai/api/v1', prefer: [/gpt-oss-120b:free$/, /gpt-oss.*:free$/, /deepseek.*:free$/, /qwen.*:free$/, /llama.*:free$/, /:free$/], json: false },
 };
 
-const loadConf = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-const saveConf = c => { try { localStorage.setItem(KEY, JSON.stringify(c)); } catch {} };
+const loadConf = (slot = 'main') => { try { return JSON.parse(localStorage.getItem(SLOT[slot])) || {}; } catch { return {}; } };
+const saveConf = (c, slot = 'main') => { try { localStorage.setItem(SLOT[slot], JSON.stringify(c)); } catch {} };
 
 export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^AIza/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
-const conf = () => { const c = loadConf(); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
-export const aiProvider = () => conf().provider || '';
+const conf = (slot = 'main') => { const c = loadConf(slot); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
+// 코치가 쓸 설정: 코치용 키가 있으면 그것, 없으면 채점용
+const coachConf = () => (conf('coach').key ? conf('coach') : conf());
+export const aiProvider = (slot = 'main') => conf(slot).provider || '';
 // 설정의 '채점에 AI 사용하기' 스위치 (키와 따로 저장: 끄고 켜도 키는 남음)
 const ON_KEY = 'voca.ai.on.v1';
 export const aiSwitch = () => { try { return localStorage.getItem(ON_KEY) === '1'; } catch { return false; } };
 export const setAiSwitch = on => { try { localStorage.setItem(ON_KEY, on ? '1' : '0'); } catch {} };
-export const aiHasKey = () => !!conf().key;
+export const aiHasKey = (slot = 'main') => !!conf(slot).key;
 export const aiEnabled = () => aiSwitch() && aiHasKey();
 export const aiOnline = () => aiEnabled() && navigator.onLine !== false;
-export const aiName = () => ({ gemini: 'Gemini', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider()] || 'AI');
+export const aiName = (slot = 'main') => ({ gemini: 'Gemini', claude: 'Claude', groq: 'Groq', openrouter: 'OpenRouter' }[aiProvider(slot)] || 'AI');
+// 코치가 AI를 쓸 수 있는지 (스위치 + 코치용이나 채점용 키 + 인터넷)
+export const aiCoachOnline = () => aiSwitch() && !!coachConf().key && navigator.onLine !== false;
+export const aiCoachName = () => (aiHasKey('coach') ? aiName('coach') : aiName());
 
 const claudeHeaders = key => ({
   'content-type': 'application/json',
@@ -45,13 +53,13 @@ const bearer = key => ({ 'content-type': 'application/json', authorization: `Bea
 const fail = status => Object.assign(new Error(String(status)), { status });
 
 // 키가 맞는지 확인 (모델 정보 조회라 비용 없음). 맞으면 저장. 틀린 키는 status 401로 던짐
-export async function aiConnect(key) {
+export async function aiConnect(key, slot = 'main') {
   const provider = providerOf(key);
   if (!provider) throw fail(401);
   if (provider === 'claude') {
     const res = await fetch(`${CLAUDE_API}/models/${CLAUDE_MODEL}`, { headers: claudeHeaders(key), cache: 'no-store' });
     if (!res.ok) throw fail(res.status === 403 ? 401 : res.status);
-    saveConf({ key, provider, model: CLAUDE_MODEL });
+    saveConf({ key, provider, model: CLAUDE_MODEL }, slot);
     return;
   }
   if (OPENAI_LIKE[provider]) {
@@ -65,7 +73,7 @@ export async function aiConnect(key) {
     let model = '';
     for (const re of prefer) { model = ids.find(id => re.test(id)) || ''; if (model) break; }
     if (!model) throw fail(404);
-    saveConf({ key, provider, model });
+    saveConf({ key, provider, model }, slot);
     return;
   }
   const get = path => fetch(`${GEMINI_API}/${path}`, { headers: geminiHeaders(key), cache: 'no-store' });
@@ -83,9 +91,9 @@ export async function aiConnect(key) {
   }
   // Gemini는 틀린 키를 400(API_KEY_INVALID)으로 알려 줌
   if (!res.ok) throw fail([400, 401, 403].includes(res.status) ? 401 : res.status);
-  saveConf({ key, provider, model });
+  saveConf({ key, provider, model }, slot);
 }
-export function aiDisconnect() { saveConf({}); }
+export function aiDisconnect(slot = 'main') { saveConf({}, slot); }
 
 const STRICT_RULE = {
   // 느슨: 뜻 하나만 통하면 정답. 1점은 거의 안 주고, 0점은 완전히 다른 단어의 뜻을 썼을 때만
@@ -181,8 +189,7 @@ async function askOpenAILike(c, r, signal) {
 }
 
 // 스위치·키·인터넷을 확인하고, 시간 제한을 걸어 부름. 실패면 null
-async function ask(r) {
-  const c = conf();
+async function ask(r, c = conf()) {
   if (!aiSwitch() || !c.key || navigator.onLine === false) return null;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -237,7 +244,7 @@ export async function aiExplainWrong({ word, meaning, user, how = 'type', extra 
 }
 
 // ---------- 예문 모드: 틀린 답 풀이 말풍선 ----------
-const COACH = `영어 예문 빈칸 문제의 코치예요. 학생이 빈칸에 쓴 답이 정답이 아니에요.
+const HINT = `영어 예문 빈칸 문제의 코치예요. 학생이 빈칸에 쓴 답이 정답이 아니에요.
 - 정답 단어는 절대 말하지 마세요. 정답의 철자 일부, 첫 글자도 말하지 마세요. 학생이 스스로 떠올리게 생각할 방향만 줘요.
 - 예문 속 빈칸 자리(품사, 앞뒤 말, 같이 쓰는 전치사)와 학생 답의 뜻·쓰임을 비교해서 왜 안 맞는지 짚어요.
 - kind는 하나:
@@ -246,13 +253,13 @@ const COACH = `영어 예문 빈칸 문제의 코치예요. 학생이 빈칸에 
   "off" = 뜻이 다르거나, 문법상 그 자리에 올 수 없어요.
 - text는 학생에게 보여 줄 1~2문장(60자 안팎), 해요체. 학생 답은 '작은따옴표'로 감싸요. 마크다운 없이.
 - 답은 JSON 하나로만: {"kind": "near"|"spell"|"off", "text": "…"}`;
-const COACH_SCHEMA = {
+const HINT_SCHEMA = {
   type: 'object',
   properties: { kind: { type: 'string', enum: ['near', 'spell', 'off'] }, text: { type: 'string' } },
   required: ['kind', 'text'],
   additionalProperties: false,
 };
-const COACH_GSCHEMA = { type: 'OBJECT', properties: { kind: { type: 'STRING', enum: ['near', 'spell', 'off'] }, text: { type: 'STRING' } }, required: ['kind', 'text'] };
+const HINT_GSCHEMA = { type: 'OBJECT', properties: { kind: { type: 'STRING', enum: ['near', 'spell', 'off'] }, text: { type: 'STRING' } }, required: ['kind', 'text'] };
 
 // 설명에 정답이 새어 나오면 가림
 export function maskAnswer(text, answers) {
@@ -268,9 +275,9 @@ export function maskAnswer(text, answers) {
  * 틀린 답 풀이. sentences: 빈칸을 ___로 바꾼 예문들, answers: 정답으로 인정하는 말들(원형·예문 형태), user: 학생 답
  * 반환 { kind: 'near'|'spell'|'off', text } 또는 null(오프라인·키 없음·실패)
  */
-export async function aiCoach({ word, meaning, sentences, answers, user }) {
+export async function aiHint({ word, meaning, sentences, answers, user }) {
   const text = await ask({
-    system: COACH, json: true, schema: COACH_SCHEMA, gschema: COACH_GSCHEMA,
+    system: HINT, json: true, schema: HINT_SCHEMA, gschema: HINT_GSCHEMA,
     user: `정답(학생에게 말하지 말 것): ${answers.join(' / ')}\n단어장 뜻: ${meaning}\n예문:\n${sentences.map((x, i) => `${i + 1}. ${x}`).join('\n')}\n학생 답:\n<answer>${user}</answer>`,
   });
   if (!text) return null;
@@ -282,4 +289,103 @@ export async function aiCoach({ word, meaning, sentences, answers, user }) {
   } catch {
     return null;
   }
+}
+
+// ---------- 단어 코치: AI가 코치 캐릭터의 말투로 말함 ----------
+// 일정·개수 계산은 앱(core.js coachPlan)이 하고, AI는 그 사실만 보고 말을 지음. 사실에 없는 숫자를 말하면 버리고 기본 말로.
+// 무료 한도를 채점에 남겨 두려고 코치가 부르는 횟수는 하루 COACH_DAILY번까지
+
+const COACH_DAILY = 30;
+const USE_KEY = 'voca.ai.coachuse.v1'; // { d: 날짜, n: 오늘 부른 횟수 }
+const today = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+function takeCoachTurn() {
+  let u = {};
+  try { u = JSON.parse(localStorage.getItem(USE_KEY)) || {}; } catch {}
+  const n = u.d === today() ? u.n || 0 : 0;
+  if (n >= COACH_DAILY) return false;
+  try { localStorage.setItem(USE_KEY, JSON.stringify({ d: today(), n: n + 1 })); } catch {}
+  return true;
+}
+
+export const COACH_PERSONA = {
+  cat: '고양이 코치. 살짝 시크하고 말이 짧지만 은근히 잘 챙겨 줘요. 칭찬은 담백하게, 가끔 "냥" 같은 말버릇은 아주 가끔만.',
+  hamster: '햄스터 코치. 부지런하고 늘 들떠 있어요. 작은 진도도 크게 기뻐하고, 씨앗을 모으듯 조금씩 쌓자고 말해요.',
+  owl: '부엉이 코치. 차분하고 지혜로운 선생님 같아요. 상황을 짚어 주고, 외우는 요령이나 공부 습관 팁을 하나씩 알려 줘요.',
+  slime: '슬라임 코치. 말랑하고 느긋해요. 부담을 덜어 주고, 밀려도 괜찮다며 다시 시작하게 다독여요.',
+};
+const MOODS = ['normal', 'happy', 'worry', 'sleep', 'cheer'];
+
+const coachSystem = char => `영단어 시험을 준비하는 학생의 단어 앱 속 코치예요. ${COACH_PERSONA[char] || COACH_PERSONA.cat}
+- 학생에게 직접 말하듯 해요체로 써요. 마크다운·이모지·목록 없이 문장으로만.
+- 아래 <facts>에 있는 사실만 말해요. 숫자(개수·날짜·날 수)는 <facts>에 그대로 있는 것만 쓰고, 계산해서 새 숫자를 만들지 마요.
+- 일정을 바꾸거나 개수를 정하는 건 앱이 해요. 코치는 지금 상황을 짚고, 오늘 무엇부터 하면 좋은지, 응원이나 요령을 말해요.
+- 같은 말을 되풀이하지 말고, 그날 상황(밀렸는지, 앞서가는지, 다 했는지, 시험이 가까운지)에 맞게 구체적으로 말해요.
+- mood는 말에 어울리는 표정 하나: normal(보통), happy(기쁨), worry(걱정), sleep(졸림·끝남), cheer(응원).`;
+
+const SAY_SCHEMA = {
+  type: 'object',
+  properties: { mood: { type: 'string', enum: MOODS }, text: { type: 'string' } },
+  required: ['mood', 'text'],
+  additionalProperties: false,
+};
+const SAY_GSCHEMA = { type: 'OBJECT', properties: { mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' } }, required: ['mood', 'text'] };
+
+// AI 말에 나온 숫자가 전부 사실(facts)에 있는지. 없는 숫자를 지어냈으면 false
+export function numbersOk(text, facts) {
+  const have = new Set(String(facts).match(/\d+/g) || []);
+  return (String(text).match(/\d+/g) || []).every(n => have.has(n));
+}
+const clean = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
+
+async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA } = {}) {
+  if (!aiCoachOnline() || !takeCoachTurn()) return null;
+  const text = await ask({ system: coachSystem(char), json: true, schema, gschema, user }, coachConf());
+  if (!text) return null;
+  try {
+    const out = pickJSON(text);
+    out.text = clean(out.text);
+    if (!out.text || out.text.length > 400 || !numbersOk(out.text, facts)) return null;
+    if (!MOODS.includes(out.mood)) out.mood = 'normal';
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 홈 코치 카드의 말. facts: 앱이 정리한 오늘 상황(글자), fallback: 앱의 기본 말(참고용)
+ * 반환 { mood, text } 또는 null(오프라인·키 없음·한도·실패·숫자 지어냄 → 기본 말 그대로)
+ */
+export function aiCoachSay({ char, facts, fallback = '' }) {
+  return coachAsk(char, `<facts>\n${facts}\n</facts>\n앱의 기본 말(참고, 그대로 베끼지 말 것): ${fallback}\n\n홈 화면 말풍선에 보여 줄 말을 1~3문장(90자 안팎)으로 써요.`, facts);
+}
+
+/**
+ * 학습 한 번을 끝냈을 때 코치의 한마디. facts: 이번 학습 결과와 틀린 단어(뜻 포함)
+ * 틀린 단어가 있으면 그중 하나를 골라 외우는 요령을 짧게
+ */
+export function aiCoachResult({ char, facts }) {
+  return coachAsk(char, `<facts>\n${facts}\n</facts>\n\n방금 학습을 끝냈어요. 결과 화면에 보여 줄 말을 2~3문장(110자 안팎)으로 써요. 틀린 단어가 있으면 그중 하나를 골라 뜻을 떠올리기 쉬운 요령(어원, 비슷한 단어와 구별, 짧은 장면)을 알려 줘요. 단어 철자는 <facts>에 있는 그대로 써요.`, facts);
+}
+
+const PICK_SCHEMA = {
+  type: 'object',
+  properties: { pick: { type: 'integer', description: '고른 선택지 번호, 맞는 게 없으면 0' }, mood: { type: 'string', enum: MOODS }, text: { type: 'string' } },
+  required: ['pick', 'mood', 'text'],
+  additionalProperties: false,
+};
+const PICK_GSCHEMA = { type: 'OBJECT', properties: { pick: { type: 'INTEGER' }, mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' } }, required: ['pick', 'mood', 'text'] };
+
+/**
+ * 일정 상의하기: 학생이 한 말을 듣고 앱이 계산한 선택지 가운데 하나를 골라 줌 (코치가 새 일정을 만들지는 않음)
+ * options: 선택지 설명 글자 목록(1번부터), message: 학생이 쓴 말
+ * 반환 { pick: 1..n 또는 0(맞는 게 없음), mood, text } 또는 null
+ */
+export async function aiCoachPick({ char, facts, options, message }) {
+  const list = options.map((o, i) => `${i + 1}. ${o}`).join('\n');
+  const all = `${facts}\n${list}`;
+  const out = await coachAsk(char, `<facts>\n${facts}\n선택지:\n${list}\n</facts>\n학생이 일정에 대해 한 말:\n<message>${message}</message>\n\n학생 말에 가장 맞는 선택지 번호를 pick에 넣어요. 바꿀 수 있는 건 '시험 전 전체 복습을 며칠 할지'뿐이에요. 학생이 그 밖의 걸(예: 쉬는 요일, 범위) 원하면 pick은 지금 일정 번호로 두고, 이 창에선 복습 날 수만 정할 수 있다고 솔직히 말해요. 질문이면 선택지를 비교해서 답해요. text는 고른 이유를 1~3문장(110자 안팎)으로.`, all, { schema: PICK_SCHEMA, gschema: PICK_GSCHEMA });
+  if (!out) return null;
+  const pick = Number.isInteger(out.pick) && out.pick >= 1 && out.pick <= options.length ? out.pick : 0;
+  return { pick, mood: out.mood, text: out.text };
 }

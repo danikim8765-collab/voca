@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachPick, numbersOk, aiCoachOnline, aiCoachName, aiName } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -158,4 +158,73 @@ test('왜 틀렸어?: 글자로 받고 마크다운 기호는 뺌, 실패면 nul
   assert.equal(await aiExplainWrong({ word: 'fatal', meaning: '치명적인', user: 'x' }), null);
   store.set('voca.ai.on.v1', '0');
   assert.equal(await aiExplainWrong({ word: 'fatal', meaning: '치명적인', user: 'x' }), null);
+});
+
+const claudeText = t => () => json({ stop_reason: 'end_turn', content: [{ type: 'text', text: t }] });
+
+test('코치 말: 사실에 없는 숫자를 지어내면 버림', async () => {
+  assert.equal(numbersOk('11월 20일까지 하루 25개예요', '11월 20일, 하루 25개'), true);
+  assert.equal(numbersOk('하루 30개예요', '하루 25개'), false);
+  assert.equal(numbersOk('오늘도 힘내요', ''), true);
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  const facts = '시험까지 14일\n오늘 남은 할 일: 새 단어 19개, 복습 3개';
+  reply = claudeText('{"mood":"cheer","text":"시험까지 14일! 새 단어 19개부터 해요."}');
+  assert.deepEqual(await aiCoachSay({ char: 'owl', facts }), { mood: 'cheer', text: '시험까지 14일! 새 단어 19개부터 해요.' });
+  const body = JSON.parse(calls[0].opts.body);
+  assert.match(body.system, /부엉이/);
+  assert.match(body.messages[0].content, /새 단어 19개/);
+  reply = claudeText('{"mood":"cheer","text":"오늘은 새 단어 20개예요."}');
+  assert.equal(await aiCoachSay({ char: 'owl', facts }), null);
+  reply = claudeText('{"mood":"angry","text":"좋아요."}');
+  assert.equal((await aiCoachSay({ char: 'cat', facts })).mood, 'normal');
+});
+
+test('코치 말: 스위치를 끄거나 하루 한도를 넘으면 안 부름', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  store.set('voca.ai.on.v1', '0');
+  assert.equal(await aiCoachSay({ char: 'cat', facts: '' }), null);
+  assert.equal(calls.length, 0);
+  store.set('voca.ai.on.v1', '1');
+  reply = claudeText('{"mood":"normal","text":"좋아요."}');
+  let ok = 0;
+  for (let i = 0; i < 35; i++) if (await aiCoachSay({ char: 'cat', facts: '' })) ok++;
+  assert.equal(ok, 30);
+  assert.equal(calls.length, 30);
+});
+
+test('일정 상의하기: 선택지 번호만 받고, 범위를 벗어나면 0', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  const options = ['코치 추천: 시험 전 전체 복습 3일', '복습 길게: 시험 전 전체 복습 6일'];
+  reply = claudeText('{"pick":2,"mood":"cheer","text":"복습을 6일 가져가요."}');
+  assert.deepEqual(await aiCoachPick({ char: 'cat', facts: '시험까지 14일', options, message: '복습 오래 하고 싶어' }), { pick: 2, mood: 'cheer', text: '복습을 6일 가져가요.' });
+  assert.match(JSON.parse(calls[0].opts.body).messages[0].content, /<message>복습 오래 하고 싶어<\/message>/);
+  reply = claudeText('{"pick":7,"mood":"normal","text":"음."}');
+  assert.equal((await aiCoachPick({ char: 'cat', facts: '', options, message: '?' })).pick, 0);
+});
+
+test('코치용 키를 따로 넣으면 코치는 그 AI, 채점은 원래 AI', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_main', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  // 코치용 키가 없으면 코치도 채점용(Groq)을 씀
+  assert.equal(aiCoachName(), 'Groq');
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '{"mood":"happy","text":"좋아요."}' } }] });
+  assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
+  assert.match(calls.at(-1).url, /groq\.com/);
+  // 코치용 Claude 키 연결
+  reply = () => json({ id: 'claude-sonnet-5-5' });
+  await aiConnect('sk-ant-coach', 'coach');
+  assert.deepEqual([aiName(), aiName('coach'), aiCoachName()], ['Groq', 'Claude', 'Claude']);
+  reply = claudeText('{"mood":"happy","text":"좋아요."}');
+  await aiCoachSay({ char: 'cat', facts: '' });
+  assert.match(calls.at(-1).url, /anthropic\.com/);
+  assert.equal(calls.at(-1).opts.headers['x-api-key'], 'sk-ant-coach');
+  // 채점은 그대로 Groq
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '{"score":2,"missing":0,"note":""}' } }] });
+  assert.equal((await aiGradeMeaning(Q)).score, 2);
+  assert.match(calls.at(-1).url, /groq\.com/);
+  // 채점용 키 없이 코치용만 있어도 코치는 동작
+  aiDisconnect();
+  assert.equal(aiEnabled(), false);
+  assert.equal(aiCoachOnline(), true);
+  aiDisconnect('coach');
+  assert.equal(aiCoachOnline(), false);
 });
