@@ -334,6 +334,7 @@ const isWrongNote = s => isWrongRaw(s) && s.r !== dateStr();
 // 오늘 배울 새 단어 총수: 맨 위 숫자로 오늘만 바꿨으면 그 값, 아니면 하루 새 단어 수
 const newToday = () => Object.values(stats).filter(s => s && s.f === dateStr()).length;
 const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : coachActive() ? coachDaily() : settings.newPerDay; };
+const newTargetMine = () => loadDay().newTarget != null; // 오늘 새 단어 수를 맨 위 숫자로 직접 정했는지
 const todayPlan = () => buildPlan(rangeWords(), rangeWords(), stats, { today: dateStr(), newPerDay: todayNewTarget(), exam: settings.exam, srs: srsOn() ? { goal: goalDate(), exam: settings.exam } : null });
 // 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서)
 const srsPick = () => pickSrsReview(rangeWords(), rangeWords(), stats, { today: dateStr(), goal: goalDate(), exam: settings.exam, limit: settings.reviewLimit ? settings.reviewSize : 0 });
@@ -728,12 +729,20 @@ function coachSay() {
   const tail = rd > 0 ? `마지막 ${span}는 전체 복습이에요`.replace('일는', '일은') : '시험 전날까지 새 단어를 봐요';
   const last = lastLearnDay(), by = last === today ? '오늘' : fmtDay(last);
   if (allDone) return { mood: 'happy', text: `${moved}오늘 몫 끝! ` + (last === today ? `새 단어를 다 봤어요. 내일부터 시험 전날까지는 전체 복습이에요.` : `이대로면 ${by}에 새 단어를 다 보고, ${tail}.`), acts: last === today ? [] : [talk] };
-  const target = todayNewTarget(), base = settings.coachBase || 0;
-  if (base && fresh && target > base * 1.25 + 2) {
-    return { mood: 'worry', text: `조금 밀렸어요. ${by}까지 새 단어를 끝내려면 오늘 ${target}개예요 (처음 계획은 하루 ${base}개). 벅차면 일정을 다시 짜거나 같이 바꿔 봐요.`, acts: [replan, talk] };
+  // 밀렸는지는 코치 계산(남은 새 단어 ÷ 남은 날)으로 봄. 오늘 개수를 직접 늘린 건 밀린 게 아님
+  const target = todayNewTarget(), need = coachDaily(), base = settings.coachBase || 0;
+  if (newTargetMine() && fresh && target !== need) {
+    return {
+      mood: target > need ? 'cheer' : 'normal',
+      text: `${moved}오늘은 직접 정한 대로 새 단어 ${target}개예요 (코치 계획은 하루 ${need}개). ` + (target > need ? '많이 해 두는 만큼 내일부터 하루 몫이 줄어요.' : '덜 한 만큼 내일부터 하루 몫이 조금 늘어요.'),
+      acts: [talk],
+    };
+  }
+  if (base && fresh && need > base * 1.25 + 2) {
+    return { mood: 'worry', text: `조금 밀렸어요. ${by}까지 새 단어를 끝내려면 오늘 ${need}개예요 (처음 계획은 하루 ${base}개). 벅차면 일정을 다시 짜거나 같이 바꿔 봐요.`, acts: [replan, talk] };
   }
   if (base > 80) {
-    return { mood: 'worry', text: `${moved}시험까지 ${D}일인데 새 단어가 ${leftNew()}개 남았어요. 하루 ${target}개는 많이 빡빡해요. 학습 범위를 줄이는 걸 권해요. 오늘은 ${todo}예요.`, acts: [['학습 범위 바꾸기', () => { planFrom = null; show('plan'); }], talk] };
+    return { mood: 'worry', text: `${moved}시험까지 ${D}일인데 새 단어가 ${leftNew()}개 남았어요. 하루 ${need}개는 많이 빡빡해요. 학습 범위를 줄이는 걸 권해요. 오늘은 ${todo}예요.`, acts: [['학습 범위 바꾸기', () => { planFrom = null; show('plan'); }], talk] };
   }
   return { mood: 'normal', text: `${moved}시험까지 ${D}일. ${by}까지 새 단어를 끝내고 ${tail}. 오늘은 ${todo || '할 게 없어요'}${todo ? '예요' : ''}.`, acts: last === today ? [] : [talk] };
 }
@@ -875,9 +884,10 @@ function coachFacts() {
     lines.push(`시험일: ${fmtDay(ex)} ${weekday(ex)}요일, 시험까지 ${daysBetween(today, ex)}일`);
     if (g && today >= g) lines.push('지금은 전체 복습 기간: 새 단어는 다 봤고, 시험 전날까지 범위 전체를 날마다 나눠 복습');
     else if (g) {
-      const rd = daysBetween(g, ex), base = settings.coachBase || 0, target = todayNewTarget();
+      const rd = daysBetween(g, ex), base = settings.coachBase || 0, need = coachDaily(), target = todayNewTarget();
       lines.push(`일정: ${fmtDay(lastLearnDay())}까지 새 단어, ${fmtDay(g)}부터 ${rd}일 전체 복습 (${settings.coachReview ? '복습 날 수는 학생이 정함' : '코치가 추천한 일정'})`);
-      lines.push(`처음 계획은 하루 새 단어 ${base}개, 오늘 목표는 ${target}개` + (base && target > base * 1.25 + 2 ? ' (밀려서 늘어남)' : base && target < base ? ' (앞서 있어서 줄어듦)' : ''));
+      lines.push(`처음 계획은 하루 새 단어 ${base}개, 코치 계산으로 오늘 필요한 건 ${need}개` + (base && need > base * 1.25 + 2 ? ' (밀려서 늘어남)' : base && need < base ? ' (앞서 있어서 줄어듦)' : ' (계획대로)'));
+      if (newTargetMine() && target !== need) lines.push(`학생이 오늘만 새 단어 목표를 ${target}개로 직접 정함 (${target > need ? '계획보다 많이 하려는 것, 밀린 게 아님' : '오늘은 덜 하려는 것'})`);
     }
     const fresh = f.plan.fresh.length, rv = f.rv.left.length;
     lines.push(!f.learnLeft && f.rv.done ? '오늘 몫(새 단어·복습)을 다 끝냄' : `오늘 남은 할 일: 새 단어 ${fresh}개, 복습 ${rv}개`);
@@ -902,7 +912,7 @@ const SAY_KEY = P + 'coachsay.v1';
 let sayPending = '';
 function coachSayKey(say) {
   const f = flowState();
-  return [dateStr(), f.stage, !f.learnLeft && f.rv.done, settings.coachGoal, settings.exam, settings.from, settings.to, coachChar(), say.mood, coachMoved].join('|');
+  return [dateStr(), f.stage, !f.learnLeft && f.rv.done, todayNewTarget(), settings.coachGoal, settings.exam, settings.from, settings.to, coachChar(), say.mood, coachMoved].join('|');
 }
 function aiSayFor(say) {
   if (!aiCoachOnline() || !settings.coach) return null;
