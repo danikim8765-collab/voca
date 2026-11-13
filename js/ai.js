@@ -1,7 +1,7 @@
 // 단어 모드 직접 입력의 AI 재확인. 규칙 채점(core.js의 gradeMeaning)이 정답이 아니라고 할 때만,
 // 인터넷이 되고 API 키가 있으면 부른다. 안 되거나 실패하면 null → 규칙 채점 결과 그대로.
 // 키 앞부분으로 회사를 고른다: gsk_… = Groq(무료), sk-or-… = OpenRouter(무료 모델),
-// AIza… = Google Gemini(무료 등급), sk-ant-… = Anthropic Claude(유료)
+// AIza… = Google Gemini(무료 등급), sk-ant-… = Anthropic Claude(유료: 가벼운 일은 Haiku, 코치와 이야기하기만 Sonnet)
 // 서버 없이 브라우저에서 바로 부른다. 키는 이 기기의 localStorage에만 저장 (동기화 안 함)
 
 const KEY = 'voca.ai.v1'; // { key, provider, model } 두 모드가 같이 씀
@@ -14,7 +14,10 @@ const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_MODEL = 'gemini-flash-lite-latest'; // 가장 빠르고 무료 한도가 넉넉한 쪽. 없으면 연결할 때 목록에서 고름
 const GEMINI_COACH_MODEL = 'gemini-flash-latest'; // 코치용 키: 말이 더 자연스러운 flash (없으면 목록에서 flash → flash-lite)
 const CLAUDE_API = 'https://api.anthropic.com/v1';
-const CLAUDE_MODEL = 'claude-sonnet-5-5';
+// Claude는 일마다 모델을 나눔: 채점·풀이·홈 말풍선·학습 끝 한마디는 싸고 빠른 Haiku, 코치와 이야기하기만 Sonnet
+// (Sonnet이 막히면 Haiku로). 예전에 저장된 모델 이름과 상관없이 이 둘을 씀
+const CLAUDE_MODEL = 'claude-haiku-5-5';
+const CLAUDE_CHAT_MODEL = 'claude-sonnet-5-5';
 // OpenAI 형식(chat/completions)을 쓰는 곳. 모델은 연결할 때 목록에서 앞쪽 것부터 고름
 const OPENAI_LIKE = {
   groq: { api: 'https://api.groq.com/openai/v1', prefer: [/^openai\/gpt-oss-120b$/, /^openai\/gpt-oss-20b$/, /gpt-oss/, /^qwen/, /llama/], json: true },
@@ -26,7 +29,11 @@ const saveConf = (c, slot = 'main') => { try { localStorage.setItem(SLOT[slot], 
 
 // Google 키: AIza… 또는 AQ.… (AQ.는 Gemini API 키일 수도, Vertex AI 키일 수도 있어서 연결할 때 둘 다 해 봄)
 export const providerOf = key => (/^sk-ant-/.test(key) ? 'claude' : /^(AIza|AQ\.)/.test(key) ? 'gemini' : /^gsk_/.test(key) ? 'groq' : /^sk-or-/.test(key) ? 'openrouter' : '');
-const conf = (slot = 'main') => { const c = loadConf(slot); return c.key && !c.provider ? { ...c, provider: providerOf(c.key) || 'claude' } : c; };
+const conf = (slot = 'main') => {
+  let c = loadConf(slot);
+  if (c.key && !c.provider) c = { ...c, provider: providerOf(c.key) || 'claude' };
+  return c.provider === 'claude' ? { ...c, model: CLAUDE_MODEL } : c;
+};
 // 코치가 쓸 설정: 코치용 키가 있으면 그것, 없으면 채점용
 const coachConf = () => (conf('coach').key ? conf('coach') : conf());
 export const aiProvider = (slot = 'main') => conf(slot).provider || '';
@@ -202,15 +209,22 @@ const GEMINI_SCHEMA = {
 };
 
 // 회사별 요청 → 응답 글자. 실패면 null. r = { system, user, json(채점처럼 JSON으로 받을 때) }
+// 토큰 아끼기: 지시문(system)은 늘 같아서 캐시해 둠(다시 읽을 땐 입력 값의 1/10~1/20).
+// r.parts가 있으면(코치와 이야기하기) 사용자 글을 여러 조각으로 보내고, cache 표시한 조각까지 캐시함.
+// 앞선 이야기는 다음 번에도 앞부분이 그대로라 캐시에서 읽음 → 대화가 길어져도 매번 전부 값을 내지 않음
+const cacheMark = { type: 'ephemeral' };
+export const claudeContent = r => (r.parts
+  ? r.parts.filter(p => p.text).map(p => (p.cache ? { type: 'text', text: p.text, cache_control: cacheMark } : { type: 'text', text: p.text }))
+  : r.user);
 async function askClaude(c, r, signal) {
   const res = await fetch(`${CLAUDE_API}/messages`, {
     method: 'POST', headers: claudeHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
       model: c.model || CLAUDE_MODEL,
-      max_tokens: 2048,
-      system: r.system,
+      max_tokens: r.maxTokens || 2048,
+      system: [{ type: 'text', text: r.system, cache_control: cacheMark }],
       output_config: r.json ? { effort: 'low', format: { type: 'json_schema', schema: r.schema || CLAUDE_SCHEMA } } : { effort: 'low' },
-      messages: [{ role: 'user', content: r.user }],
+      messages: [{ role: 'user', content: claudeContent(r) }],
     }),
   });
   if (!res.ok) { lastErr = String(res.status); return null; }
@@ -283,14 +297,16 @@ async function ask(r, c = conf()) {
 // 코치가 부를 때: 고른 모델이 막히면(사람이 몰림 503, 한도 429, 너무 늦음, 없어진 모델 404) 다른 모델로 넘어감.
 // 무료 등급은 모델마다 한도가 따로라 flash가 막혀도 flash-lite는 되는 일이 많음. 막힌 모델은 5분 동안 뒤로 미룸
 const GEMINI_SPARE = 'gemini-flash-lite-latest';
-export const coachModels = c => [...new Set((c.provider === 'gemini' ? [c.model || GEMINI_COACH_MODEL, GEMINI_SPARE]
-  : c.provider === 'vertex' ? [c.model, ...VERTEX_MODELS.main] : [c.model]).filter(Boolean))];
+// chat = 코치와 이야기하기 (Claude면 이때만 Sonnet)
+export const coachModels = (c, chat = false) => [...new Set((c.provider === 'gemini' ? [c.model || GEMINI_COACH_MODEL, GEMINI_SPARE]
+  : c.provider === 'vertex' ? [c.model, ...VERTEX_MODELS.main]
+    : c.provider === 'claude' ? (chat ? [CLAUDE_CHAT_MODEL, CLAUDE_MODEL] : [CLAUDE_MODEL]) : [c.model]).filter(Boolean))];
 const resting = new Map(); // 모델 → 이 시각까지 건너뜀
 const SWITCH = /^(429|404|5\d\d|timeout|cut|network)$/;
 async function askCoach(r) {
   const c = coachConf();
   // 방금 막혔던 모델은 맨 뒤로 (다른 모델도 안 되면 그때 다시 해 봄)
-  const all = coachModels(c), asleep = m => resting.get(m) > Date.now();
+  const all = coachModels(c, !!r.chat), asleep = m => resting.get(m) > Date.now();
   const models = [...all.filter(m => !asleep(m)), ...all.filter(asleep)].slice(0, 3);
   if (models.length < 3) models.push(models[0]); // 다 안 됐는데 서버 오류(5xx)였으면 잠깐 쉬고 처음 모델로 한 번 더
   for (let i = 0; i < models.length; i++) {
@@ -299,8 +315,10 @@ async function askCoach(r) {
       if (!/^5\d\d$/.test(lastErr)) break;
       await new Promise(done => setTimeout(done, 800));
     }
-    const spare = models.slice(i + 1).some(m => m !== models[i] && !tried.includes(m)); // 넘어갈 다른 모델이 있으면 오래 기다리지 않음
-    const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, 15000) : r.timeout }, { ...c, model: models[i] });
+    // 넘어갈 다른 모델이 있으면 오래 기다리지 않음. 다만 코치와 이야기하기는 긴 설명을 쓰는 중일 수 있어서 30초까지 기다림
+    // (중간에 끊어도 그때까지 쓴 토큰 값은 나가고, 다른 모델에 처음부터 다시 물어야 해서 두 번 값을 냄)
+    const spare = models.slice(i + 1).some(m => m !== models[i] && !tried.includes(m));
+    const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, r.chat ? 30000 : 15000) : r.timeout }, { ...c, model: models[i] });
     if (out) return out;
     if (out === '') lastErr = 'bad';
     if (!SWITCH.test(lastErr) || navigator.onLine === false) break;
@@ -316,16 +334,41 @@ export function pickJSON(text) {
   return a >= 0 && b > a ? JSON.parse(t.slice(a, b + 1)) : JSON.parse(t);
 }
 
+// 같은 물음에 받은 답을 기억해 둠 (채점·'왜 틀렸어?'). 학생은 같은 단어에 같은 답을 또 쓰는 일이 많아서
+// (단어장과 다르게 외운 표현 등) 그때마다 AI를 부르지 않고 지난번 답을 그대로 씀. 실패(null)는 기억하지 않음
+const MEMO = { grade: ['voca.ai.memo.grade.v1', 400], explain: ['voca.ai.memo.explain.v1', 150] };
+const memoKey = (...a) => a.map(x => String(x == null ? '' : x).replace(/\s+/g, ' ').trim()).join('\n');
+function memoGet(kind, key) {
+  try { const m = JSON.parse(localStorage.getItem(MEMO[kind][0])) || {}; return Object.prototype.hasOwnProperty.call(m, key) ? m[key] : undefined; } catch { return undefined; }
+}
+function memoSet(kind, key, val) {
+  try {
+    const [k, cap] = MEMO[kind];
+    const m = JSON.parse(localStorage.getItem(k)) || {};
+    delete m[key];
+    m[key] = val; // 넣은 순서대로 쌓이니 넘치면 앞(오래된 것)부터 뺌
+    const keys = Object.keys(m);
+    for (const old of keys.slice(0, Math.max(0, keys.length - cap))) delete m[old];
+    localStorage.setItem(k, JSON.stringify(m));
+  } catch {}
+}
+
 /**
  * AI 채점. 반환 { score: 0|1|2, missing, note } 또는 null(오프라인·키 없음·실패 → 규칙 채점으로)
+ * 같은 단어·같은 기준에 같은 답이면 지난번 채점을 그대로 씀 (AI를 다시 안 부름)
  */
 export async function aiGradeMeaning({ word, meaning, user, strict = 'mid' }) {
+  const key = memoKey(word, meaning, strict, user);
+  const seen = aiOnline() ? memoGet('grade', key) : undefined;
+  if (seen) return { ...seen };
   const text = await ask({ system: SYSTEM, user: prompt({ word, meaning, user, strict }), json: true });
   if (!text) return null;
   try {
     const out = pickJSON(text);
     if (![0, 1, 2].includes(out.score)) return null;
-    return { score: out.score, missing: Math.max(0, out.missing | 0), note: String(out.note || '').trim() };
+    const res = { score: out.score, missing: Math.max(0, out.missing | 0), note: String(out.note || '').trim() };
+    memoSet('grade', key, res);
+    return res;
   } catch {
     return null; // 잘못된 응답
   }
@@ -341,11 +384,15 @@ const EXPLAIN = `영단어 공부를 돕는 선생님이에요. 학생이 영단
  * '왜 틀렸어?' 설명. how: 'type'(직접 입력) | 'choice'(보기 선택). extra: 유의어 등 참고. 반환 글자 또는 null
  */
 export async function aiExplainWrong({ word, meaning, user, how = 'type', extra = '' }) {
+  const key = memoKey(word, meaning, how, user);
+  const seen = aiOnline() ? memoGet('explain', key) : undefined;
+  if (seen) return seen;
   const text = await ask({
     system: EXPLAIN,
     user: `영단어: ${word}\n단어장 뜻: ${meaning}${extra ? `\n참고: ${extra}` : ''}\n학생이 ${how === 'choice' ? '고른 보기' : '쓴 답'}:\n<answer>${user}</answer>`,
   });
   const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
+  if (t) memoSet('explain', key, t);
   return t || null;
 }
 
@@ -534,18 +581,38 @@ const CHAT_GSCHEMA = {
 const WEEK = '일월화수목금토';
 const CHAT_MAX = 4000; // 코치 말 한 번의 길이 (넘으면 자름)
 
-// 앞선 이야기를 글로. history: [{ who: 'me'|'coach'|'app', text, day?: 'YYYY-MM-DD' }] (app = 앱이 계산해 보여 준 카드)
-// 날짜가 바뀌면 사이에 날짜를 적어 줌. 너무 길면 오래된 것부터 뺌
-export function chatTranscript(history, { max = 40, chars = 7000 } = {}) {
-  const lines = [], items = history.slice(-max);
-  let from = items.length, size = 0, day = null;
-  while (from > 0 && (items.length - from < 2 || size + items[from - 1].text.length <= chars)) size += items[--from].text.length;
-  for (const h of items.slice(from)) {
-    if (h.day && h.day !== day) { day = h.day; lines.push(`(${h.day})`); }
-    lines.push(`${h.who === 'me' ? '학생' : h.who === 'app' ? '[앱 계산]' : '코치'}: ${h.text}`);
-  }
-  return lines.join('\n');
+// 앞선 이야기에서 어디부터 넘길지. history: [{ who: 'me'|'coach'|'app', text, day?: 'YYYY-MM-DD', t? }] (app = 앱이 계산해 보여 준 카드)
+// 너무 길면 오래된 것부터 뺌(마지막 둘은 늘 남김). prev = 지난번에 넘긴 첫 이야기의 자리(없으면 -1)
+// 토큰 아끼기: 매번 한 줄씩 밀어 자르면 앞부분이 매번 달라져서 AI 회사의 캐시(같은 앞부분은 싸게 읽음)를 못 씀.
+// 그래서 지난번 시작이 아직 한도(max·chars) 안이면 그대로 두고, 넘칠 때만 lo(한도의 2/3쯤)까지 한 번에 줄임.
+// 넘기는 양은 늘 lo 이상이라, 코치가 기억하는 앞선 이야기가 예전(40개·7000자)보다 짧아지지 않음
+const fromLen = (h, from) => h.slice(from).reduce((n, x) => n + x.text.length, 0);
+export function chatFrom(history, { max = 40, chars = 7000, lo = null, prev = -1 } = {}) {
+  const n = history.length;
+  if (prev >= 0 && prev <= n - 2 && n - prev <= max && fromLen(history, prev) <= chars) return prev;
+  const m = prev >= 0 && lo ? lo.max : max, c = prev >= 0 && lo ? lo.chars : chars;
+  let from = n, size = 0;
+  while (from > 0 && (n - from < 2 || (n - from < m && size + history[from - 1].text.length <= c))) size += history[--from].text.length;
+  return from;
 }
+// 이야기 한 줄씩. 날짜가 바뀌면 사이에 날짜를 적어 줌
+function chatLines(items) {
+  const lines = [];
+  let day = null;
+  for (const h of items) {
+    const head = h.day && h.day !== day ? `(${h.day})\n` : '';
+    if (h.day) day = h.day;
+    lines.push(`${head}${h.who === 'me' ? '학생' : h.who === 'app' ? '[앱 계산]' : '코치'}: ${h.text}`);
+  }
+  return lines;
+}
+export function chatTranscript(history, { max = 40, chars = 7000 } = {}) {
+  return chatLines(history.slice(chatFrom(history, { max, chars }))).join('\n');
+}
+// 지난번에 넘긴 첫 이야기 (다음 번에도 같은 데서 시작하려고)
+const CHAT_WIN = { max: 60, chars: 10500, lo: { max: 40, chars: 7000 } };
+const itemKey = h => (h.t ? `t${h.t}` : `${h.who}|${h.day || ''}|${h.text}`);
+let chatFirst = null;
 
 // JSON이 깨져 왔을 때: "text" 값만이라도 건지고, 그것도 없으면 온 글 그대로를 코치 말로
 function looseChat(raw) {
@@ -562,10 +629,14 @@ function looseChat(raw) {
  */
 export async function aiCoachChat({ char, facts, weak = '', notes = [], history = [], message, day = '' }) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
-  const hist = chatTranscript(history);
-  const raw = await askCoach({
-    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 40000,
-    user: `<facts>
+  const prev = chatFirst ? history.findIndex(h => itemKey(h) === chatFirst) : -1;
+  const from = chatFrom(history, { ...CHAT_WIN, prev });
+  chatFirst = from < history.length ? itemKey(history[from]) : null;
+  const lines = chatLines(history.slice(from));
+  // 조각으로 나눠 둠: 상황·기억 → 앞선 이야기 한 줄씩 → 방금 한 말. 이어 붙이면 한 덩어리 글과 같음.
+  // Claude는 방금 한 말 앞까지 캐시해 두고, 다음 번엔 거기까지를 캐시에서 읽음 (Gemini·Groq는 같은 앞부분을 알아서 캐시)
+  const parts = [
+    { text: `<facts>
 ${facts}
 </facts>
 <weak>
@@ -574,8 +645,16 @@ ${weak || '(아직 틀린 단어 기록이 없음)'}
 <memory>
 ${notes.length ? notes.map(n => `- ${n}`).join('\n') : '(아직 없음)'}
 </memory>
-${hist ? `앞선 이야기:\n${hist}\n` : ''}${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
-<message>${message}</message>`,
+${lines.length ? '앞선 이야기:\n' : ''}` },
+    ...lines.map(l => ({ text: `${l}\n` })),
+  ];
+  parts[parts.length - 1].cache = true;
+  parts.push({ text: `${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
+<message>${message}</message>` });
+  const raw = await askCoach({
+    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 40000, chat: true,
+    // 긴 설명이 잘리면(cut) 다른 모델로 처음부터 다시 물어 두 번 값을 내니, 답 길이 한도는 넉넉히
+    maxTokens: 8192, parts, user: parts.map(p => p.text).join(''),
   });
   if (!raw) return null;
   let out = null;

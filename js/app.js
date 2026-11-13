@@ -162,6 +162,18 @@ const sync = createSync({
     get: () => marks,
     set: m => { marks = m; save(KEY.marks, marks); if (current === 'list') renderList(); },
   },
+  // 고른 코치 캐릭터: 동기화(토큰)를 켰을 때만 다른 기기와 맞춰짐. 안 켰으면 이 기기에만
+  coach: {
+    get: () => (COACH_ART[ui.coachChar] ? { char: ui.coachChar, at: ui.coachCharAt || 0 } : null),
+    set: c => {
+      if (!COACH_ART[c.char]) return; // 모르는 캐릭터(새 버전에서 고른 것 등)는 그대로 둠
+      ui.coachChar = c.char;
+      ui.coachCharAt = c.at;
+      save(UI_KEY, ui);
+      if (current === 'settings') renderSrs();
+      if (current === 'home') renderCoach();
+    },
+  },
   other: { get: otherProgress, set: st => save(OTHER_P + 'stats.v1', st) },
 });
 const saveSettings = () => save(KEY.settings, settings);
@@ -643,7 +655,8 @@ function setCoach(on) {
   renderHome();
 }
 
-// 코치 캐릭터 (js/coach-art.js의 32×32 픽셀 그림): 고양이·햄스터·부엉이·슬라임 가운데 고름. 기기마다 저장(ui.coachChar), 두 모드가 같이 씀
+// 코치 캐릭터 (js/coach-art.js의 32×32 픽셀 그림): 고양이·햄스터·부엉이·슬라임 가운데 고름. 기기에 저장(ui.coachChar, 고른 때 ui.coachCharAt), 두 모드가 같이 씀.
+// 동기화를 켰으면 더 최근에 고른 쪽으로 다른 기기와 맞춰짐(Gist의 voca-marks.json)
 // 기분: normal 기본 · happy 기쁨(정답) · worry 걱정(오답) · sleep 졸림 · cheer 응원
 const COACH_MOOD = { normal: 'idle', happy: 'correct', worry: 'wrong', sleep: 'sleepy', cheer: 'cheer' };
 const coachChar = () => (COACH_ART[ui.coachChar] ? ui.coachChar : 'cat');
@@ -698,7 +711,9 @@ function pickCoach() {
 }
 function setCoachChar(c) {
   ui.coachChar = c;
+  ui.coachCharAt = Date.now();
   save(UI_KEY, ui);
+  sync.soon();
   if (current === 'settings') renderSrs();
   renderCoach();
 }
@@ -708,6 +723,7 @@ async function toggleCoach(on) {
     const c = await pickCoach();
     if (!c) { renderPlan(); if (current === 'settings') renderSrs(); return; } // 스위치를 원래대로
     ui.coachChar = c;
+    ui.coachCharAt = Date.now();
     save(UI_KEY, ui);
   }
   setCoach(on);
@@ -1040,7 +1056,8 @@ function openCoachChat() {
   $('#cc-sub').textContent = `${aiCoachName()} · 이 기기에만 저장`;
   const dayLabel = t => { const x = dateStr(t); return x === today ? '오늘' : x === addDays(today, -1) ? '어제' : fmtDay(x); };
   // AI에게 넘길 앞선 이야기 (실패 안내와 '기억해 둘게요' 줄은 뺌)
-  const forAi = () => chat.items.filter(m => !m.err && m.who !== 'note').map(m => ({ who: m.who, text: m.text, day: fmtDay(dateStr(m.t)) }));
+  // t는 AI에 보내지 않고, 다음 번에도 같은 이야기부터 넘기려고(캐시) 씀
+  const forAi = () => chat.items.filter(m => !m.err && m.who !== 'note').map(m => ({ who: m.who, text: m.text, day: fmtDay(dateStr(m.t)), t: m.t }));
   const cardBox = (c, liveCard) => {
     const box = el('div', 'chat-plan');
     box.appendChild(el('div', 'cp-title', c.title));
@@ -2694,12 +2711,25 @@ function next() {
 }
 
 // 학습을 끝내면 AI 코치가 결과를 보고 한마디 (틀린 단어가 있으면 하나 골라 외우는 요령). AI가 꺼져 있으면 안 보임
+// 다 맞혔으면 짚어 줄 단어가 없어서 AI를 부르지 않고 캐릭터 말투의 칭찬을 앱이 씀 (토큰 아끼기)
+const ALL_RIGHT = {
+  cat: '하나도 안 틀렸네요. …뭐, 이 정도는 해야죠. 잘했어요.',
+  hamster: '전부 맞혔어요! 오늘 씨앗 주머니가 꽉 찼어요!',
+  owl: '모두 맞혔군요. 이렇게 떠오르는 단어는 복습 때도 잘 남아요.',
+  slime: '다 맞혔어요~ 말랑말랑 기분 좋아요. 이대로 천천히 가요.',
+};
 let resultSeq = 0;
 function resultComment(s, wrong) {
   const box = $('#res-say');
   box.hidden = true;
+  box.classList.remove('wait');
   const seq = ++resultSeq;
   if (!settings.coach || !aiCoachOnline() || s.mode === 'syn') return;
+  if (!wrong.length) {
+    box.textContent = ALL_RIGHT[coachChar()] || ALL_RIGHT.cat;
+    box.hidden = false;
+    return;
+  }
   const lines = [`방금 한 학습: ${s.label}, ${s.total}단어`];
   if (wrong.length) {
     lines.push(`틀렸거나 힌트를 본 단어 ${wrong.length}개:`);

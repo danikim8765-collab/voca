@@ -1045,6 +1045,16 @@ export function sameMarks(x, y) {
   return kx.length === ky.length && kx.every(k => y[k] && !!x[k].on === !!y[k].on && x[k].t === y[k].t);
 }
 
+// 고른 코치 캐릭터 { char, at }: 동기화할 때 더 최근에 고른 쪽으로. 한쪽만 골랐으면 그쪽.
+// 둘 다 언제 골랐는지 모르면(at 0, 이 기능 전에 고름) Gist 쪽을 따름 — 기기마다 제 것을 고집하면 서로 덮어쓰기만 해서
+export function mergeCoach(local, remote) {
+  const ok = x => !!(x && typeof x.char === 'string' && x.char);
+  if (!ok(remote)) return ok(local) ? { char: local.char, at: local.at || 0 } : null;
+  if (!ok(local)) return { char: remote.char, at: remote.at || 0 };
+  return (local.at || 0) > (remote.at || 0) ? { char: local.char, at: local.at } : { char: remote.char, at: remote.at || 0 };
+}
+export const sameCoach = (x, y) => ((x && x.char) || '') === ((y && y.char) || '') && ((x && x.at) || 0) === ((y && y.at) || 0);
+
 // 단어장 옆에 보여줄 유의어·반의어. 나머지 추가 컬럼은 rest로
 export function synAnt(extras) {
   const pick = re => (extras || []).filter(([k]) => re.test(k)).map(([, v]) => v).join(', ');
