@@ -1040,7 +1040,8 @@ function openCoachChat() {
   $('#cc-sub').textContent = `${aiCoachName()} · 이 기기에만 저장`;
   const dayLabel = t => { const x = dateStr(t); return x === today ? '오늘' : x === addDays(today, -1) ? '어제' : fmtDay(x); };
   // AI에게 넘길 앞선 이야기 (실패 안내와 '기억해 둘게요' 줄은 뺌)
-  const forAi = () => chat.items.filter(m => !m.err && m.who !== 'note').map(m => ({ who: m.who, text: m.text, day: fmtDay(dateStr(m.t)) }));
+  // t는 AI에 보내지 않고, 다음 번에도 같은 이야기부터 넘기려고(캐시) 씀
+  const forAi = () => chat.items.filter(m => !m.err && m.who !== 'note').map(m => ({ who: m.who, text: m.text, day: fmtDay(dateStr(m.t)), t: m.t }));
   const cardBox = (c, liveCard) => {
     const box = el('div', 'chat-plan');
     box.appendChild(el('div', 'cp-title', c.title));
@@ -2694,12 +2695,25 @@ function next() {
 }
 
 // 학습을 끝내면 AI 코치가 결과를 보고 한마디 (틀린 단어가 있으면 하나 골라 외우는 요령). AI가 꺼져 있으면 안 보임
+// 다 맞혔으면 짚어 줄 단어가 없어서 AI를 부르지 않고 캐릭터 말투의 칭찬을 앱이 씀 (토큰 아끼기)
+const ALL_RIGHT = {
+  cat: '하나도 안 틀렸네요. …뭐, 이 정도는 해야죠. 잘했어요.',
+  hamster: '전부 맞혔어요! 오늘 씨앗 주머니가 꽉 찼어요!',
+  owl: '모두 맞혔군요. 이렇게 떠오르는 단어는 복습 때도 잘 남아요.',
+  slime: '다 맞혔어요~ 말랑말랑 기분 좋아요. 이대로 천천히 가요.',
+};
 let resultSeq = 0;
 function resultComment(s, wrong) {
   const box = $('#res-say');
   box.hidden = true;
+  box.classList.remove('wait');
   const seq = ++resultSeq;
   if (!settings.coach || !aiCoachOnline() || s.mode === 'syn') return;
+  if (!wrong.length) {
+    box.textContent = ALL_RIGHT[coachChar()] || ALL_RIGHT.cat;
+    box.hidden = false;
+    return;
+  }
   const lines = [`방금 한 학습: ${s.label}, ${s.total}단어`];
   if (wrong.length) {
     lines.push(`틀렸거나 힌트를 본 단어 ${wrong.length}개:`);

@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, chatTranscript, coachModels, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, chatTranscript, chatFrom, coachModels, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -184,6 +184,9 @@ test('왜 틀렸어?: 글자로 받고 마크다운 기호는 뺌, 실패면 nul
 });
 
 const claudeText = t => () => json({ stop_reason: 'end_turn', content: [{ type: 'text', text: t }] });
+// Claude 요청의 지시문·사용자 글 (조각으로 보내도 이어 붙여서)
+const sysText = b => (Array.isArray(b.system) ? b.system.map(x => x.text).join('') : b.system);
+const userText = b => { const c = b.messages[0].content; return Array.isArray(c) ? c.map(x => x.text).join('') : c; };
 
 test('코치 말: 사실에 없는 숫자를 지어내면 버림', async () => {
   assert.equal(numbersOk('11월 20일까지 하루 25개예요', '11월 20일, 하루 25개'), true);
@@ -194,8 +197,8 @@ test('코치 말: 사실에 없는 숫자를 지어내면 버림', async () => {
   reply = claudeText('{"mood":"cheer","text":"시험까지 14일! 새 단어 19개부터 해요."}');
   assert.deepEqual(await aiCoachSay({ char: 'owl', facts }), { mood: 'cheer', text: '시험까지 14일! 새 단어 19개부터 해요.' });
   const body = JSON.parse(calls[0].opts.body);
-  assert.match(body.system, /부엉이/);
-  assert.match(body.messages[0].content, /새 단어 19개/);
+  assert.match(sysText(body), /부엉이/);
+  assert.match(userText(body), /새 단어 19개/);
   reply = claudeText('{"mood":"cheer","text":"오늘은 새 단어 20개예요."}');
   assert.equal(await aiCoachSay({ char: 'owl', facts }), null);
   reply = claudeText('{"mood":"angry","text":"좋아요."}');
@@ -222,11 +225,11 @@ test('코치와 이야기: AI는 한 번만 부르고, 학생이 원하는 값(�
   assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '토요일을 쉬고 40개씩으로 계산해 볼게요.', plan: { perDay: 40, rest: [6] }, remember: '' });
   assert.equal(calls.length, 1);
   const body = JSON.parse(calls[0].opts.body);
-  assert.match(body.system, /슬라임/);
-  assert.match(body.system, /자기 생각이 있는 코치/);
-  assert.match(body.messages[0].content, /<message>토요일날 빼고 40개씩 하면 복습 며칠<\/message>/);
-  assert.match(body.messages[0].content, /fatal/);
-  assert.match(body.messages[0].content, /- 수요일은 학원/);
+  assert.match(sysText(body), /슬라임/);
+  assert.match(sysText(body), /자기 생각이 있는 코치/);
+  assert.match(userText(body), /<message>토요일날 빼고 40개씩 하면 복습 며칠<\/message>/);
+  assert.match(userText(body), /fatal/);
+  assert.match(userText(body), /- 수요일은 학원/);
   // 일정 얘기가 아니면 값 없음. 요일 글자, 쉬는 요일 없애기, 개수와 복습 날 수를 같이 주면 개수만
   reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"perDay":0,"rest":"","today":-1,"remember":""}');
   assert.equal((await aiCoachChat(args)).plan, null);
@@ -417,4 +420,81 @@ test('Claude: 채점·말풍선은 Haiku, 코치와 이야기하기는 Sonnet (�
   reply = (url, opts) => (JSON.parse(opts.body).model === 'claude-sonnet-5-5' ? json({ error: {} }, 529) : claudeText('{"mood":"normal","text":"대신 답해요.","review":0,"perDay":0,"rest":"","today":-1,"remember":""}')());
   assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '대신 답해요.');
   assert.deepEqual(calls.map(c => JSON.parse(c.opts.body).model), ['claude-sonnet-5-5', 'claude-haiku-5-5']);
+});
+
+test('토큰 아끼기: 같은 단어에 같은 답이면 채점·왜 틀렸어?를 다시 부르지 않음 (실패는 기억 안 함)', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'sk-ant-x', provider: 'claude' }));
+  reply = () => json({}, 529);
+  assert.equal(await aiGradeMeaning(Q), null);
+  reply = claudeText('{"score":2,"missing":0,"note":"같은 뜻이에요"}');
+  assert.equal((await aiGradeMeaning(Q)).score, 2);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(await aiGradeMeaning({ ...Q, user: '  죽음을   부르는 ' }), { score: 2, missing: 0, note: '같은 뜻이에요' });
+  assert.equal(calls.length, 2); // 띄어쓰기만 다른 같은 답
+  await aiGradeMeaning({ ...Q, strict: 'hard' }); // 기준이 다르면 다시 물음
+  await aiGradeMeaning({ ...Q, user: '치명적' }); // 답이 다르면 다시 물음
+  assert.equal(calls.length, 4);
+  // 오프라인이면 기억해 둔 것도 안 씀(규칙 채점 그대로, 예전과 같음)
+  online = false;
+  assert.equal(await aiGradeMeaning(Q), null);
+  online = true;
+  reply = claudeText('치명적인은 목숨과 관련돼요.');
+  const ex = { word: 'fatal', meaning: '치명적인', user: '명확한', how: 'choice' };
+  assert.equal(await aiExplainWrong(ex), '치명적인은 목숨과 관련돼요.');
+  assert.equal(await aiExplainWrong(ex), '치명적인은 목숨과 관련돼요.');
+  assert.equal(calls.length, 5);
+});
+
+test('토큰 아끼기: Claude는 지시문과 앞선 이야기를 캐시로, 대화 답 한도는 넉넉히', async t => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'sk-ant-x', provider: 'claude' }));
+  const realNow = Date.now;
+  Date.now = () => realNow() + 7200000;
+  t.after(() => { Date.now = realNow; });
+  reply = claudeText('{"score":1,"missing":1,"note":""}');
+  await aiGradeMeaning(Q);
+  let body = JSON.parse(calls.at(-1).opts.body);
+  assert.deepEqual(body.system.at(-1).cache_control, { type: 'ephemeral' });
+  assert.equal(typeof body.messages[0].content, 'string');
+  assert.equal(body.max_tokens, 2048);
+  const say = '{"mood":"normal","text":"좋아요.","review":0,"perDay":0,"rest":"","today":-1,"remember":""}';
+  reply = claudeText(say);
+  const history = [{ who: 'me', text: '안녕', day: '11월 13일', t: 1 }, { who: 'coach', text: '반가워요.', day: '11월 13일', t: 2 }];
+  await aiCoachChat({ char: 'cat', facts: '시험까지 9일', history, message: '퀴즈 내 줘', day: '11월 13일' });
+  body = JSON.parse(calls.at(-1).opts.body);
+  assert.equal(body.max_tokens, 8192);
+  const blocks = body.messages[0].content;
+  // 상황 → 이야기 한 줄씩 → 방금 한 말. 방금 한 말 바로 앞 조각까지 캐시
+  assert.deepEqual(blocks.map(b => !!b.cache_control), [false, false, true, false]);
+  assert.match(blocks[0].text, /<facts>\n시험까지 9일/);
+  assert.equal(blocks[1].text, '(11월 13일)\n학생: 안녕\n');
+  assert.match(blocks.at(-1).text, /<message>퀴즈 내 줘<\/message>$/);
+  // 조각을 이어 붙이면 다른 회사에 보내는 한 덩어리 글과 같음
+  assert.equal(userText(body), `<facts>\n시험까지 9일\n</facts>\n<weak>\n(아직 틀린 단어 기록이 없음)\n</weak>\n<memory>\n(아직 없음)\n</memory>\n앞선 이야기:\n${chatTranscript(history)}\n(11월 13일, 지금)\n학생이 방금 한 말:\n<message>퀴즈 내 줘</message>`);
+  // 다음 번: 지난번에 보낸 조각이 그대로 앞에 있음 (캐시에서 읽힘)
+  const next = [...history, { who: 'me', text: '퀴즈 내 줘', day: '11월 13일', t: 3 }, { who: 'coach', text: 'fatal의 뜻은?', day: '11월 13일', t: 4 }];
+  await aiCoachChat({ char: 'cat', facts: '시험까지 9일', history: next, message: '치명적인', day: '11월 13일' });
+  const again = JSON.parse(calls.at(-1).opts.body).messages[0].content;
+  assert.deepEqual(again.slice(0, 3).map(b => b.text), blocks.slice(0, 3).map(b => b.text));
+  assert.deepEqual(again.map(b => !!b.cache_control), [false, false, false, false, true, false]);
+});
+
+test('토큰 아끼기: 앞선 이야기는 매번 한 줄씩 밀지 않고, 넘칠 때만 한 번에 줄임 (줄여도 예전 양 이상)', () => {
+  const h = Array.from({ length: 100 }, (_, i) => ({ who: i % 2 ? 'coach' : 'me', text: 'x'.repeat(100) }));
+  const win = { max: 60, chars: 10500, lo: { max: 40, chars: 7000 } };
+  // 처음엔 한도까지
+  assert.equal(chatFrom(h.slice(0, 80), win), 20);
+  // 지난번 시작이 아직 한도 안이면 그대로
+  assert.equal(chatFrom(h.slice(0, 80), { ...win, prev: 30 }), 30);
+  assert.equal(chatFrom(h.slice(0, 90), { ...win, prev: 30 }), 30);
+  // 넘치면 lo(40개)까지 줄임 → 다음 몇 번은 다시 그대로
+  assert.equal(chatFrom(h.slice(0, 91), { ...win, prev: 30 }), 51);
+  assert.equal(chatFrom(h.slice(0, 95), { ...win, prev: 51 }), 51);
+  // 글자 수로도: 긴 말이 들어와 10500자를 넘으면 7000자 안쪽으로
+  const long = [...h.slice(0, 60), { who: 'coach', text: 'y'.repeat(6000) }];
+  assert.equal(chatFrom(long, { ...win, prev: 30 }), 30); // 9000자: 아직 그대로
+  const f = chatFrom(long, { ...win, prev: 10 }); // 11000자: 넘침
+  assert.ok(long.slice(f).reduce((n, x) => n + x.text.length, 0) <= 7000);
+  assert.ok(long.slice(f).reduce((n, x) => n + x.text.length, 0) > 6800);
+  // 예전 함수(chatTranscript)는 그대로
+  assert.equal(chatTranscript(h, { max: 40 }).split('\n').length, 40);
 });
