@@ -289,6 +289,11 @@ test('AQ.로 시작하는 Google 키: Gemini API가 안 받으면 Vertex AI로 �
   assert.equal((await aiCoachSay({ char: 'cat', facts: '' })).text, '좋아요.');
   assert.match(calls.at(-1).url, /aiplatform\.googleapis\.com.*gemini-2\.5-flash:generateContent$/);
   assert.equal(calls.at(-1).opts.headers['x-goog-api-key'], 'AQ.vertex');
+  // 채점용 칸이면 flash-lite부터
+  calls = [];
+  reply = (url) => (url.includes('generativelanguage') ? tokErr() : /flash-lite(-preview)?:/.test(url) && url.includes('gemini-3') ? json({ error: { code: 404 } }, 404) : json({ candidates: [] }));
+  await aiConnect('AQ.vertex');
+  assert.match(calls.at(-1).url, /gemini-2\.5-flash-lite:generateContent$/);
   // 둘 다 안 받으면 tokentype
   reply = () => tokErr();
   await assert.rejects(aiConnect('AQ.bad', 'coach'), e => e.reason === 'tokentype');

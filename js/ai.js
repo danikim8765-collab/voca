@@ -52,7 +52,11 @@ const claudeHeaders = key => ({
 const geminiHeaders = key => ({ 'content-type': 'application/json', 'x-goog-api-key': key });
 // Vertex AI(Google Cloud) express 모드: 같은 Gemini 모델을 다른 주소로. 요청·응답 모양은 Gemini API와 같음
 const VERTEX_API = 'https://aiplatform.googleapis.com/v1/publishers/google/models';
-const VERTEX_MODELS = ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+// 코치용은 flash부터(말이 자연스럽게), 채점용은 flash-lite부터(빠르고 한도가 넉넉하게)
+const VERTEX_MODELS = {
+  coach: ['gemini-3-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+  main: ['gemini-3-flash-lite', 'gemini-3-flash-lite-preview', 'gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash-lite', 'gemini-2.0-flash'],
+};
 const bearer = key => ({ 'content-type': 'application/json', authorization: `Bearer ${key}` });
 
 const fail = status => Object.assign(new Error(String(status)), { status });
@@ -127,7 +131,7 @@ async function connectGemini(key, slot) {
 // Vertex AI express: 모델 정보 조회가 없어서 아주 짧게 한 번 불러 봄(토큰 몇 개). 없는 모델(404)이면 다음 모델로
 async function connectVertex(key, slot) {
   let last = null;
-  for (const model of VERTEX_MODELS) {
+  for (const model of VERTEX_MODELS[slot] || VERTEX_MODELS.main) {
     const res = await fetch(`${VERTEX_API}/${model}:generateContent`, {
       method: 'POST', headers: geminiHeaders(key), cache: 'no-store',
       body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { maxOutputTokens: 16 } }),
