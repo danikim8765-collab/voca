@@ -51,6 +51,9 @@ const geminiHeaders = key => ({ 'content-type': 'application/json', 'x-goog-api-
 const bearer = key => ({ 'content-type': 'application/json', authorization: `Bearer ${key}` });
 
 const fail = status => Object.assign(new Error(String(status)), { status });
+// 마지막으로 AI를 못 부른 까닭 (코치가 사용자에게 알려 주려고): '429' 같은 상태 코드, 'timeout', 'network', 'offline', 'cut'(답이 잘림), 'bad'(이상한 답), 'limit'(코치 하루 한도)
+let lastErr = '';
+export const aiCoachError = () => lastErr;
 
 // 키가 맞는지 확인 (모델 정보 조회라 비용 없음). 맞으면 저장. 틀린 키는 status 401로 던짐
 export async function aiConnect(key, slot = 'main') {
@@ -147,9 +150,9 @@ async function askClaude(c, r, signal) {
       messages: [{ role: 'user', content: r.user }],
     }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) { lastErr = String(res.status); return null; }
   const msg = await res.json();
-  if (msg.stop_reason !== 'end_turn') return null; // refusal·max_tokens 등
+  if (msg.stop_reason !== 'end_turn') { lastErr = 'cut'; return null; } // refusal·max_tokens 등
   return (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
@@ -164,10 +167,10 @@ async function askGemini(c, r, signal) {
         : { maxOutputTokens: 2048 },
     }),
   });
-  if (!res.ok) return null; // 429(무료 한도 초과) 등
+  if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
   const data = await res.json();
   const cand = (data.candidates || [])[0];
-  if (!cand || cand.finishReason !== 'STOP') return null;
+  if (!cand || cand.finishReason !== 'STOP') { lastErr = 'cut'; return null; }
   return ((cand.content && cand.content.parts) || []).filter(p => !p.thought && p.text).map(p => p.text).join('');
 }
 
@@ -181,22 +184,24 @@ async function askOpenAILike(c, r, signal) {
   if (r.json && json) body.response_format = { type: 'json_object' };
   if (/gpt-oss/.test(c.model)) body.reasoning_effort = 'low'; // 생각을 짧게 → 빠르게
   const res = await fetch(`${api}/chat/completions`, { method: 'POST', headers: bearer(c.key), cache: 'no-store', signal, body: JSON.stringify(body) });
-  if (!res.ok) return null; // 429(무료 한도 초과) 등
+  if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
   const data = await res.json();
   const ch = (data.choices || [])[0];
-  if (!ch || ch.finish_reason !== 'stop') return null;
+  if (!ch || ch.finish_reason !== 'stop') { lastErr = 'cut'; return null; }
   return (ch.message && ch.message.content) || '';
 }
 
 // 스위치·키·인터넷을 확인하고, 시간 제한을 걸어 부름. 실패면 null
 async function ask(r, c = conf()) {
-  if (!aiSwitch() || !c.key || navigator.onLine === false) return null;
+  lastErr = '';
+  if (!aiSwitch() || !c.key || navigator.onLine === false) { lastErr = 'offline'; return null; }
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), r.timeout || TIMEOUT_MS);
   try {
     const fn = c.provider === 'gemini' ? askGemini : OPENAI_LIKE[c.provider] ? askOpenAILike : askClaude;
     return await fn(c, r, ctrl.signal);
   } catch {
+    lastErr = ctrl.signal.aborted ? 'timeout' : 'network';
     return null; // 인터넷 끊김, 시간 초과
   } finally {
     clearTimeout(timer);
@@ -337,17 +342,24 @@ export function numbersOk(text, facts) {
 }
 const clean = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
 
-async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA } = {}) {
-  if (!aiCoachOnline() || !takeCoachTurn()) return null;
-  const text = await ask({ system: coachSystem(char), json: true, schema, gschema, user }, coachConf());
+// keep: 숫자를 지어낸 말이라도 나머지(선택지 번호 등)는 쓰고 text만 비움
+async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA, keep = false } = {}) {
+  if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
+  if (!takeCoachTurn()) { lastErr = 'limit'; return null; }
+  const text = await ask({ system: coachSystem(char), json: true, schema, gschema, user, timeout: 20000 }, coachConf());
   if (!text) return null;
   try {
     const out = pickJSON(text);
     out.text = clean(out.text);
-    if (!out.text || out.text.length > 400 || !numbersOk(out.text, facts)) return null;
     if (!MOODS.includes(out.mood)) out.mood = 'normal';
+    if (!out.text || out.text.length > 400 || !numbersOk(out.text, facts)) {
+      lastErr = out.text && !numbersOk(out.text, facts) ? 'numbers' : 'bad';
+      if (!keep) return null;
+      out.text = '';
+    }
     return out;
   } catch {
+    lastErr = 'bad';
     return null;
   }
 }
@@ -370,22 +382,23 @@ export function aiCoachResult({ char, facts }) {
 
 const PICK_SCHEMA = {
   type: 'object',
-  properties: { pick: { type: 'integer', description: '고른 선택지 번호, 맞는 게 없으면 0' }, mood: { type: 'string', enum: MOODS }, text: { type: 'string' } },
-  required: ['pick', 'mood', 'text'],
+  properties: { review: { type: 'integer', description: '고른 전체 복습 날 수 (표에 있는 값)' }, mood: { type: 'string', enum: MOODS }, text: { type: 'string' } },
+  required: ['review', 'mood', 'text'],
   additionalProperties: false,
 };
-const PICK_GSCHEMA = { type: 'OBJECT', properties: { pick: { type: 'INTEGER' }, mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' } }, required: ['pick', 'mood', 'text'] };
+const PICK_GSCHEMA = { type: 'OBJECT', properties: { review: { type: 'INTEGER' }, mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' } }, required: ['review', 'mood', 'text'] };
 
 /**
- * 일정 상의하기: 학생이 한 말을 듣고 앱이 계산한 선택지 가운데 하나를 골라 줌 (코치가 새 일정을 만들지는 않음)
- * options: 선택지 설명 글자 목록(1번부터), message: 학생이 쓴 말
- * 반환 { pick: 1..n 또는 0(맞는 게 없음), mood, text } 또는 null
+ * 일정 상의하기: 학생이 한 말을 듣고, 앱이 계산해 둔 표(복습 날 수마다 하루 새 단어·복습 개수)에서 알맞은 복습 날 수를 고름
+ * (코치가 새 일정을 계산하지는 않음). options: 화면의 선택지 설명, table: 복습 날 수 r마다 설명 글자 { r, line }, now: 지금 일정의 r
+ * 반환 { review: 표에 있는 r 또는 0(못 고름), mood, text(숫자를 지어냈으면 '') } 또는 null
  */
-export async function aiCoachPick({ char, facts, options, message }) {
-  const list = options.map((o, i) => `${i + 1}. ${o}`).join('\n');
-  const all = `${facts}\n${list}`;
-  const out = await coachAsk(char, `<facts>\n${facts}\n선택지:\n${list}\n</facts>\n학생이 일정에 대해 한 말:\n<message>${message}</message>\n\n학생 말에 가장 맞는 선택지 번호를 pick에 넣어요. 바꿀 수 있는 건 '시험 전 전체 복습을 며칠 할지'뿐이에요. 학생이 그 밖의 걸(예: 쉬는 요일, 범위) 원하면 pick은 지금 일정 번호로 두고, 이 창에선 복습 날 수만 정할 수 있다고 솔직히 말해요. 질문이면 선택지를 비교해서 답해요. text는 고른 이유를 1~3문장(110자 안팎)으로.`, all, { schema: PICK_SCHEMA, gschema: PICK_GSCHEMA });
+export async function aiCoachPick({ char, facts, options, table, now, message }) {
+  const opt = options.map(o => `- ${o}`).join('\n');
+  const tab = table.map(t => t.line).join('\n');
+  const all = `${facts}\n${opt}\n${tab}\n${message}`; // 학생이 말한 숫자는 다시 말해도 됨
+  const out = await coachAsk(char, `<facts>\n${facts}\n화면의 선택지:\n${opt}\n복습 날 수마다 계산한 일정표 (앱이 계산, 이 표의 숫자만 써요):\n${tab}\n</facts>\n학생이 일정에 대해 한 말:\n<message>${message}</message>\n\n학생 말에 가장 맞는 '시험 전 전체 복습 날 수'를 표에서 골라 review에 넣어요 (화면의 선택지가 아니어도 표에 있으면 돼요). 예: "하루 30개씩"이면 하루 새 단어가 30개에 가장 가까운 줄. 바꿀 수 있는 건 전체 복습 날 수뿐이라, 쉬는 요일·범위처럼 다른 걸 원하면 가장 가까운 걸 고르고 그건 아직 이 창에서 못 바꾼다고 솔직히 말해요. 고를 게 없으면 review는 ${now}(지금 일정). 질문이면 표를 보고 답해요. text는 1~3문장(110자 안팎).`, all, { schema: PICK_SCHEMA, gschema: PICK_GSCHEMA, keep: true });
   if (!out) return null;
-  const pick = Number.isInteger(out.pick) && out.pick >= 1 && out.pick <= options.length ? out.pick : 0;
-  return { pick, mood: out.mood, text: out.text };
+  const review = table.some(t => t.r === out.review) ? out.review : 0;
+  return { review, mood: out.mood, text: out.text };
 }

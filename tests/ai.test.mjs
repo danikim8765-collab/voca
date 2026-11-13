@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachPick, numbersOk, aiCoachOnline, aiCoachName, aiName } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachPick, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -192,14 +192,24 @@ test('코치 말: 스위치를 끄거나 하루 한도를 넘으면 안 부름',
   assert.equal(calls.length, 30);
 });
 
-test('일정 상의하기: 선택지 번호만 받고, 범위를 벗어나면 0', async () => {
+test('일정 상의하기: 앱이 계산한 표에서 복습 날 수를 고름, 학생이 말한 숫자는 써도 됨', async () => {
   store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
-  const options = ['코치 추천: 시험 전 전체 복습 3일', '복습 길게: 시험 전 전체 복습 6일'];
-  reply = claudeText('{"pick":2,"mood":"cheer","text":"복습을 6일 가져가요."}');
-  assert.deepEqual(await aiCoachPick({ char: 'cat', facts: '시험까지 14일', options, message: '복습 오래 하고 싶어' }), { pick: 2, mood: 'cheer', text: '복습을 6일 가져가요.' });
-  assert.match(JSON.parse(calls[0].opts.body).messages[0].content, /<message>복습 오래 하고 싶어<\/message>/);
-  reply = claudeText('{"pick":7,"mood":"normal","text":"음."}');
-  assert.equal((await aiCoachPick({ char: 'cat', facts: '', options, message: '?' })).pick, 0);
+  const table = [6, 10, 12].map(r => ({ r, line: `전체 복습 ${r}일: 하루 ${{ 6: 24, 10: 31, 12: 37 }[r]}개` }));
+  const args = { char: 'slime', facts: '시험까지 23일', options: ['코치 추천: 전체 복습 6일'], table, now: 6, message: '토요일날 빼고 30개씩 하면 복습 몇번' };
+  // 학생이 말한 30, 표에 있는 10·31은 말해도 됨
+  reply = claudeText('{"review":10,"mood":"normal","text":"30개쯤이면 하루 31개로 전체 복습 10일이에요. 쉬는 요일은 아직 못 정해요."}');
+  assert.deepEqual(await aiCoachPick(args), { review: 10, mood: 'normal', text: '30개쯤이면 하루 31개로 전체 복습 10일이에요. 쉬는 요일은 아직 못 정해요.' });
+  assert.match(JSON.parse(calls.at(-1).opts.body).messages[0].content, /<message>토요일날 빼고 30개씩 하면 복습 몇번<\/message>/);
+  // 표에 없는 숫자를 지어내도 고른 날 수는 씀 (말은 앱 설명으로)
+  reply = claudeText('{"review":12,"mood":"cheer","text":"복습을 4번 돌 수 있어요."}');
+  assert.deepEqual(await aiCoachPick(args), { review: 12, mood: 'cheer', text: '' });
+  // 표에 없는 날 수는 0
+  reply = claudeText('{"review":7,"mood":"normal","text":"음."}');
+  assert.equal((await aiCoachPick(args)).review, 0);
+  // 실패 까닭
+  reply = () => json({}, 429);
+  assert.equal(await aiCoachPick(args), null);
+  assert.equal(aiCoachError(), '429');
 });
 
 test('코치용 키를 따로 넣으면 코치는 그 AI, 채점은 원래 AI', async () => {

@@ -5,7 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, coachPlan,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachPick, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachPick, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
 
@@ -777,13 +777,23 @@ function optionSay({ r, p, rec }, a) {
   if (r > a) return ['cheer', `${plan} 시험 전에 천천히 여러 날 훑을 수 있어요.`];
   return ['normal', `${plan} 새 단어는 여유 있지만 복습 날이 바빠요.`];
 }
+// AI를 못 부른 까닭을 코치 말로
+function coachErrorText() {
+  const e = aiCoachError();
+  return e === '429' ? 'AI가 지금 바쁘거나 오늘 무료 한도를 다 썼어요. 조금 뒤에 다시 물어봐 주세요. 아래에서 직접 골라도 돼요.'
+    : e === 'timeout' ? 'AI 답이 너무 늦어요. 다시 보내 보거나 아래에서 직접 골라 주세요.'
+      : e === 'limit' ? '오늘은 코치가 AI를 부를 수 있는 횟수를 다 썼어요. 내일 다시 물어봐 주세요. 아래에서 직접 골라도 돼요.'
+        : e === 'offline' || e === 'network' ? '인터넷이 안 돼서 AI와 이야기할 수 없어요. 아래에서 직접 골라 주세요.'
+          : e === '401' || e === '403' ? 'AI 키가 맞지 않아요. 설정 > AI에서 다시 연결해 주세요.'
+            : '제가 말을 잘 못 알아들었어요. 조금 다르게 말해 보거나 아래에서 직접 골라 주세요.';
+}
 function talkCoach() {
   if (!coachActive() || !leftNew()) return;
   const opts = coachOptions();
   if (opts.length < 2) { toast('시험이 너무 가까워서 일정을 바꿀 수 없어요'); return; }
   const d = $('#coach-talk'), box = $('#ct-opts'), a = opts.find(o => o.rec).r;
   let cur = opts.find(o => o.r === (settings.coachReview || a)) || opts.find(o => o.rec);
-  const now = cur;
+  const now = cur, maxReview = coachPlanFor(0).days - 1;
   let aiSay = null; // AI가 학생 말에 답한 것 (선택지를 직접 누르면 지움)
   const draw = () => {
     const [mood, say] = aiSay || optionSay(cur, a);
@@ -815,17 +825,34 @@ function talkCoach() {
     send.disabled = true;
     aiSay = ['normal', '음, 생각해 볼게요…'];
     draw();
-    const desc = o => {
-      const end = addDays(o.p.goal, -1);
-      return `${o.name}: 시험 전 전체 복습 ${o.r}일, 새 단어는 ${end === dateStr() ? '오늘' : fmtDay(end)}까지 하루 ${o.p.perDay}개, 전체 복습은 ${fmtDay(o.p.goal)}부터 하루 ${o.p.finalPerDay}개쯤`
-        + (o === now ? ' (지금 일정)' : '') + (o.rec ? ' (코치 추천)' : '');
+    const line = (r, p) => {
+      const end = addDays(p.goal, -1);
+      return `전체 복습 ${r}일: 새 단어는 ${end === dateStr() ? '오늘' : fmtDay(end)}까지 하루 ${p.perDay}개, 전체 복습은 ${fmtDay(p.goal)}부터 하루 ${p.finalPerDay}개쯤`;
     };
-    const r = await aiCoachPick({ char: coachChar(), facts: coachFacts(), options: opts.map(desc), message: msg });
+    // 복습 날 수마다 앱이 계산한 표 (하루 새 단어가 너무 많은 건 뺌). AI는 여기서만 고름
+    const table = [];
+    for (let r = 1; r <= maxReview && table.length < 60; r++) {
+      const p = coachPlanFor(r);
+      if (p.perDay <= 150 || r === a) table.push({ r, p, line: line(r, p) + (r === now.r ? ' (지금 일정)' : '') + (r === a ? ' (코치 추천)' : '') });
+    }
+    const res = await aiCoachPick({ char: coachChar(), facts: coachFacts(), options: opts.map(o => `${o.name}: 전체 복습 ${o.r}일`), table, now: now.r, message: msg });
     asking = false;
     send.disabled = false;
     if (d.hidden) return;
-    if (r) { if (r.pick) cur = opts[r.pick - 1]; aiSay = [r.mood, r.text]; inp.value = ''; }
-    else aiSay = ['worry', '지금은 AI와 이야기가 안 돼요. 아래에서 직접 골라 주세요.'];
+    if (res && res.review) {
+      let o = opts.find(x => x.r === res.review);
+      if (!o) { // 선택지에 없는 날 수면 '말한 대로'로 하나 더 보여 줌
+        for (let i = opts.length - 1; i >= 0; i--) if (opts[i].said) opts.splice(i, 1);
+        const t = table.find(x => x.r === res.review);
+        o = { r: res.review, name: '말한 대로', p: t.p, rec: false, said: true };
+        opts.push(o);
+        opts.sort((x, y) => x.r - y.r);
+      }
+      cur = o;
+      aiSay = res.text ? [res.mood, res.text] : null; // 숫자를 지어낸 말이면 앱이 계산한 설명으로
+      inp.value = '';
+    } else if (res && res.text) aiSay = [res.mood, res.text];
+    else aiSay = ['worry', coachErrorText()];
     draw();
   };
   send.onclick = talk;
