@@ -738,51 +738,81 @@ function coachSay() {
   return { mood: 'normal', text: `${moved}시험까지 ${D}일. ${by}까지 새 단어를 끝내고 ${tail}. 오늘은 ${todo || '할 게 없어요'}${todo ? '예요' : ''}.`, acts: last === today ? [] : [talk] };
 }
 
-// 일정 상의하기: 시험 전 전체 복습을 며칠 할지 −/+로 고르면, 코치가 그러면 하루 몇 개인지 말해 줌. 정하면 이 날 수를 계속 따름
-// (목표일 = 시험일 − 복습 날 수, 하루 새 단어 수는 거기에 맞춰 매일 다시 계산). '코치 추천대로'면 다시 코치가 정함
+// 일정 상의하기: 코치가 시험 전 전체 복습 날 수를 몇 가지 골라 주고(여유 있게 · 추천 · 길게 · 아주 길게), 고르면 그 날 수를 계속 따름
+// (목표일 = 시험일 − 복습 날 수, 하루 새 단어 수는 거기에 맞춰 매일 다시 계산). 추천을 고르면 다시 코치가 정함
+function coachOptions() {
+  const auto = coachPlanFor(0);
+  if (!auto || auto.days < 2) return [];
+  const a = auto.auto, max = auto.days - 1; // 새 단어를 볼 날은 적어도 하루
+  const opts = [];
+  const add = (r, name) => {
+    r = Math.max(1, Math.min(max, r));
+    if (opts.some(o => o.r === r)) return;
+    const p = coachPlanFor(r);
+    if (r !== a && p.perDay > 80) return; // 너무 벅찬 건 권하지 않음
+    opts.push({ r, name, p, rec: r === a });
+  };
+  add(a, '코치 추천');
+  add(Math.ceil(a / 2), '새 단어 여유 있게');
+  add(Math.max(a + 2, a * 2), '복습 길게');
+  add(Math.max(a + 4, a * 3), '복습 아주 길게');
+  if (settings.coachReview) add(settings.coachReview, '지금 일정');
+  return opts.sort((x, y) => x.r - y.r);
+}
+// 고른 선택지에 대한 코치의 말
+function optionSay({ r, p, rec }, a) {
+  const end = addDays(p.goal, -1), by = end === dateStr() ? '오늘' : fmtDay(end);
+  const plan = `${by}까지 새 단어를 하루 ${p.perDay}개씩 보고, 마지막 ${r === 1 ? '하루' : `${r}일`}는 하루 ${p.finalPerDay}개쯤 전체 복습해요.`.replace('일는', '일은');
+  if (rec) return ['happy', `${plan} 배우는 날과 복습하는 날의 부담이 비슷해서 제일 무난해요.`];
+  if (p.perDay > 40) return ['worry', `${plan} 새 단어가 하루 ${p.perDay}개라 조금 빡빡해요. 할 수 있으면 좋아요!`];
+  if (r > a) return ['cheer', `${plan} 시험 전에 천천히 여러 날 훑을 수 있어요.`];
+  return ['normal', `${plan} 새 단어는 여유 있지만 복습 날이 바빠요.`];
+}
 function talkCoach() {
   if (!coachActive() || !leftNew()) return;
-  const d = $('#coach-talk'), auto = coachPlanFor(0);
-  if (!auto || auto.days < 2) { toast('시험이 너무 가까워서 바꿀 수 없어요'); return; }
-  const max = auto.days - 1; // 새 단어를 볼 날은 적어도 하루
-  let r = Math.min(max, settings.coachReview || auto.auto);
+  const opts = coachOptions();
+  if (opts.length < 2) { toast('시험이 너무 가까워서 일정을 바꿀 수 없어요'); return; }
+  const d = $('#coach-talk'), box = $('#ct-opts'), a = opts.find(o => o.rec).r;
+  let cur = opts.find(o => o.r === (settings.coachReview || a)) || opts.find(o => o.rec);
   const draw = () => {
-    const p = coachPlanFor(r), mine = r === auto.auto;
-    const end = addDays(p.goal, -1), endTxt = end === dateStr() ? '오늘' : fmtDay(end);
-    let mood, say;
-    if (p.perDay > 80) { mood = 'worry'; say = `하루 새 단어 ${p.perDay}개는 너무 많아요. 복습 날을 줄이거나 학습 범위를 줄이는 게 좋겠어요.`; }
-    else if (p.perDay > 40) { mood = 'worry'; say = `하루 새 단어 ${p.perDay}개라 조금 빡빡해요. 할 수 있으면 좋아요!`; }
-    else if (mine) { mood = 'happy'; say = `제가 추천하는 일정이에요. 배우는 날과 복습하는 날의 하루 부담이 비슷해요.`; }
-    else if (r > auto.auto) { mood = 'cheer'; say = `복습을 길게 가져가요! 대신 새 단어를 하루 ${p.perDay}개씩 조금 서둘러 봐야 해요.`; }
-    else { mood = 'normal'; say = `새 단어는 여유 있게 보지만, 전체 복습은 하루 ${p.finalPerDay}개쯤으로 늘어요.`; }
+    const [mood, say] = optionSay(cur, a);
     $('#ct-char').innerHTML = coachSvg(mood);
     $('#ct-text').textContent = say;
-    $('#ct-val').textContent = `${r}일`;
-    $('#ct-sum').textContent = `새 단어: ${endTxt}까지 하루 ${p.perDay}개\n전체 복습: ${fmtDay(p.goal)}부터 ${p.reviewDays}일, 하루 ${p.finalPerDay}개쯤`;
-    $('#ct-minus').disabled = r <= 1;
-    $('#ct-plus').disabled = r >= max;
-    $('#ct-auto').textContent = mine ? '코치 추천이에요' : `코치 추천으로 (${auto.auto}일)`;
-    $('#ct-auto').disabled = mine;
+    box.innerHTML = '';
+    for (const o of opts) {
+      const b = el('button', 'preset' + (o === cur ? ' on' : ''));
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', o === cur);
+      const main = el('span', 'p-main');
+      main.append(el('span', 'p-name', o.name), el('span', 'p-days', `복습 ${o.r}일 · 새 단어 하루 ${o.p.perDay}개`));
+      b.appendChild(main);
+      b.appendChild(el('i', 'p-radio'));
+      b.addEventListener('click', () => { cur = o; draw(); });
+      box.appendChild(b);
+    }
   };
   draw();
   d.hidden = false;
-  const step = n => { r = Math.max(1, Math.min(max, r + n)); draw(); };
   return new Promise(resolve => {
     const key = e => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
       else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(true); }
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown' || e.key === '-') { e.preventDefault(); step(-1); }
-      else if (e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === '+') { e.preventDefault(); step(1); }
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const i = opts.indexOf(cur) + (e.key === 'ArrowDown' ? 1 : -1);
+        if (opts[i]) { cur = opts[i]; draw(); }
+      }
     };
     const close = () => { d.hidden = true; d.onclick = null; document.removeEventListener('keydown', key, true); };
     const done = ok => {
       close();
       modalDone(() => {
         if (ok) {
-          settings.coachReview = r === auto.auto ? 0 : r; // 추천과 같으면 코치에게 맡김 (범위·진도가 바뀌면 추천도 따라 바뀌게)
+          settings.coachReview = cur.rec ? 0 : cur.r; // 추천이면 코치에게 맡김 (범위·진도가 바뀌면 추천도 따라 바뀌게)
           planCoach(true);
           coachMoved = false;
-          toast(`시험 전 ${r}일은 전체 복습으로 할게요`);
+          toast(`시험 전 ${cur.r}일은 전체 복습으로 할게요`);
           renderHome();
           if (current === 'settings') renderSrs();
         }
@@ -790,9 +820,6 @@ function talkCoach() {
       });
     };
     modalOpen(() => { close(); resolve(false); });
-    $('#ct-minus').onclick = () => step(-1);
-    $('#ct-plus').onclick = () => step(1);
-    $('#ct-auto').onclick = () => { r = auto.auto; draw(); };
     $('#ct-ok').onclick = () => done(true);
     $('#ct-cancel').onclick = () => done(false);
     d.onclick = e => { if (e.target === d) done(false); };

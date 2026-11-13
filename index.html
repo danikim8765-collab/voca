@@ -481,18 +481,12 @@
   <div class="dialog" id="coach-talk" role="dialog" aria-modal="true" aria-labelledby="ct-title" hidden>
     <div class="dialog-card talk-card">
       <div class="dlg-title" id="ct-title">코치와 일정 상의하기</div>
+      <div class="dlg-body">시험 전 전체 복습을 며칠 할지 골라요.</div>
       <div class="talk-say">
         <div class="talk-char" id="ct-char"></div>
         <div class="talk-bubble" id="ct-text" role="status"></div>
       </div>
-      <div class="talk-label">시험 전 전체 복습</div>
-      <div class="talk-step">
-        <button class="np-key" id="ct-minus" aria-label="하루 줄이기">−</button>
-        <b id="ct-val" aria-live="polite"></b>
-        <button class="np-key" id="ct-plus" aria-label="하루 늘리기">+</button>
-      </div>
-      <div class="talk-sum" id="ct-sum"></div>
-      <button class="btn ghost small talk-auto" id="ct-auto"></button>
+      <div class="srs-presets talk-opts" id="ct-opts" role="radiogroup" aria-label="시험 전 전체 복습"></div>
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="ct-cancel">취소</button>
         <button class="btn dlg-ok" id="ct-ok">이렇게 할게요</button>

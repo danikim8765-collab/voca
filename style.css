@@ -871,17 +871,14 @@ body[data-tint] {
 #settings .coach-btns .btn { flex: 1; margin: 0; }
 /* 일정 상의하기 창 */
 .talk-card { max-width: 340px; }
-.talk-say { display: flex; align-items: flex-end; gap: 8px; margin: 14px 0 6px; text-align: left; }
+.talk-say { display: flex; align-items: flex-end; gap: 8px; margin: 12px 0 4px; text-align: left; }
 .talk-char { flex: none; width: 56px; height: 56px; }
 .talk-char .buddy-svg { animation: buddy-hop .4s ease-out; }
 .talk-bubble { flex: 1; min-width: 0; background: var(--bg); border-radius: 14px 14px 14px 4px; padding: 9px 12px; font-size: 14px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; min-height: 3em; }
-.talk-label { font-size: 13px; font-weight: 700; color: var(--muted); margin-top: 12px; }
-.talk-step { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 6px 0 4px; }
-.talk-step .np-key { width: 52px; height: 44px; }
-.talk-step .np-key:disabled { opacity: .35; }
-.talk-step b { font-size: 30px; font-weight: 800; min-width: 3.2ch; }
-.talk-sum { font-size: 13.5px; color: var(--muted); line-height: 1.6; white-space: pre-line; word-break: keep-all; }
-.talk-auto { width: auto; margin: 10px auto 0; padding: 6px 14px; }
+.talk-opts { margin-top: 4px; text-align: left; }
+.talk-opts .preset { padding: 10px 2px; }
+.talk-opts .p-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.talk-opts .p-name { min-width: 0; }
 @media (prefers-reduced-motion: reduce) { .buddy-svg, .buddy-char .buddy-svg, .buddy-char.hop .buddy-svg, .res-buddy .buddy-svg, .fb-coach .buddy-svg, #coach-pick .coach-choice.on .buddy-svg, .talk-char .buddy-svg { animation: none; } }
 .coach-row { margin-bottom: 6px; }
 #btn-coach-replan { margin: 0 0 8px; }
