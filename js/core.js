@@ -413,6 +413,31 @@ export function daysBetween(from, to) {
   const u = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };
   return Math.round((u(to) - u(from)) / 86400000);
 }
+// 요일 (0 일요일 … 6 토요일)
+export const weekdayOf = day => { const [y, m, d] = day.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); };
+// 쉬는 요일 목록 정리: 0~6만, 겹치지 않게. 일주일 내내 쉬면 쉬는 날이 없는 걸로
+export const cleanRest = rest => { const r = [...new Set((rest || []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort(); return r.length >= 7 ? [] : r; };
+export const isRestDay = (day, rest) => !!(rest && rest.length) && rest.includes(weekdayOf(day));
+// from부터 to 전날까지 공부하는 날 수 (쉬는 요일 빼고)
+export function studyDays(from, to, rest = []) {
+  const n = daysBetween(from, to);
+  if (!rest || !rest.length) return Math.max(0, n);
+  let c = 0;
+  for (let i = 0; i < n; i++) if (!isRestDay(addDays(from, i), rest)) c++;
+  return c;
+}
+// from에서 공부하는 날을 k일 채우려면 달력으로 며칠 걸리는지
+function calendarFor(from, k, rest) {
+  let n = 0, c = 0;
+  while (c < k && n < 3660) { if (!isRestDay(addDays(from, n), rest)) c++; n++; }
+  return n;
+}
+// from부터 센 idx번째(0부터) 공부하는 날
+function nthStudyDay(from, idx, rest) {
+  let d = from, c = -1;
+  for (let i = 0; i < 3660; i++) { if (!isRestDay(d, rest) && ++c === idx) return d; d = addDays(d, 1); }
+  return d;
+}
 
 // 예전 기록({b: 0~6단계, d: 복습 시각})을 새 형식({st, due})으로. 맞힌/틀린 횟수 등은 그대로
 export function normalizeStat(s) {
@@ -521,32 +546,38 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
  *  - 훑는 날은 적어도 하루(엿새 넘게 남았으면 이틀)는 남김. 그래서 목표일이 시험 바로 전날이 되지 않음
  *  - 하루 새 단어가 10개도 안 되게 늘어지면 하루 10개로 당겨 끝내고 남는 날은 훑는 데 씀
  *  review: 사람이 코치와 정한 훑는 날 수(0 = 코치가 정함). 정했으면 그대로 따름(배우는 날은 적어도 하루 남김, 10개 당기기 없음)
+ *  rest: 쉬는 요일(0 일 … 6 토). 날 나누기는 달력으로 하고, 하루 개수는 쉬는 날을 빼고 공부하는 날로 나눔
  * 반환 { goal: 새 단어를 끝낼 날(이날부터 훑기), perDay, learnDays, reviewDays, days, finalPerDay, load: 'ok'|'busy'|'heavy', auto: 코치가 정했을 훑는 날 수 }
  * 시험일이 없거나 오늘·지난 날이면 null
  */
-export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, review = 0 } = {}) {
+export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, review = 0, rest = [] } = {}) {
   if (!exam || exam <= today) return null;
+  rest = cleanRest(rest);
   const days = daysBetween(today, exam); // 오늘부터 시험 전날까지
+  const study = (a, b) => studyDays(a, b, rest);
   const left = Math.max(0, Math.min(total, remaining));
-  if (!left) return { goal: today, perDay: 0, learnDays: 0, reviewDays: days, days, finalPerDay: Math.ceil(total / days), load: 'ok', auto: days };
+  if (!left) return { goal: today, perDay: 0, learnDays: 0, reviewDays: days, days, finalPerDay: Math.ceil(total / Math.max(1, study(today, exam))), load: 'ok', auto: days };
   const minReview = days >= 6 ? 2 : days >= 2 ? 1 : 0;
   let reviewDays = Math.min(days - 1, Math.max(minReview, Math.round(days * total / (total + 4 * left))));
   let learnDays = days - reviewDays;
-  let perDay = Math.ceil(left / learnDays);
+  let perDay = Math.ceil(left / Math.max(1, study(today, addDays(today, learnDays))));
   if (perDay < 10) {
     perDay = Math.min(10, left);
-    learnDays = Math.ceil(left / perDay);
+    learnDays = Math.min(days, calendarFor(today, Math.ceil(left / perDay), rest));
     reviewDays = days - learnDays;
   }
   const auto = reviewDays;
   if (review > 0) {
     reviewDays = Math.min(days - 1, Math.round(review));
     learnDays = days - reviewDays;
-    perDay = Math.ceil(left / learnDays);
   }
+  // 배우는 기간에 공부하는 날이 하루도 없으면(쉬는 날만 남음) 공부하는 날이 생길 때까지 늘림
+  while (learnDays < days && !study(today, addDays(today, learnDays))) { learnDays++; reviewDays--; }
+  const goal = addDays(today, learnDays);
+  perDay = Math.ceil(left / Math.max(1, study(today, goal)));
   return {
-    goal: addDays(today, learnDays), perDay, learnDays, reviewDays, days,
-    finalPerDay: reviewDays ? Math.ceil(total / reviewDays) : 0,
+    goal, perDay, learnDays, reviewDays, days,
+    finalPerDay: reviewDays ? Math.ceil(total / Math.max(1, study(goal, exam))) : 0,
     load: perDay <= 40 ? 'ok' : perDay <= 80 ? 'busy' : 'heavy', auto,
   };
 }
@@ -560,7 +591,8 @@ export const REVIEW_SIZE = 20; // 오늘의 복습 단어 수
  *  시험일부터: 복습일이 된 단어
  * 반환 { words, phase: 'before'|'final'|'after', days?, size? }
  */
-export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), goal, exam, limit = 0 } = {}) {
+export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), goal, exam, limit = 0, rest = [] } = {}) {
+  rest = cleanRest(rest);
   const st = id => normalizeStat(stats[id]);
   const seenToday = s => s && s.s && dateStr(s.s) === today;
   const due = allWords.filter(w => { const s = st(w.id); return isDue(s, today) && s.f !== today && !seenToday(s); })
@@ -569,12 +601,13 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
     return { words: limit > 0 ? due.slice(0, limit) : due, phase: 'before' };
   }
   if (today >= exam) return { words: due, phase: 'after' };
-  const days = daysBetween(goal, exam);              // 목표일부터 시험 전날까지 날 수
+  const days = Math.max(1, studyDays(goal, exam, rest)); // 목표일부터 시험 전날까지 공부하는 날 수 (쉬는 요일 빼고)
   const n = rangeWords.length;
   const size = Math.max(1, Math.ceil(n / days));     // 하루 몫
+  if (isRestDay(today, rest)) return { words: due, phase: 'final', days, size, rest: true }; // 쉬는 날은 몫 없이 복습일 된 단어만
   const round = Math.max(1, Math.ceil(n / size));    // 한 바퀴에 걸리는 날
-  const k = daysBetween(goal, today);
-  const start = addDays(goal, Math.floor(k / round) * round); // 이번 바퀴 시작일
+  const k = studyDays(goal, today, rest);            // 오늘 전까지 공부한 날 수
+  const start = nthStudyDay(goal, Math.floor(k / round) * round, rest); // 이번 바퀴 시작일
   const idx = k % round;
   const chunk = rangeWords.slice(0, size * (idx + 1)).filter(w => { const s = st(w.id); return !(s && s.s && dateStr(s.s) >= start); });
   const ids = new Set(chunk.map(w => w.id));

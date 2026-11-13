@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachPick, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, aiCoachExplain, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -134,9 +134,32 @@ test('OpenRouter: 키 확인 후 :free 모델을 고르고, 앞뒤 말이 붙은
   assert.equal(JSON.parse(calls.at(-1).opts.body).response_format, undefined);
 });
 
-test('모르는 키 모양은 연결 안 함', async () => {
-  await assert.rejects(aiConnect('hello'), e => e.status === 401);
-  assert.equal(calls.length, 0);
+test('모르는 키 모양은 회사마다 물어보고, 다 안 되면 unknown', async () => {
+  reply = () => json({ error: { message: 'bad key' } }, 401);
+  await assert.rejects(aiConnect('hello'), e => e.status === 401 && e.reason === 'unknown');
+  assert.equal(calls.length, 4);
+  // Gemini가 받아 주면 Gemini로 연결 (앞뒤 공백·줄바꿈은 지움)
+  calls = [];
+  reply = url => (url.includes('generativelanguage') ? json({ name: 'models/gemini-flash-lite-latest' }) : json({}, 401));
+  await aiConnect('  newstyle-key-123\n');
+  assert.equal(aiName(), 'Gemini');
+  assert.equal(calls[0].opts.headers['x-goog-api-key'], 'newstyle-key-123');
+});
+
+test('Gemini 키 연결 실패 까닭: 틀린 키, 꺼진 API, 제한', async () => {
+  const err = (status, reason, message) => () => json({ error: { code: status, message, status: 'X', details: [{ reason }] } }, status);
+  reply = err(400, 'API_KEY_INVALID', 'API key not valid. Please pass a valid API key.');
+  await assert.rejects(aiConnect('AIzaBAD', 'coach'), e => e.reason === 'invalid' && /not valid/.test(e.detail));
+  reply = err(403, 'SERVICE_DISABLED', 'Generative Language API has not been used in project 123 before or it is disabled.');
+  await assert.rejects(aiConnect('AIzaX', 'coach'), e => e.reason === 'disabled');
+  reply = err(403, 'API_KEY_HTTP_REFERRER_BLOCKED', 'Requests from referer <empty> are blocked.');
+  await assert.rejects(aiConnect('AIzaX', 'coach'), e => e.reason === 'restricted');
+  // 코치용 Gemini 키는 flash부터
+  calls = [];
+  reply = () => json({ name: 'models/gemini-flash-latest' });
+  await aiConnect('AIzaGOOD', 'coach');
+  assert.match(calls[0].url, /models\/gemini-flash-latest$/);
+  assert.equal(aiName('coach'), 'Gemini');
 });
 
 test('스위치를 끄면 키가 있어도 AI를 안 부름', async () => {
@@ -192,23 +215,33 @@ test('코치 말: 스위치를 끄거나 하루 한도를 넘으면 안 부름',
   assert.equal(calls.length, 30);
 });
 
-test('일정 상의하기: 앱이 계산한 표에서 복습 날 수를 고름, 학생이 말한 숫자는 써도 됨', async () => {
+test('코치와 이야기: 바꿀 값(복습 날 수·쉬는 요일·오늘 개수)을 받아 옴, 학생이 말한 숫자는 써도 됨', async () => {
   store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
-  const table = [6, 10, 12].map(r => ({ r, line: `전체 복습 ${r}일: 하루 ${{ 6: 24, 10: 31, 12: 37 }[r]}개` }));
-  const args = { char: 'slime', facts: '시험까지 23일', options: ['코치 추천: 전체 복습 6일'], table, now: 6, message: '토요일날 빼고 30개씩 하면 복습 몇번' };
-  // 학생이 말한 30, 표에 있는 10·31은 말해도 됨
-  reply = claudeText('{"review":10,"mood":"normal","text":"30개쯤이면 하루 31개로 전체 복습 10일이에요. 쉬는 요일은 아직 못 정해요."}');
-  assert.deepEqual(await aiCoachPick(args), { review: 10, mood: 'normal', text: '30개쯤이면 하루 31개로 전체 복습 10일이에요. 쉬는 요일은 아직 못 정해요.' });
-  assert.match(JSON.parse(calls.at(-1).opts.body).messages[0].content, /<message>토요일날 빼고 30개씩 하면 복습 몇번<\/message>/);
-  // 표에 없는 숫자를 지어내도 고른 날 수는 씀 (말은 앱 설명으로)
-  reply = claudeText('{"review":12,"mood":"cheer","text":"복습을 4번 돌 수 있어요."}');
-  assert.deepEqual(await aiCoachPick(args), { review: 12, mood: 'cheer', text: '' });
-  // 표에 없는 날 수는 0
-  reply = claudeText('{"review":7,"mood":"normal","text":"음."}');
-  assert.equal((await aiCoachPick(args)).review, 0);
+  const args = { char: 'slime', facts: '시험까지 23일', table: '전체 복습 6일: 하루 24개\n전체 복습 10일: 하루 31개', maxReview: 22, message: '토요일날 빼고 30개씩 하면 복습 몇번' };
+  reply = claudeText('{"mood":"normal","text":"토요일을 쉬는 걸로 계산해 볼게요.","review":0,"perDay":30,"rest":"6","today":-1}');
+  const r1 = await aiCoachChat(args);
+  assert.deepEqual(r1, { mood: 'normal', text: '토요일을 쉬는 걸로 계산해 볼게요.', change: { perDay: 30, rest: [6] } });
+  const body = JSON.parse(calls.at(-1).opts.body);
+  assert.match(body.system, /JSON/);
+  assert.match(body.messages[0].content, /<message>토요일날 빼고 30개씩 하면 복습 몇번<\/message>/);
+  // 바꿀 게 없는 이야기, 요일 글자, 쉬는 요일 없애기, 범위 밖 값
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"rest":"","today":-1}');
+  assert.deepEqual((await aiCoachChat(args)).change, null);
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":40,"rest":"토,일","today":50}');
+  assert.deepEqual((await aiCoachChat(args)).change, { rest: [0, 6], today: 50 });
+  reply = claudeText('{"mood":"cheer","text":"좋아요!","review":0,"rest":"-","today":-1}');
+  assert.deepEqual((await aiCoachChat(args)).change, { rest: [] });
+  // 학생이 말한 30, 표의 31은 써도 되고, 지어낸 숫자면 말만 비움
+  reply = claudeText('{"mood":"normal","text":"30개쯤이면 하루 31개예요.","review":10,"rest":"","today":-1}');
+  assert.equal((await aiCoachChat(args)).text, '30개쯤이면 하루 31개예요.');
+  reply = claudeText('{"mood":"normal","text":"복습을 4번 돌아요.","review":10,"rest":"","today":-1}');
+  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '', change: { review: 10 } });
+  // 앱이 계산한 결과 설명
+  reply = claudeText('{"mood":"cheer","text":"토요일 쉬면 하루 33개예요."}');
+  assert.equal((await aiCoachExplain({ char: 'slime', facts: '', message: '토요일 쉴래', result: '새 단어: 하루 33개' })).text, '토요일 쉬면 하루 33개예요.');
   // 실패 까닭
   reply = () => json({}, 429);
-  assert.equal(await aiCoachPick(args), null);
+  assert.equal(await aiCoachChat(args), null);
   assert.equal(aiCoachError(), '429');
 });
 

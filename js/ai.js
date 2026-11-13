@@ -12,6 +12,7 @@ const TIMEOUT_MS = 12000;
 
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_MODEL = 'gemini-flash-lite-latest'; // 가장 빠르고 무료 한도가 넉넉한 쪽. 없으면 연결할 때 목록에서 고름
+const GEMINI_COACH_MODEL = 'gemini-flash-latest'; // 코치용 키: 말이 더 자연스러운 flash (없으면 목록에서 flash → flash-lite)
 const CLAUDE_API = 'https://api.anthropic.com/v1';
 const CLAUDE_MODEL = 'claude-sonnet-5-5';
 // OpenAI 형식(chat/completions)을 쓰는 곳. 모델은 연결할 때 목록에서 앞쪽 것부터 고름
@@ -55,46 +56,78 @@ const fail = status => Object.assign(new Error(String(status)), { status });
 let lastErr = '';
 export const aiCoachError = () => lastErr;
 
-// 키가 맞는지 확인 (모델 정보 조회라 비용 없음). 맞으면 저장. 틀린 키는 status 401로 던짐
-export async function aiConnect(key, slot = 'main') {
-  const provider = providerOf(key);
-  if (!provider) throw fail(401);
-  if (provider === 'claude') {
-    const res = await fetch(`${CLAUDE_API}/models/${CLAUDE_MODEL}`, { headers: claudeHeaders(key), cache: 'no-store' });
-    if (!res.ok) throw fail(res.status === 403 ? 401 : res.status);
-    saveConf({ key, provider, model: CLAUDE_MODEL }, slot);
-    return;
-  }
-  if (OPENAI_LIKE[provider]) {
-    const { api, prefer } = OPENAI_LIKE[provider];
-    // 키 확인: Groq는 모델 목록, OpenRouter는 키 정보 (둘 다 비용 없음)
-    const check = await fetch(`${api}/${provider === 'openrouter' ? 'key' : 'models'}`, { headers: bearer(key), cache: 'no-store' });
-    if (!check.ok) throw fail([400, 401, 403].includes(check.status) ? 401 : check.status);
-    const list = provider === 'openrouter' ? await fetch(`${api}/models`, { cache: 'no-store' }) : check;
-    if (!list.ok) throw fail(list.status);
-    const ids = ((await list.json()).data || []).filter(m => m.active !== false).map(m => m.id);
-    let model = '';
-    for (const re of prefer) { model = ids.find(id => re.test(id)) || ''; if (model) break; }
-    if (!model) throw fail(404);
-    saveConf({ key, provider, model }, slot);
-    return;
-  }
+// 연결 실패를 알려 줄 때 쓰는 까닭. e.status(HTTP 상태), e.reason, e.detail(서버가 보낸 말)
+// reason: invalid(틀린 키) · disabled(그 프로젝트에서 API가 꺼짐) · restricted(키에 웹사이트·API 제한) · region(지역 제한) · unknown(어느 회사 키인지 모름) · nomodel · busy(429)
+async function failFrom(res) {
+  let msg = '', why = '';
+  try {
+    const j = await res.json();
+    const e = j.error || j;
+    msg = String(e.message || (typeof e === 'string' ? e : '') || '').slice(0, 240);
+    why = String(((e.details || []).map(d => d.reason).find(Boolean)) || e.status || e.type || '');
+  } catch {}
+  const t = `${why} ${msg}`;
+  const reason = res.status === 429 ? 'busy'
+    : /SERVICE_DISABLED|has not been used|is disabled|not been enabled/i.test(t) ? 'disabled'
+      : /REFERRER|referer|referrer|API_KEY_.*BLOCKED|blocked|restrict/i.test(t) ? 'restricted'
+        : /location is not supported|region|country/i.test(t) ? 'region'
+          : [400, 401, 403].includes(res.status) ? 'invalid' : '';
+  return Object.assign(fail(reason === 'invalid' ? 401 : res.status), { reason, detail: msg });
+}
+
+async function connectClaude(key, slot) {
+  const res = await fetch(`${CLAUDE_API}/models/${CLAUDE_MODEL}`, { headers: claudeHeaders(key), cache: 'no-store' });
+  if (!res.ok) throw await failFrom(res);
+  saveConf({ key, provider: 'claude', model: CLAUDE_MODEL }, slot);
+}
+async function connectOpenAILike(provider, key, slot) {
+  const { api, prefer } = OPENAI_LIKE[provider];
+  // 키 확인: Groq는 모델 목록, OpenRouter는 키 정보 (둘 다 비용 없음)
+  const check = await fetch(`${api}/${provider === 'openrouter' ? 'key' : 'models'}`, { headers: bearer(key), cache: 'no-store' });
+  if (!check.ok) throw await failFrom(check);
+  const list = provider === 'openrouter' ? await fetch(`${api}/models`, { cache: 'no-store' }) : check;
+  if (!list.ok) throw await failFrom(list);
+  const ids = ((await list.json()).data || []).filter(m => m.active !== false).map(m => m.id);
+  let model = '';
+  for (const re of prefer) { model = ids.find(id => re.test(id)) || ''; if (model) break; }
+  if (!model) throw Object.assign(fail(404), { reason: 'nomodel' });
+  saveConf({ key, provider, model }, slot);
+}
+async function connectGemini(key, slot) {
   const get = path => fetch(`${GEMINI_API}/${path}`, { headers: geminiHeaders(key), cache: 'no-store' });
-  let model = GEMINI_MODEL;
+  let model = slot === 'coach' ? GEMINI_COACH_MODEL : GEMINI_MODEL;
   let res = await get(`models/${model}`);
-  if (res.status === 404) { // 이름이 바뀌었으면 쓸 수 있는 모델 중에서 flash-lite → flash 순으로
+  if (res.status === 404) { // 이름이 바뀌었으면 쓸 수 있는 모델 중에서 고름 (채점: flash-lite → flash, 코치: flash → flash-lite)
     res = await get('models?pageSize=1000');
     if (res.ok) {
       const names = ((await res.json()).models || [])
         .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
         .map(m => m.name.replace(/^models\//, ''));
-      model = names.find(n => /flash-lite/.test(n)) || names.find(n => /flash/.test(n)) || '';
-      if (!model) throw fail(404);
+      const lite = names.find(n => /flash-lite/.test(n)), flash = names.find(n => /flash/.test(n) && !/lite/.test(n));
+      model = (slot === 'coach' ? flash || lite : lite || flash) || '';
+      if (!model) throw Object.assign(fail(404), { reason: 'nomodel' });
     }
   }
-  // Gemini는 틀린 키를 400(API_KEY_INVALID)으로 알려 줌
-  if (!res.ok) throw fail([400, 401, 403].includes(res.status) ? 401 : res.status);
-  saveConf({ key, provider, model }, slot);
+  // Gemini는 틀린 키를 400(API_KEY_INVALID)으로, 꺼진 API는 403(SERVICE_DISABLED)으로 알려 줌
+  if (!res.ok) throw await failFrom(res);
+  saveConf({ key, provider: 'gemini', model }, slot);
+}
+const CONNECT = {
+  claude: connectClaude, gemini: connectGemini,
+  groq: (k, s) => connectOpenAILike('groq', k, s), openrouter: (k, s) => connectOpenAILike('openrouter', k, s),
+};
+
+// 키가 맞는지 확인 (모델 정보 조회라 비용 없음). 맞으면 저장. 안 되면 { status, reason, detail }을 던짐
+// 앞부분으로 회사를 모르겠으면 Gemini → Groq → OpenRouter → Claude 순으로 다 물어봄
+export async function aiConnect(key, slot = 'main') {
+  key = String(key || '').replace(/\s+/g, '').replace(/^["']|["']$/g, '');
+  const provider = providerOf(key);
+  if (provider) return CONNECT[provider](key, slot);
+  let why = null; // '틀린 키'보다 더 알려 줄 게 있는 까닭(API 꺼짐 등)은 남겨 둠
+  for (const p of ['gemini', 'groq', 'openrouter', 'claude']) {
+    try { await CONNECT[p](key, slot); return; } catch (e) { if (!why && e && e.reason && e.reason !== 'invalid') why = e; }
+  }
+  throw why || Object.assign(fail(401), { reason: 'unknown' });
 }
 export function aiDisconnect(slot = 'main') { saveConf({}, slot); }
 
@@ -300,14 +333,15 @@ export async function aiHint({ word, meaning, sentences, answers, user }) {
 // 일정·개수 계산은 앱(core.js coachPlan)이 하고, AI는 그 사실만 보고 말을 지음. 사실에 없는 숫자를 말하면 버리고 기본 말로.
 // 무료 한도를 채점에 남겨 두려고 코치가 부르는 횟수는 하루 COACH_DAILY번까지
 
-const COACH_DAILY = 30;
+// 코치용 키를 따로 넣었으면 채점과 한도를 나눠 쓰지 않으니 더 넉넉하게
+const coachDaily = () => (aiHasKey('coach') ? 100 : 30);
 const USE_KEY = 'voca.ai.coachuse.v1'; // { d: 날짜, n: 오늘 부른 횟수 }
 const today = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 function takeCoachTurn() {
   let u = {};
   try { u = JSON.parse(localStorage.getItem(USE_KEY)) || {}; } catch {}
   const n = u.d === today() ? u.n || 0 : 0;
-  if (n >= COACH_DAILY) return false;
+  if (n >= coachDaily()) return false;
   try { localStorage.setItem(USE_KEY, JSON.stringify({ d: today(), n: n + 1 })); } catch {}
   return true;
 }
@@ -320,12 +354,14 @@ export const COACH_PERSONA = {
 };
 const MOODS = ['normal', 'happy', 'worry', 'sleep', 'cheer'];
 
-const coachSystem = char => `영단어 시험을 준비하는 학생의 단어 앱 속 코치예요. ${COACH_PERSONA[char] || COACH_PERSONA.cat}
+const SAY_FORMAT = '{"mood": "normal"|"happy"|"worry"|"sleep"|"cheer", "text": "…"}';
+const coachSystem = (char, format = SAY_FORMAT) => `영단어 시험을 준비하는 학생의 단어 앱 속 코치예요. ${COACH_PERSONA[char] || COACH_PERSONA.cat}
 - 학생에게 직접 말하듯 해요체로 써요. 마크다운·이모지·목록 없이 문장으로만.
 - 아래 <facts>에 있는 사실만 말해요. 숫자(개수·날짜·날 수)는 <facts>에 그대로 있는 것만 쓰고, 계산해서 새 숫자를 만들지 마요.
 - 일정을 바꾸거나 개수를 정하는 건 앱이 해요. 코치는 지금 상황을 짚고, 오늘 무엇부터 하면 좋은지, 응원이나 요령을 말해요.
 - 같은 말을 되풀이하지 말고, 그날 상황(밀렸는지, 앞서가는지, 다 했는지, 시험이 가까운지)에 맞게 구체적으로 말해요.
-- mood는 말에 어울리는 표정 하나: normal(보통), happy(기쁨), worry(걱정), sleep(졸림·끝남), cheer(응원).`;
+- mood는 말에 어울리는 표정 하나: normal(보통), happy(기쁨), worry(걱정), sleep(졸림·끝남), cheer(응원).
+- 답은 JSON 하나로만: ${format}`;
 
 const SAY_SCHEMA = {
   type: 'object',
@@ -343,10 +379,10 @@ export function numbersOk(text, facts) {
 const clean = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/[*#`]/g, '').trim();
 
 // keep: 숫자를 지어낸 말이라도 나머지(선택지 번호 등)는 쓰고 text만 비움
-async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA, keep = false } = {}) {
+async function coachAsk(char, user, facts, { schema = SAY_SCHEMA, gschema = SAY_GSCHEMA, format = SAY_FORMAT, keep = false } = {}) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   if (!takeCoachTurn()) { lastErr = 'limit'; return null; }
-  const text = await ask({ system: coachSystem(char), json: true, schema, gschema, user, timeout: 20000 }, coachConf());
+  const text = await ask({ system: coachSystem(char, format), json: true, schema, gschema, user, timeout: 20000 }, coachConf());
   if (!text) return null;
   try {
     const out = pickJSON(text);
@@ -380,25 +416,86 @@ export function aiCoachResult({ char, facts }) {
   return coachAsk(char, `<facts>\n${facts}\n</facts>\n\n방금 학습을 끝냈어요. 결과 화면에 보여 줄 말을 2~3문장(110자 안팎)으로 써요. 틀린 단어가 있으면 그중 하나를 골라 뜻을 떠올리기 쉬운 요령(어원, 비슷한 단어와 구별, 짧은 장면)을 알려 줘요. 단어 철자는 <facts>에 있는 그대로 써요.`, facts);
 }
 
-const PICK_SCHEMA = {
+// ---------- 코치와 이야기하기 ----------
+// 학생이 무엇이든 말하면 AI가 답하고, 일정을 바꾸자는 말이면 바꿀 값(복습 날 수·쉬는 요일·오늘 새 단어 수)을 골라 줌.
+// 그 값으로 앱이 일정을 계산해 보여 주고, AI가 그 결과를 다시 설명함(aiCoachExplain). 바꾸는 건 학생이 '이렇게 할게요'를 눌러야
+const CHAT_FORMAT = '{"mood": "…", "text": "…", "review": 숫자, "perDay": 숫자, "rest": "…", "today": 숫자}';
+const CHAT_SCHEMA = {
   type: 'object',
-  properties: { review: { type: 'integer', description: '고른 전체 복습 날 수 (표에 있는 값)' }, mood: { type: 'string', enum: MOODS }, text: { type: 'string' } },
-  required: ['review', 'mood', 'text'],
+  properties: {
+    mood: { type: 'string', enum: MOODS },
+    text: { type: 'string' },
+    review: { type: 'integer', description: '시험 전 전체 복습 날 수. 안 바꾸면 0' },
+    perDay: { type: 'integer', description: '학생이 원하는 하루 새 단어 수. 개수로 말하지 않았으면 0' },
+    rest: { type: 'string', description: '쉬는 요일 번호를 쉼표로(0 일 … 6 토). 안 바꾸면 빈 글자, 쉬는 요일을 없애면 -' },
+    today: { type: 'integer', description: '오늘 배울 새 단어 총수(이미 배운 것 포함). 안 바꾸면 -1' },
+  },
+  required: ['mood', 'text', 'review', 'perDay', 'rest', 'today'],
   additionalProperties: false,
 };
-const PICK_GSCHEMA = { type: 'OBJECT', properties: { review: { type: 'INTEGER' }, mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' } }, required: ['review', 'mood', 'text'] };
+const CHAT_GSCHEMA = {
+  type: 'OBJECT',
+  properties: { mood: { type: 'STRING', enum: MOODS }, text: { type: 'STRING' }, review: { type: 'INTEGER' }, perDay: { type: 'INTEGER' }, rest: { type: 'STRING' }, today: { type: 'INTEGER' } },
+  required: ['mood', 'text', 'review', 'perDay', 'rest', 'today'],
+};
+const WEEK = '일월화수목금토';
+const histText = history => history.slice(-8).map(h => `${h.who === 'me' ? '학생' : '코치'}: ${h.text}`).join('\n');
 
 /**
- * 일정 상의하기: 학생이 한 말을 듣고, 앱이 계산해 둔 표(복습 날 수마다 하루 새 단어·복습 개수)에서 알맞은 복습 날 수를 고름
- * (코치가 새 일정을 계산하지는 않음). options: 화면의 선택지 설명, table: 복습 날 수 r마다 설명 글자 { r, line }, now: 지금 일정의 r
- * 반환 { review: 표에 있는 r 또는 0(못 고름), mood, text(숫자를 지어냈으면 '') } 또는 null
+ * 코치와 이야기하기. facts: 오늘 상황, table: 지금 쉬는 요일로 복습 날 수마다 계산한 일정표(글자), maxReview: 복습 날 수 최대,
+ * history: [{ who: 'me'|'coach', text }] 앞선 이야기, message: 학생이 방금 한 말
+ * 반환 { mood, text, change: { review?, rest?, today? } | null } 또는 null(실패, aiCoachError()로 까닭)
  */
-export async function aiCoachPick({ char, facts, options, table, now, message }) {
-  const opt = options.map(o => `- ${o}`).join('\n');
-  const tab = table.map(t => t.line).join('\n');
-  const all = `${facts}\n${opt}\n${tab}\n${message}`; // 학생이 말한 숫자는 다시 말해도 됨
-  const out = await coachAsk(char, `<facts>\n${facts}\n화면의 선택지:\n${opt}\n복습 날 수마다 계산한 일정표 (앱이 계산, 이 표의 숫자만 써요):\n${tab}\n</facts>\n학생이 일정에 대해 한 말:\n<message>${message}</message>\n\n학생 말에 가장 맞는 '시험 전 전체 복습 날 수'를 표에서 골라 review에 넣어요 (화면의 선택지가 아니어도 표에 있으면 돼요). 예: "하루 30개씩"이면 하루 새 단어가 30개에 가장 가까운 줄. 바꿀 수 있는 건 전체 복습 날 수뿐이라, 쉬는 요일·범위처럼 다른 걸 원하면 가장 가까운 걸 고르고 그건 아직 이 창에서 못 바꾼다고 솔직히 말해요. 고를 게 없으면 review는 ${now}(지금 일정). 질문이면 표를 보고 답해요. text는 1~3문장(110자 안팎).`, all, { schema: PICK_SCHEMA, gschema: PICK_GSCHEMA, keep: true });
+export async function aiCoachChat({ char, facts, table, maxReview, history = [], message }) {
+  const hist = histText(history);
+  const all = `${facts}\n${table}\n${hist}\n${message}`; // 학생이 말한 숫자·표의 숫자는 써도 됨
+  const out = await coachAsk(char, `<facts>
+${facts}
+지금 쉬는 요일로 계산한 일정표 (앱이 계산, 숫자는 이 표에 있는 것만 써요):
+${table}
+</facts>
+${hist ? `앞선 이야기:\n${hist}\n` : ''}학생이 방금 한 말:
+<message>${message}</message>
+
+학생 말에 코치로서 답해요. 공부 방법, 단어 외우는 요령, 일정 질문, 기분 이야기 등 무엇이든 돼요. 영어 공부와 상관없는 말이면 짧게 받아 주고 공부 이야기로 돌아와요.
+앱이 바꿀 수 있는 건 아래 값들이에요. 학생이 바꾸고 싶어 하거나 "~하면 어때?"처럼 물어보면 그 값을 넣어요 (앱이 계산해서 보여 주고, 학생이 확인해야 바뀌어요):
+- review: 시험 전 전체 복습 날 수 (1~${maxReview}). "복습 일주일"처럼 날 수로 말했을 때. 안 바꾸면 0
+- perDay: "하루 30개씩"처럼 하루 새 단어 수로 말했을 때 그 개수 (앱이 그 개수에 가장 가깝게 복습 날 수를 맞춰요). 아니면 0
+- rest: 쉬는 요일 (0 일, 1 월, 2 화, 3 수, 4 목, 5 금, 6 토를 쉼표로, 예 "6" 또는 "0,6"). 쉬는 요일을 없애면 "-". 안 바꾸면 ""
+- today: 오늘 배울 새 단어 총수 (오늘 이미 배운 것 포함). 안 바꾸면 -1
+쉬는 요일을 바꾸면 표의 숫자가 달라지니, 그때 text에는 숫자를 쓰지 말고 무엇을 바꿔 보는지만 말해요 (앱이 계산한 뒤 다시 설명해요).
+학습 범위나 시험일은 여기서 못 바꾸니 학습 계획 화면에서 바꾸라고 알려 줘요. text는 1~3문장(120자 안팎).`, all, { schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, format: CHAT_FORMAT, keep: true });
   if (!out) return null;
-  const review = table.some(t => t.r === out.review) ? out.review : 0;
-  return { review, mood: out.mood, text: out.text };
+  const change = {};
+  const r = Math.round(Number(out.review));
+  if (r >= 1 && r <= maxReview) change.review = r;
+  const pd = Math.round(Number(out.perDay));
+  if (pd >= 1 && pd <= 500 && !change.review) change.perDay = pd;
+  const rs = String(out.rest == null ? '' : out.rest).trim();
+  if (rs === '-' || rs === '없음') change.rest = [];
+  else if (rs) {
+    const nums = rs.split(/[ ,/]+/).map(x => (/^[0-6]$/.test(x) ? +x : WEEK.indexOf(x.replace(/요일$/, '')))).filter(n => n >= 0 && n <= 6);
+    if (nums.length) change.rest = [...new Set(nums)].sort();
+  }
+  const t = Math.round(Number(out.today));
+  if (Number.isFinite(t) && t >= 0 && t <= 500) change.today = t;
+  return { mood: out.mood, text: out.text, change: Object.keys(change).length ? change : null };
+}
+
+/**
+ * 앱이 계산한 새 일정을 코치 말로 설명. result: 앱이 계산한 결과(글자)
+ * 반환 { mood, text } 또는 null(→ 앱이 만든 설명)
+ */
+export function aiCoachExplain({ char, facts, history = [], message, result }) {
+  const hist = histText(history);
+  const all = `${facts}\n${result}\n${hist}\n${message}`;
+  return coachAsk(char, `<facts>
+${facts}
+학생 말에 맞춰 앱이 새로 계산한 일정 (아직 안 바뀜, 학생이 '이렇게 할게요'를 누르면 바뀜):
+${result}
+</facts>
+${hist ? `앞선 이야기:\n${hist}\n` : ''}학생이 방금 한 말:
+<message>${message}</message>
+
+새로 계산한 일정이 어떤지 학생에게 설명해요: 하루에 얼마나 하게 되는지, 지금 일정과 무엇이 달라지는지, 괜찮은지(빡빡하면 솔직하게). 숫자는 위에 있는 것만. 마지막에 마음에 들면 '이렇게 할게요'를 누르라고 해요. 2~3문장(130자 안팎).`, all);
 }
