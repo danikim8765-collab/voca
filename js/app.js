@@ -2,7 +2,7 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, coachPlan, cleanRest, isRestDay, studyDays,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
@@ -136,11 +136,24 @@ function shareExam(v, at) {
   o.exam = v; o.examAt = at;
   save(OTHER_P + 'settings.v1', o);
 }
+// 쉬는 요일도 두 모드가 같이 씀(코치가 하나라서). 시험일처럼 다른 모드 설정에는 쉬는 요일과 그 시각만
+const myRestAt = () => restAt({ restAt: settings.restAt, at: settings.prefsAt });
+function shareRest(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if (restAt({ restAt: o.restAt, at: o.prefsAt }) > at) return;
+  o.coachRest = cleanRest(v); o.restAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+function setRest(v) {
+  settings.coachRest = cleanRest(v);
+  settings.restAt = Date.now();
+  shareRest(settings.coachRest, settings.restAt);
+}
 
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -152,12 +165,17 @@ const sync = createSync({
       saveSettings();
       shareExam(settings.exam, settings.examAt);
     }
+    if (m.prefs && restAt(m.prefs) > myRestAt()) {
+      Object.assign(settings, { coachRest: cleanRest(m.prefs.coachRest), restAt: restAt(m.prefs) });
+      saveSettings();
+      shareRest(settings.coachRest, settings.restAt);
+    }
     if (m.prefs && (m.prefs.at || 0) > (settings.prefsAt || 0)) {
       const p = m.prefs;
       Object.assign(settings, { newPerDay: p.newPerDay || 20, prefsAt: p.at });
       if ('srs' in p) Object.assign(settings, { srs: !!p.srs, srsPreset: p.srsPreset || 'm', goal: p.goal || '', reviewLimit: p.reviewLimit || 0 });
       if (p.reviewSize) settings.reviewSize = p.reviewSize;
-      if ('coach' in p) Object.assign(settings, { coach: !!p.coach, coachGoal: p.coachGoal || '', coachBase: p.coachBase || 0, coachKey: p.coachKey || '', coachReview: p.coachReview || 0, coachRest: cleanRest(p.coachRest), coachFix: p.coachFix || 0, coachTail: p.coachTail || '' });
+      if ('coach' in p) Object.assign(settings, { coach: !!p.coach, coachGoal: p.coachGoal || '', coachBase: p.coachBase || 0, coachKey: p.coachKey || '', coachReview: p.coachReview || 0, coachRest: cleanRest(p.coachRest), restAt: restAt(p), coachFix: p.coachFix || 0, coachTail: p.coachTail || '' });
       // 학습 범위도 기기끼리 맞춤 (없는 DAY면 renderHome이 맞춰 줌)
       if (p.from != null && p.to != null) Object.assign(settings, { from: p.from, to: p.to });
       saveSettings();
@@ -609,7 +627,8 @@ const fmtDay = d => { const [, m, dd] = String(d || '').split('-'); return m ? `
 const leftNew = () => rangeWords().filter(w => !stats[w.id]).length;
 // 목표일(coachGoal)은 전체 복습을 시작하는 날이라 새 단어를 보는 마지막 날은 그 전날
 const lastLearnDay = () => addDays(settings.coachGoal, -1);
-const coachKeyNow = () => [settings.exam, Math.min(settings.from, settings.to), Math.max(settings.from, settings.to)].join('|');
+// 쉬는 요일은 다른 모드에서 바뀔 수 있어서(두 모드가 같이 씀) 있을 때만 붙임 (없으면 예전 열쇠 그대로라 일정을 괜히 다시 짜지 않음)
+const coachKeyNow = () => { const r = cleanRest(settings.coachRest); return [settings.exam, Math.min(settings.from, settings.to), Math.max(settings.from, settings.to)].join('|') + (r.length ? `|r${r.join('')}` : ''); };
 // 오늘 배울 새 단어 수: (남은 새 단어 + 오늘 이미 배운 수) ÷ 목표일까지 남은 날. 밀리면 늘고 앞서가면 줄어듦
 // 쉬는 요일이 있으면 쉬는 날은 0개, 공부하는 날로만 나눔
 // 하루 개수를 고정했으면(coachFix) 그 개수 그대로. 마지막 날만 남는 단어에 맞춤 (그 개수로 모자라게 되면 남은 날에 고르게)
@@ -906,9 +925,18 @@ function pickSchedule() {
 // 메신저처럼 주고받는 화면. 이야기와 코치가 기억해 둔 것은 이 기기에만 저장하고(동기화 안 함) 날이 바뀌어도 이어짐.
 // 일정 얘기면 AI는 학생이 원하는 값만 뽑고(js/ai.js aiCoachChat), 계산과 숫자는 앱이 카드로 보여 줌(coachProposal).
 // 실제로 바뀌는 건 카드의 '이렇게 할게요'를 눌렀을 때
-const CHAT_KEY = P + 'coach.chat.v1'; // { items: [{ who: 'me'|'coach'|'app'|'note', text, t, mood?, err? }], notes: [{ text, t }] }
+// 코치는 예문·단어 모드가 하나: 이야기와 기억도 같이 씀. 예전 단어 모드 기록(voca.word.coach.chat.v1)은 처음 열 때 합침
+const CHAT_KEY = 'voca.coach.chat.v1'; // { items: [{ who: 'me'|'coach'|'app'|'note', text, t, mood?, err? }], notes: [{ text, t }] }
+const OLD_WORD_CHAT = 'voca.word.coach.chat.v1';
 const CHAT_KEEP = 200, NOTE_KEEP = 30;
+const MODE_NAME = WORD ? '단어 모드' : '예문 모드';
+const OTHER_NAME = WORD ? '예문 모드' : '단어 모드';
 function loadChat() {
+  const old = load(OLD_WORD_CHAT, null);
+  if (old) {
+    save(CHAT_KEY, mergeChats(load(CHAT_KEY, null), old, { keep: CHAT_KEEP, notes: NOTE_KEEP }));
+    try { localStorage.removeItem(OLD_WORD_CHAT); } catch {}
+  }
   const c = load(CHAT_KEY, null) || {};
   return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [] };
 }
@@ -916,18 +944,28 @@ function loadChat() {
 const saveChat = c => save(CHAT_KEY, { items: c.items.filter(m => !m.err).slice(-CHAT_KEEP), notes: c.notes.slice(-NOTE_KEEP) });
 
 // 약한 단어: 틀린 적이 있는 단어를 많이 틀린 순으로 (지금 0단계면 앞으로). 코치가 짚어 주려고
+// 코치는 두 모드가 하나라 예문·단어 기록을 합쳐서 봄 (틀린·맞힌 횟수는 더하고, 마지막에 틀렸는지는 더 최근에 푼 쪽)
 function weakWords(n = 12) {
-  return rangeWords().map(w => ({ w, s: stats[w.id] })).filter(x => x.s && x.s.w > 0)
+  const os = load(OTHER_P + 'stats.v1', {});
+  const live = x => (x && !x.del ? x : null);
+  return rangeWords().map(w => {
+    const a = live(stats[w.id]), b = live(os[w.id]);
+    if (!a && !b) return null;
+    const last = !b || (a && (a.s || 0) >= (b.s || 0)) ? a : b;
+    const s = { w: ((a && a.w) || 0) + ((b && b.w) || 0), c: ((a && a.c) || 0) + ((b && b.c) || 0), st: last.st, s: last.s || 0, here: (a && a.w) || 0, there: (b && b.w) || 0 };
+    return { w, s };
+  }).filter(x => x && x.s.w > 0)
     .map(x => ({ ...x, score: x.s.w * 2 + (x.s.st === 0 ? 3 : 0) + 3 * x.s.w / (x.s.w + (x.s.c || 0)) }))
     .sort((a, b) => b.score - a.score || (b.s.s || 0) - (a.s.s || 0)).slice(0, n);
 }
 function weakText() {
   const today = dateStr();
-  const lines = weakWords().map(({ w, s }) => `- ${w.word}: ${String(w.meaning || '').slice(0, 60)} (틀림 ${s.w}번, 맞힘 ${s.c || 0}번${s.st === 0 ? ', 마지막에도 틀림' : ''})`);
+  const where = s => (s.here && s.there ? ` (${MODE_NAME.slice(0, 2)} ${s.here} · ${OTHER_NAME.slice(0, 2)} ${s.there})` : s.there ? ` (${OTHER_NAME}에서)` : ` (${MODE_NAME}에서)`);
+  const lines = weakWords().map(({ w, s }) => `- ${w.word}: ${String(w.meaning || '').slice(0, 60)} (틀림 ${s.w}번${where(s)}, 맞힘 ${s.c || 0}번${s.st === 0 ? ', 마지막에도 틀림' : ''})`);
   // 복습일이 지났는데 오래 안 본 단어
   const late = rangeWords().filter(w => { const s = stats[w.id]; return s && s.due && s.due < today; })
     .sort((a, b) => stats[a.id].due.localeCompare(stats[b.id].due)).slice(0, 5);
-  if (late.length) lines.push(`복습일이 지났는데 아직 안 본 단어: ${late.map(w => `${w.word}(${daysBetween(stats[w.id].due, today)}일 지남)`).join(', ')}`);
+  if (late.length) lines.push(`${MODE_NAME}에서 복습일이 지났는데 아직 안 본 단어: ${late.map(w => `${w.word}(${daysBetween(stats[w.id].due, today)}일 지남)`).join(', ')}`);
   return lines.join('\n');
 }
 // 그날 처음 열면 코치가 먼저 건네는 말 (앱이 씀. AI를 부르지 않음)
@@ -1027,10 +1065,18 @@ function coachProposal(ch) {
     ok: { rest: ch.rest ? rest : null, review: ch.review ? p.reviewDays : null, today: todayN },
   };
 }
+// 카드 제목에 어느 모드 일정인지 (하루 개수·복습 날 수는 지금 모드만, 쉬는 요일만 바꾸면 두 모드 같이)
+function modeProposal(ch) {
+  const d = coachProposal(ch);
+  if (!d || !(d.ok || d.choices)) return d;
+  const restOnly = ch.rest && !ch.perDay && !ch.review && ch.today == null;
+  if (restOnly) return { ...d, lines: [...d.lines, `쉬는 요일은 예문·단어 모드에 같이 적용돼요. 위 개수는 ${MODE_NAME} 기준이에요.`] };
+  return { ...d, title: `${MODE_NAME} · ${d.title}` };
+}
 // 카드에서 '이렇게 할게요'를 눌렀을 때: 일정을 실제로 바꿈. 반환: 바뀐 것을 알리는 말
 function applyProposal(o) {
   const msgs = [];
-  if (o.rest) { settings.coachRest = cleanRest(o.rest); msgs.push(o.rest.length ? `${restLabel(o.rest)}은 쉬어요` : '쉬는 요일 없이 해요'); }
+  if (o.rest) { setRest(o.rest); msgs.push(o.rest.length ? `${restLabel(o.rest)}은 쉬어요` : '쉬는 요일 없이 해요'); }
   if (o.fix) { Object.assign(settings, { coachFix: o.fix, coachTail: o.tail || '', coachReview: 0 }); msgs.push(`새 단어 하루 ${o.fix}개`); }
   else if (o.review) {
     const auto = coachPlanFor(0, cleanRest(settings.coachRest));
@@ -1061,7 +1107,7 @@ function openCoachChat() {
   const last = chat.items[chat.items.length - 1];
   if (!last || dateStr(last.t) !== today) chat.items.push({ who: 'coach', text: coachGreeting(), t: Date.now(), mood: 'cheer' });
   $('#cc-name').textContent = `${COACH_NAMES[coachChar()]} 코치`;
-  $('#cc-sub').textContent = `${aiCoachName()} · 이 기기에만 저장`;
+  $('#cc-sub').textContent = `${aiCoachName()} · 예문·단어 같이 · 이 기기에만 저장`;
   const dayLabel = t => { const x = dateStr(t); return x === today ? '오늘' : x === addDays(today, -1) ? '어제' : fmtDay(x); };
   // AI에게 넘길 앞선 이야기 (실패 안내와 '기억해 둘게요' 줄은 뺌)
   // t는 AI에 보내지 않고, 다음 번에도 같은 이야기부터 넘기려고(캐시) 씀
@@ -1102,8 +1148,8 @@ function openCoachChat() {
         if (!pick) return;
         const said = applyProposal(pick);
         card = null;
-        chat.items.push({ who: 'note', text: `일정을 바꿨어요: ${said}`, t: Date.now() });
-        chat.items.push({ who: 'app', text: `학생이 '이렇게 할게요'를 눌러 일정을 바꿈: ${said}. ${planNowText()}`, t: Date.now(), hide: true });
+        chat.items.push({ who: 'note', text: `일정을 바꿨어요(${pick.rest && !pick.fix && !pick.review && pick.today == null ? '두 모드 같이' : MODE_NAME}): ${said}`, t: Date.now() });
+        chat.items.push({ who: 'app', text: `학생이 '이렇게 할게요'를 눌러 ${MODE_NAME} 일정을 바꿈: ${said}. ${planNowText()}`, t: Date.now(), hide: true });
         saveChat(chat);
         mood = 'happy';
         draw();
@@ -1138,7 +1184,7 @@ function openCoachChat() {
   };
   // 앱이 계산한 카드를 이야기에 붙임 (가장 최근 카드만 누를 수 있음)
   const showCard = ch => {
-    const data = coachProposal(ch);
+    const data = modeProposal(ch);
     if (!data) return;
     const text = [data.title, ...data.lines, ...(data.choices || []).map(o => `선택지 [${o.label}] ${o.sub}`)].join('\n');
     const item = { who: 'app', text, t: Date.now(), card: { title: data.title, lines: [...data.lines, ...(data.choices || []).map(o => `${o.label}: ${o.sub}`)] } };
@@ -1156,7 +1202,7 @@ function openCoachChat() {
     mood = 'normal';
     draw();
     const history = forAi().slice(0, -1);
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(), weak: weakText(), notes: chat.notes.map(n => n.text), history, message: msg, day: fmtDay(today) });
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), weak: weakText(), notes: chat.notes.map(n => n.text), history, message: msg, day: fmtDay(today) });
     busy = false;
     if (!res) {
       chat.items.push({ who: 'coach', text: coachErrorText(), t: Date.now(), err: true, retry: msg });
@@ -1168,7 +1214,7 @@ function openCoachChat() {
         chat.notes.push({ text: res.remember, t: Date.now() });
         chat.items.push({ who: 'note', text: `기억해 둘게요: ${res.remember}`, t: Date.now() });
       }
-      if (res.plan) { saveChat(chat); if (open) showCard(res.plan); else { const data = coachProposal(res.plan); if (data) chat.items.push({ who: 'app', text: [data.title, ...data.lines].join('\n'), t: Date.now() }); } }
+      if (res.plan) { saveChat(chat); if (open) showCard(res.plan); else { const data = modeProposal(res.plan); if (data) chat.items.push({ who: 'app', text: [data.title, ...data.lines].join('\n'), t: Date.now() }); } }
     }
     saveChat(chat);
     if (open) draw();
@@ -1256,10 +1302,14 @@ function openCoachChat() {
 // AI가 사실에 없는 숫자를 말하면 버림(js/ai.js numbersOk). 안 되면 위의 기본 말 그대로
 const WEEKDAY = '일월화수목금토';
 const weekday = d => WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()];
-function coachFacts() {
+function coachFacts(both = false) {
   const today = dateStr(), ex = settings.exam, rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   const lines = [`오늘: ${fmtDay(today)} ${weekday(today)}요일`];
+  if (both) {
+    lines.push(`지금 보는 화면: ${WORD ? '단어 모드(영단어를 보고 뜻 맞히기)' : '예문 모드(두 예문의 빈칸에 들어갈 영단어 맞히기)'}. 코치는 예문·단어 모드가 하나예요.`);
+    lines.push(`두 모드는 진도·학습 범위·하루 새 단어 일정이 따로이고, 시험일·쉬는 요일은 같이 써요. 아래 진도와 일정은 ${MODE_NAME} 것이고, ${OTHER_NAME} 것은 맨 아래에 따로 있어요. 일정 카드로 바꾸는 하루 개수·복습 날 수는 지금 보는 ${MODE_NAME}에만, 쉬는 요일은 두 모드에 같이 적용돼요.`);
+  }
   const learned = rw.filter(w => stats[w.id]).length;
   lines.push(`학습 범위: DAY ${from}~${to}, ${rw.length}단어 (배운 단어 ${learned}개, 아직 안 배운 새 단어 ${rw.length - learned}개)`);
   if (!ex) lines.push('시험일: 아직 안 정함');
@@ -1296,7 +1346,30 @@ function coachFacts() {
     if (isRestDay(today, rest)) lines.push('오늘은 쉬는 날');
   }
   if (coachMoved) lines.push('목표일이 지났는데 새 단어가 남아서 일정을 방금 다시 짬');
+  if (both) lines.push(...otherFacts());
   return lines.join('\n');
+}
+// 다른 모드 진도 요약 (그 모드 설정·기록을 읽기만 함)
+function otherFacts() {
+  const today = dateStr(), o = load(OTHER_P + 'settings.v1', {}), st = load(OTHER_P + 'stats.v1', {});
+  const lo = o.from != null && o.to != null ? Math.min(o.from, o.to) : days[0], hi = o.from != null && o.to != null ? Math.max(o.from, o.to) : days[days.length - 1];
+  const rw = words.filter(w => w.day >= lo && w.day <= hi);
+  let learned = 0, wrong = 0, mastered = 0, last = 0;
+  for (const w of rw) {
+    const s = st[w.id];
+    if (!s || s.del) continue;
+    learned++;
+    if (s.st === 0 && s.r !== today) wrong++;
+    if (isMastered(s)) mastered++;
+    if ((s.s || 0) > last) last = s.s;
+  }
+  const fresh = Object.values(st).filter(s => s && !s.del && s.f === today).length;
+  const out = [`[${OTHER_NAME}] 학습 범위: DAY ${lo}~${hi}, ${rw.length}단어 (배운 단어 ${learned}개, 아직 안 배운 새 단어 ${rw.length - learned}개), 다시 볼 단어 ${wrong}개, 암기 완료 ${mastered}개, 오늘 배운 새 단어 ${fresh}개`];
+  if (last) { const n = daysBetween(dateStr(last), today); out.push(`[${OTHER_NAME}] ${n ? `마지막으로 공부한 날: ${n}일 전` : '오늘 공부함'}`); }
+  else out.push(`[${OTHER_NAME}] 아직 공부한 적 없음`);
+  if (o.coach && o.coachGoal && ex() && today < o.coachGoal) out.push(`[${OTHER_NAME}] 일정: ${fmtDay(addDays(o.coachGoal, -1))}까지 새 단어${o.coachFix ? ` (학생이 하루 ${o.coachFix}개로 고정함)` : o.coachBase ? ` (처음 계획 하루 ${o.coachBase}개)` : ''}, 그 뒤 시험 전날까지 전체 복습`);
+  return out;
+  function ex() { return settings.exam && settings.exam > today; }
 }
 // 홈 말은 상황이 바뀔 때만 새로 지음 (날짜, 할 일 단계, 일정, 캐릭터, 기본 말의 표정). 실패하면 10분 뒤에 다시
 const SAY_KEY = P + 'coachsay.v1';
@@ -3193,7 +3266,7 @@ function renderSrs() {
       b.addEventListener('click', () => {
         const next = rest.includes(i) ? rest.filter(x => x !== i) : [...rest, i];
         if (cleanRest(next).length !== next.length) { toast('일주일 내내 쉴 수는 없어요'); return; }
-        settings.coachRest = cleanRest(next);
+        setRest(next);
         if (coachActive()) planCoach(true); else { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); }
         toast(settings.coachRest.length ? `${restLabel(settings.coachRest)}은 쉬어요` : '쉬는 요일 없이 매일 해요');
         renderSrs();
@@ -3353,7 +3426,7 @@ async function importProgress(file) {
     const norm = st => Object.fromEntries(Object.entries(st).map(([k, v]) => [k, v && v.del ? v : normalizeStat(v)])
       .filter(([, v]) => v).map(([k, v]) => [k, stamp ? { ...v, s: now } : v]));
     // 되돌린 설정이 동기화에서 예전 것으로 밀리지 않게 바꾼 시각을 지금으로
-    const prefs = st => (st && typeof st === 'object' ? { ...st, prefsAt: now, examAt: now } : null);
+    const prefs = st => (st && typeof st === 'object' ? { ...st, prefsAt: now, examAt: now, restAt: now } : null);
     const mineKey = WORD ? 'word' : 'ex';
     for (const m of modes) {
       const p = parts[m];

@@ -878,12 +878,37 @@ export function mergeProgress(a, b) {
   if (pa && pb) {
     const e = examAt(pa) >= examAt(pb) ? pa : pb;
     prefs = { ...prefs, exam: e.exam || '', examAt: examAt(e) };
+    // 쉬는 요일도 두 모드가 같이 써서(코치가 하나) 같은 까닭으로 따로, 더 최근에 바꾼 쪽(restAt)으로
+    const r = restAt(pa) >= restAt(pb) ? pa : pb;
+    prefs = { ...prefs, coachRest: Array.isArray(r.coachRest) ? r.coachRest : [], restAt: restAt(r) };
   }
   return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}) };
 }
 
 // 시험일을 바꾼 시각. examAt이 없던 예전 기록은 설정 전체를 바꾼 시각(at)으로 봄
 export const examAt = p => (p && p.examAt != null ? p.examAt : (p && p.at) || 0);
+// 쉬는 요일을 바꾼 시각 (예전 설정엔 없어서 설정 전체를 바꾼 시각으로 봄)
+export const restAt = p => (p && p.restAt != null ? p.restAt : (p && p.at) || 0);
+
+// 코치와 이야기하기 기록 합치기: 예전엔 예문·단어 모드가 따로 저장해서, 하나로 합칠 때 씀.
+// { items: [{ who, text, t }], notes: [{ text, t }] } 둘 → 시각 순으로 하나 (같은 말은 한 번), 기억은 같은 글을 한 번
+export function mergeChats(a, b, { keep = 200, notes = 30 } = {}) {
+  const items = [], seen = new Set();
+  const all = [...((a && a.items) || []), ...((b && b.items) || [])].filter(m => m && m.text);
+  all.map((m, i) => ({ m, i })).sort((x, y) => (x.m.t || 0) - (y.m.t || 0) || x.i - y.i).forEach(({ m }) => {
+    const k = `${m.t || 0}|${m.who}|${m.text}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    items.push(m);
+  });
+  const ns = [], nseen = new Set();
+  [...((a && a.notes) || []), ...((b && b.notes) || [])].filter(n => n && n.text).sort((x, y) => (x.t || 0) - (y.t || 0)).forEach(n => {
+    if (nseen.has(n.text)) return;
+    nseen.add(n.text);
+    ns.push(n);
+  });
+  return { items: items.slice(-keep), notes: ns.slice(-notes) };
+}
 
 export const samePrefs = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
 

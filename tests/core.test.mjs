@@ -774,3 +774,27 @@ test('뜻 채점: 정답 뜻의 일부 글자만 쓴 건 오답 (반대말·다�
   assert.equal(gradeMeaning('유죄를 선고하다', '유죄를 선고하다 / 죄수, 수감자', 'easy').score, 2);
   assert.equal(gradeMeaning('수감자', '유죄를 선고하다 / 죄수, 수감자', 'easy').score, 2);
 });
+
+test('코치 이야기 합치기: 두 모드 기록을 시각 순으로 하나, 같은 말·같은 기억은 한 번', async () => {
+  const { mergeChats } = await import('../js/core.js');
+  const a = { items: [{ who: 'me', text: '안녕', t: 1 }, { who: 'coach', text: '반가워요', t: 3 }], notes: [{ text: '수요일은 학원', t: 1 }] };
+  const b = { items: [{ who: 'me', text: '단어 모드야', t: 2 }, { who: 'coach', text: '반가워요', t: 3 }], notes: [{ text: '수요일은 학원', t: 5 }, { text: '목표는 만점', t: 4 }] };
+  const m = mergeChats(a, b);
+  assert.deepEqual(m.items.map(x => x.text), ['안녕', '단어 모드야', '반가워요']);
+  assert.deepEqual(m.notes.map(x => x.text), ['수요일은 학원', '목표는 만점']);
+  assert.deepEqual(mergeChats(null, a).items.length, 2);
+  assert.equal(mergeChats(a, b, { keep: 2 }).items[0].text, '단어 모드야');
+});
+
+test('쉬는 요일은 다른 설정과 따로, 더 최근에 바꾼 쪽으로 (두 모드가 같이 씀)', async () => {
+  const { mergeProgress } = await import('../js/core.js');
+  const a = { stats: {}, prefs: { at: 100, newPerDay: 30, coachRest: [6], restAt: 300, examAt: 100 } };
+  const b = { stats: {}, prefs: { at: 200, newPerDay: 40, coachRest: [], restAt: 150, examAt: 200 } };
+  const m = mergeProgress(a, b);
+  assert.equal(m.prefs.newPerDay, 40);
+  assert.deepEqual(m.prefs.coachRest, [6]);
+  assert.equal(m.prefs.restAt, 300);
+  // 예전 설정(restAt 없음)은 설정 전체를 바꾼 시각으로 봄
+  const old = mergeProgress({ stats: {}, prefs: { at: 500, coachRest: [0] } }, b);
+  assert.deepEqual(old.prefs.coachRest, [0]);
+});
