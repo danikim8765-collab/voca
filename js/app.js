@@ -8,6 +8,7 @@ import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
+import { reportRepo, reportReasons, reportText, issueUrl, pushError } from './report.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
 const APP_VERSION = '202611131548';
@@ -44,6 +45,12 @@ const load = (k, def) => {
 const save = (k, v) => {
   try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; }
 };
+
+// 버그 신고에 붙일 최근 오류 (두 모드가 같이 씀, 이 기기에만)
+const ERR_KEY = 'voca.errlog.v1';
+const logError = m => save(ERR_KEY, pushError(load(ERR_KEY, []), m));
+window.addEventListener('error', e => logError(`${e.message || e.error || '오류'}${e.filename ? ` @${String(e.filename).split('/').pop()}:${e.lineno}` : ''}`));
+window.addEventListener('unhandledrejection', e => logError(`(promise) ${(e.reason && (e.reason.stack || e.reason.message)) || e.reason}`));
 
 let words = [];
 let byId = new Map();
@@ -1773,6 +1780,7 @@ function synAnswer(correct, given, kind) {
 
 function showSynFeedback(correct, given, kind, label) {
   const { w, syn: sq } = q;
+  Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
   const state = correct ? 'ok' : kind === 'hint' ? 'hint' : 'bad';
   const head = $('#fb-head');
   head.hidden = false;
@@ -2619,6 +2627,7 @@ function giveUp() {
 
 function showFeedback(correct, given, kind, label) {
   const w = q.w;
+  Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
   const state = correct ? 'ok' : kind === 'partial' ? 'hint' : kind === 'idk' ? 'bad' : kind || 'bad';
   // 카드 위 상태 표시
   const head = $('#fb-head');
@@ -2663,6 +2672,7 @@ function openSheet(w, more = []) {
   const fm = $('#fb-mark');
   fm.classList.toggle('on', isUnknown(w.id));
   fm.onclick = () => fm.classList.toggle('on', toggleUnknown(w.id));
+  $('#fb-report').onclick = () => openReport(reportCtx());
 
   const mean = $('#fb-mean');
   mean.innerHTML = '';
@@ -2697,6 +2707,88 @@ function openSheet(w, more = []) {
   if (!wideDesk()) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
   $('#fb-mean').scrollTop = 0;
   if (settings.autoSpeak) speak(w.word);
+}
+
+// ---------- 버그 신고 ----------
+// 지금 정답 시트에 뜬 문제를 신고 내용으로 (해석은 앱이 굵게 강조한 데를 **로 표시)
+function reportCtx() {
+  if (!q || !q.w) return null;
+  const w = q.w;
+  const bold = ko => (ko ? highlightMeaning(ko, w.meaning, w.koMark).map(x => (x.t === 'mark' ? `**${x.v}**` : x.v)).join('') : '');
+  const mode = q.syn ? 'syn' : WORD ? 'word' : 'ex';
+  const how = q.syn ? 'choice' : settings.kind;
+  const opts = q.syn ? q.syn.options : q.choices;
+  const text = o => (q.syn ? o.text : WORD ? o.meaning : displayAnswer(o));
+  const ctx = {
+    word: w.word, id: w.id, day: w.day, mode, how, label: q.fbLabel, given: q.fbGiven || q.userAnswer || '',
+    strict: mode === 'word' && how === 'type' ? `채점 ${{ easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통'}` : '',
+    meaning: w.meaning, ex1: w.ex1, ex1ko: bold(w.ex1ko), ex2: w.ex2, ex2ko: bold(w.ex2ko), marked: w.koMark || '',
+  };
+  if (opts && opts.length) {
+    ctx.choices = opts.map(text);
+    ctx.picked = opts.indexOf(q.picked);
+    ctx.right = q.syn ? opts.findIndex(o => o.ok) : opts.indexOf(w);
+  }
+  if (q.syn && q.syn.sentence) ctx.ex1 = q.syn.sentence.en || ctx.ex1;
+  return ctx;
+}
+function reportApp() {
+  const ua = navigator.userAgent || '';
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  return {
+    version: APP_VERSION,
+    ai: aiSwitch() && aiHasKey() ? aiName() : '',
+    device: `${ua} · ${innerWidth}×${innerHeight}${standalone ? ' · 홈 화면 앱' : ''}${navigator.onLine === false ? ' · 오프라인' : ''}`,
+  };
+}
+// 신고 창: 이유(여러 개) + 메모 → GitHub 새 이슈 화면을 채워서 열거나 복사. ctx가 없으면 앱 전체 신고(설정에서)
+function openReport(ctx) {
+  const d = $('#report'), box = $('#rp-reasons'), note = $('#rp-note'), pre = $('#rp-preview');
+  const picked = new Set();
+  const build = () => reportText({ reasons: [...picked], note: note.value, ctx, app: reportApp(), errors: load(ERR_KEY, []) });
+  const refresh = () => { const r = build(); pre.textContent = `${r.title}\n\n${r.body}`; };
+  $('#rp-title').textContent = ctx ? '이 문제 신고하기' : '이상한 점 알려 주기';
+  $('#rp-sub').textContent = ctx ? `${ctx.word} · DAY ${ctx.day} — 무엇이 이상했나요?` : '무엇이 이상했나요? 학습 기록과 키는 보내지 않아요.';
+  box.innerHTML = '';
+  for (const r of reportReasons(ctx)) {
+    const b = el('button', 'chip', r);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => {
+      if (picked.has(r)) picked.delete(r); else picked.add(r);
+      b.classList.toggle('on', picked.has(r));
+      b.setAttribute('aria-pressed', picked.has(r));
+      refresh();
+    });
+    box.appendChild(b);
+  }
+  note.value = '';
+  note.oninput = refresh;
+  $('#report .rp-peek').open = false;
+  refresh();
+  const prev = document.activeElement;
+  d.hidden = false;
+  // 창이 열린 동안엔 퀴즈 단축키(스페이스·Enter로 다음 등)가 먹지 않게. 글자는 그대로 써짐
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(); } e.stopPropagation(); };
+  const close = () => { d.hidden = true; d.onclick = null; document.removeEventListener('keydown', key, true); if (prev && prev.focus) prev.focus(); };
+  const done = () => { close(); modalDone(() => {}); };
+  modalOpen(close);
+  document.addEventListener('keydown', key, true);
+  d.onclick = e => { if (e.target === d) done(); };
+  $('#rp-cancel').onclick = done;
+  $('#rp-copy').onclick = async () => {
+    const r = build();
+    try { await navigator.clipboard.writeText(`${r.title}\n\n${r.body}`); toast('복사했어요. 메신저나 메일에 붙여 넣어 보내 주세요', 3000); }
+    catch { $('#report .rp-peek').open = true; toast('복사가 안 돼요. 같이 보내는 내용을 길게 눌러 복사해 주세요', 3500); }
+  };
+  $('#rp-send').onclick = () => {
+    if (!picked.size && !note.value.trim()) { toast('무엇이 이상했는지 하나 골라 주세요'); return; }
+    const r = build();
+    const url = issueUrl(reportRepo(location), r.title, r.body);
+    done();
+    window.open(url, '_blank', 'noopener');
+    toast('GitHub에서 아래 초록 버튼(Create)을 누르면 접수돼요', 4000);
+  };
 }
 
 // 단어 모드 오답: 누르면 AI가 왜 틀렸는지 설명 (AI 사용 스위치가 켜져 있고 인터넷이 될 때만 보임)
@@ -3411,6 +3503,7 @@ function bind() {
 
   $('#btn-settings').addEventListener('click', () => { renderSettings(); renderSyncStatus(); show('settings'); });
   $('#btn-settings-back').addEventListener('click', () => goHome());
+  $('#btn-report').addEventListener('click', () => openReport(null));
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });

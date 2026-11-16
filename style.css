@@ -948,3 +948,18 @@ body[data-tint] {
 @media (prefers-reduced-motion: reduce) { .chat-msg.typing i { animation: none; } }
 .coach-row { margin-bottom: 6px; }
 #btn-coach-replan { margin: 0 0 8px; }
+/* 버그 신고: 정답 시트의 깃발은 형광펜보다 한 단계 조용하게(테두리 없음), 설정 맨 아래는 작은 회색 글자 */
+.fb-word .report-btn { margin-left: auto; border-color: transparent; opacity: .75; }
+.report-btn:active { opacity: 1; background: var(--line); }
+.fb-word .fb-coach:not([hidden]) + .report-btn { margin-left: 0; }
+.report-btn + .mark-btn { margin-left: 0; }
+.report-link { display: block; margin: 18px auto 2px; color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; }
+.report-card { max-width: 360px; }
+.rp-reasons { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 14px 0 10px; }
+.rp-reasons .chip { color: var(--text); font-size: 13.5px; padding: 6px 12px; }
+.rp-reasons .chip.on { background: var(--primary); border-color: transparent; color: var(--on-primary); }
+.rp-note { width: 100%; min-height: 58px; resize: none; padding: 10px 12px; font-size: 15px; color: var(--text); font-family: inherit; text-align: left; margin: 0; }
+.rp-peek { text-align: left; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.rp-peek summary { cursor: pointer; }
+.rp-peek pre { white-space: pre-wrap; word-break: break-word; max-height: 150px; overflow: auto; margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--bg); font-size: 11.5px; line-height: 1.45; color: var(--text); }
+.rp-copy { display: block; margin: 12px auto 0; color: var(--muted); font-size: 13px; font-weight: 600; }
