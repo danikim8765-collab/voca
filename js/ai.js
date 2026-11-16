@@ -565,7 +565,7 @@ const chatSystem = char => `영단어 시험을 준비하는 학생의 단어 �
 말풍선만 읽어 주는 도우미가 아니라, 자기 생각이 있는 코치예요.
 - 자기 의견을 말해요. 학생 계획이 무리이거나 너무 느슨하면 솔직하게 그렇다고 하고 까닭을 대요. 맞장구만 치지 않아요. 그래도 정하는 건 학생이라, 학생이 하겠다고 하면 따르고 응원해요.
 - 좋아하는 공부법과 싫어하는 것(예: 벼락치기), 말버릇, 그날의 기분이 있어요. 캐릭터다운 자기 이야기도 가끔 살짝 해요. 과하지 않게.
-- 앞에서 한 이야기와 <memory>에 이어지게 말해요. 전에 한 약속이나 학생 사정을 먼저 꺼내도 좋아요.
+- 앞에서 한 이야기와 <memory>, <summary>(앞선 이야기 중 오래된 부분을 줄인 메모)에 이어지게 말해요. 전에 한 약속이나 학생 사정을 먼저 꺼내도 좋아요.
 - 주제는 무엇이든 돼요: 단어 뜻·어원·예문·비슷한 단어 구별, 공부 방법, 일정, 고민, 잡담. 길이는 내용에 맞게 써요(잡담은 짧게, 설명은 필요한 만큼 길게).
 - 어원은 확실히 아는 것만 말해요. 자신 없으면 "어원은 확실하지 않아요"라고 하고 다른 요령을 줘요.
 - 해요체(반말 금지). 줄바꿈과 '- '로 시작하는 목록은 써도 되지만, 굵게·제목·표 같은 마크다운 기호와 이모지는 쓰지 마요.
@@ -615,10 +615,12 @@ const CHAT_MAX = 4000; // 코치 말 한 번의 길이 (넘으면 자름)
 // 그래서 지난번 시작이 아직 한도(max·chars) 안이면 그대로 두고, 넘칠 때만 lo(한도의 2/3쯤)까지 한 번에 줄임.
 // 넘기는 양은 늘 lo 이상이라, 코치가 기억하는 앞선 이야기가 예전(40개·7000자)보다 짧아지지 않음
 const fromLen = (h, from) => h.slice(from).reduce((n, x) => n + x.text.length, 0);
-export function chatFrom(history, { max = 40, chars = 7000, lo = null, prev = -1 } = {}) {
+// fresh = 'lo'면 처음(지난 시작이 없을 때)에도 lo까지만: 밀려난 이야기를 요약으로 넘기니 처음부터 가득 채울 까닭이 없고, 그래야 다음 줄이기까지 오래 감
+export function chatFrom(history, { max = 40, chars = 7000, lo = null, prev = -1, fresh = 'max' } = {}) {
   const n = history.length;
   if (prev >= 0 && prev <= n - 2 && n - prev <= max && fromLen(history, prev) <= chars) return prev;
-  const m = prev >= 0 && lo ? lo.max : max, c = prev >= 0 && lo ? lo.chars : chars;
+  const small = lo && (prev >= 0 || fresh === 'lo');
+  const m = small ? lo.max : max, c = small ? lo.chars : chars;
   let from = n, size = 0;
   while (from > 0 && (n - from < 2 || (n - from < m && size + history[from - 1].text.length <= c))) size += history[--from].text.length;
   return from;
@@ -638,13 +640,42 @@ export function chatTranscript(history, { max = 40, chars = 7000 } = {}) {
   return chatLines(history.slice(chatFrom(history, { max, chars }))).join('\n');
 }
 // 지난번에 넘긴 첫 이야기 (다음 번에도 같은 데서 시작하려고)
-const CHAT_WIN = { max: 60, chars: 10500, lo: { max: 40, chars: 7000 } };
+// 넘기는 양을 줄이는 대신 창 밖으로 밀려난 이야기는 짧은 요약(<summary>, aiCoachSummary)으로 남겨 같이 넘김.
+// 그래서 이야기가 아무리 길어져도 한 번에 넘기는 양은 이 창 + 요약(700자 안)으로 고정
+const CHAT_WIN = { max: 30, chars: 5000, lo: { max: 12, chars: 2200 }, fresh: 'lo' }; // 넘치면 12개까지 줄여서, 요약은 대략 이야기 아홉 번에 한 번
 // Groq 무료 등급은 모델마다 분당 8,000토큰이라, 앞선 이야기가 9,900자쯤이면 한 번에 그 한도를 넘어 413으로 거절됨.
 // 그래서 Groq는 앞선 이야기를 4,000자까지만 (한 번에 약 4,000토큰: 1분에 두 번 보내도 한도 안)
-const CHAT_WIN_GROQ = { max: 30, chars: 4000, lo: { max: 20, chars: 2700 } };
+const CHAT_WIN_GROQ = { max: 24, chars: 3000, lo: { max: 10, chars: 1500 }, fresh: 'lo' };
 export const chatWindow = provider => (provider === 'groq' ? CHAT_WIN_GROQ : CHAT_WIN);
 const itemKey = h => (h.t ? `t${h.t}` : `${h.who}|${h.day || ''}|${h.text}`);
 let chatFirst = null;
+
+// 이번에 넘길 앞선 이야기의 시작 자리 (aiCoachChat과 같은 계산, 상태는 안 바꿈). 앱이 그 앞의 아직 요약 안 한 이야기를 요약하려고
+export function chatStart(history) {
+  const prev = chatFirst ? history.findIndex(h => itemKey(h) === chatFirst) : -1;
+  return chatFrom(history, { ...chatWindow(coachConf().provider), prev });
+}
+
+const SUM_MAX = 700;
+const SUM_SYSTEM = `학생과 영단어 앱 코치가 나눈 이야기를 코치가 나중에 이어 말할 수 있게 짧은 메모로 줄여요.
+<prev>(지난 메모)와 <dropped>(새로 줄일 이야기)를 합쳐 새 메모 하나를 써요. ${SUM_MAX}자를 넘지 않게.
+- 남길 것: 학생의 고민·목표·관심사, 서로 한 약속(예: 다음에 퀴즈 이어서), 퀴즈에서 틀리거나 헷갈려한 단어, 학생이 마음에 들어 한 외우는 요령, 정한 일정의 요지.
+- 버릴 것: 인사, 잡담, 이미 지난 계산 숫자, 같은 말 되풀이. 오래되고 덜 중요한 것부터 뺌.
+- 날짜를 알면 '(11월 3일)'처럼 앞에 붙임. '- '로 시작하는 짧은 줄로만 쓰고, 다른 말·마크다운 기호는 쓰지 마요.`;
+/**
+ * 앞선 이야기 중 창 밖으로 밀려난 부분 줄이기. summary: 지난 요약, history: 새로 밀려난 이야기(chatTranscript와 같은 모양)
+ * 반환 새 요약(글자) 또는 null(실패). 넘칠 때만(이야기 일고여덟 번에 한 번) 부름. Claude는 싼 Haiku로
+ */
+export async function aiCoachSummary({ summary = '', history = [] }) {
+  if (!aiCoachOnline() || !history.length) { lastErr = 'offline'; return null; }
+  let lines = chatLines(history).join('\n');
+  if (lines.length > 8000) lines = lines.slice(-8000); // 처음 줄일 때 오래 쌓인 이야기가 많으면 최근 쪽만
+  const user = `<prev>\n${summary || '(없음)'}\n</prev>\n<dropped>\n${lines}\n</dropped>`;
+  const raw = await askCoach({ system: SUM_SYSTEM, user, timeout: 20000, maxTokens: 1024 });
+  const text = clean(String(raw || '').replace(/<think>[\s\S]*?<\/think>/g, '')).replace(/\*\*|`|^#+\s*/gm, '').trim();
+  if (!text) { if (raw != null) lastErr = 'bad'; return null; }
+  return text.length > SUM_MAX ? text.slice(0, text.lastIndexOf('\n', SUM_MAX) > 200 ? text.lastIndexOf('\n', SUM_MAX) : SUM_MAX) : text;
+}
 
 // JSON이 깨져 왔을 때: "text" 값만이라도 건지고, 그것도 없으면 온 글 그대로를 코치 말로
 function looseChat(raw) {
@@ -659,7 +690,7 @@ function looseChat(raw) {
  * history: 앞선 이야기(chatTranscript 참고), message: 학생이 방금 한 말, day: 오늘 날짜
  * 반환 { mood, text, plan: { rest?, perDay?, review?, today? } | null, remember: 글자 } 또는 null(실패, aiCoachError()로 까닭)
  */
-export async function aiCoachChat({ char, facts, weak = '', notes = [], history = [], message, day = '' }) {
+export async function aiCoachChat({ char, facts, weak = '', notes = [], summary = '', history = [], message, day = '' }) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   const prev = chatFirst ? history.findIndex(h => itemKey(h) === chatFirst) : -1;
   const from = chatFrom(history, { ...chatWindow(coachConf().provider), prev });
@@ -677,7 +708,7 @@ ${weak || '(아직 틀린 단어 기록이 없음)'}
 <memory>
 ${notes.length ? notes.map(n => `- ${n}`).join('\n') : '(아직 없음)'}
 </memory>
-${lines.length ? '앞선 이야기:\n' : ''}` },
+${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 이야기:\n' : ''}` },
     ...lines.map(l => ({ text: `${l}\n` })),
   ];
   parts[parts.length - 1].cache = true;

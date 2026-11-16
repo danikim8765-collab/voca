@@ -567,11 +567,41 @@ test('홈 말풍선: 반말이 섞이면 버리고 앱의 기본 말로', async 
 test('코치와 이야기: Groq는 앞선 이야기를 짧게 (무료 한도 분당 8,000토큰)', async () => {
   const { chatWindow } = await import('../js/ai.js');
   assert.ok(chatWindow('groq').chars <= 4500);
-  assert.equal(chatWindow('claude').chars, 10500);
+  assert.ok(chatWindow('claude').chars <= 5000); // 밀려난 이야기는 요약으로 넘기니 창은 작게
   store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'openai/gpt-oss-120b' }));
   const history = Array.from({ length: 40 }, (_, i) => ({ who: i % 2 ? 'coach' : 'me', text: 'x'.repeat(250), t: 1000 + i }));
   reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '{"mood":"normal","text":"좋아요.","rest":"","perDay":0,"review":0,"today":-1,"remember":""}' } }] });
   await aiCoachChat({ char: 'cat', facts: '', history, message: '안녕' });
   const sent = JSON.parse(calls.at(-1).opts.body).messages[1].content;
   assert.ok((sent.match(/x{250}/g) || []).length <= 16, `${(sent.match(/x{250}/g) || []).length}줄`);
+});
+
+test('토큰 아끼기: 창 밖으로 밀려난 이야기는 요약해서 같이 넘김', async () => {
+  const { aiCoachSummary, chatStart, chatWindow } = await import('../js/ai.js');
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  store.set('voca.ai.on.v1', '1');
+  const history = Array.from({ length: 50 }, (_, i) => ({ who: i % 2 ? 'coach' : 'me', text: `말${i} ` + 'x'.repeat(100), day: '11월 3일', t: 1000 + i }));
+  // 창은 앞부분을 잘라 냄 → 그 앞이 요약할 몫
+  const from = chatStart(history);
+  assert.ok(from > 0 && history.length - from <= chatWindow('groq').max);
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '- (11월 3일) 퀴즈에서 fatal을 헷갈림\n- 다음에 퀴즈 이어서 하기로 함' } }] });
+  calls = [];
+  const sum = await aiCoachSummary({ summary: '- 목표는 만점', history: history.slice(0, from) });
+  assert.equal(sum, '- (11월 3일) 퀴즈에서 fatal을 헷갈림\n- 다음에 퀴즈 이어서 하기로 함');
+  const req = JSON.parse(calls.at(-1).opts.body);
+  const user = req.messages.at(-1).content;
+  assert.match(user, /<prev>\n- 목표는 만점/);
+  assert.match(user, /말0 /);
+  assert.doesNotMatch(user, new RegExp(`말${from} `)); // 창 안의 이야기는 요약에 안 넣음
+  // 요약은 대화에 <summary>로 같이 감
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: '{"mood":"normal","text":"좋아요.","rest":"","perDay":0,"review":0,"today":-1,"remember":""}' } }] });
+  await aiCoachChat({ char: 'cat', facts: '', summary: sum, history, message: '안녕' });
+  const sent = JSON.parse(calls.at(-1).opts.body).messages[1].content;
+  assert.match(sent, /<summary>\n- \(11월 3일\) 퀴즈에서 fatal을 헷갈림/);
+  // 긴 요약은 700자 안으로 (줄 단위로 자름)
+  reply = () => json({ choices: [{ finish_reason: 'stop', message: { content: Array.from({ length: 40 }, (_, i) => `- 메모 ${i} ` + 'ㄱ'.repeat(30)).join('\n') } }] });
+  assert.ok((await aiCoachSummary({ history: history.slice(0, 3) })).length <= 700);
+  // 실패하면 null
+  reply = () => json({ error: { message: 'rate' } }, 429);
+  assert.equal(await aiCoachSummary({ history: history.slice(0, 3) }), null);
 });

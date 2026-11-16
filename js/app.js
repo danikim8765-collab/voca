@@ -5,7 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
-import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
 import { reportRepo, reportReasons, reportText, issueUrl, pushError } from './report.js';
@@ -938,10 +938,11 @@ function loadChat() {
     try { localStorage.removeItem(OLD_WORD_CHAT); } catch {}
   }
   const c = load(CHAT_KEY, null) || {};
-  return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [] };
+  return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [], sum: c.sum && (c.sum.text || c.sum.upTo) ? c.sum : null, sumFail: c.sumFail || 0 };
 }
 // 실패 안내(err)는 저장하지 않음: 다시 열면 사라짐
-const saveChat = c => save(CHAT_KEY, { items: c.items.filter(m => !m.err).slice(-CHAT_KEEP), notes: c.notes.slice(-NOTE_KEEP) });
+// sum = 창 밖으로 밀려난 앞선 이야기의 요약 { text, upTo: 거기까지 줄인 마지막 이야기의 시각 }
+const saveChat = c => save(CHAT_KEY, { items: c.items.filter(m => !m.err).slice(-CHAT_KEEP), notes: c.notes.slice(-NOTE_KEEP), ...(c.sum ? { sum: c.sum } : {}), ...(c.sumFail ? { sumFail: c.sumFail } : {}) });
 
 // 약한 단어: 틀린 적이 있는 단어를 많이 틀린 순으로 (지금 0단계면 앞으로). 코치가 짚어 주려고
 // 코치는 두 모드가 하나라 예문·단어 기록을 합쳐서 봄 (틀린·맞힌 횟수는 더하고, 마지막에 틀렸는지는 더 최근에 푼 쪽)
@@ -1193,6 +1194,18 @@ function openCoachChat() {
     saveChat(chat);
     draw();
   };
+  // 토큰 아끼기: 앞선 이야기는 최근 것만 넘기고, 이번에 창 밖으로 밀려나는 이야기는 AI가 짧은 메모로 줄여 둠.
+  // 넘칠 때만(이야기 일고여덟 번에 한 번) AI를 한 번 더 부름. 실패하면 10분 동안은 다시 안 해 봄(요약 없이 그대로 이야기)
+  const catchUp = async history => {
+    const upTo = (chat.sum && chat.sum.upTo) || 0;
+    const drop = history.slice(0, chatStart(history)).filter(h => (h.t || 0) > upTo);
+    if (!drop.length || Date.now() - (chat.sumFail || 0) < 600000) return;
+    const text = await aiCoachSummary({ summary: chat.sum ? chat.sum.text : '', history: drop });
+    if (!text) { chat.sumFail = Date.now(); saveChat(chat); return; }
+    chat.sum = { text, upTo: drop[drop.length - 1].t || Date.now() };
+    chat.sumFail = 0;
+    saveChat(chat);
+  };
   const talk = async (msg, again = false) => {
     msg = String(msg || '').trim();
     if (!msg || busy) return;
@@ -1202,7 +1215,8 @@ function openCoachChat() {
     mood = 'normal';
     draw();
     const history = forAi().slice(0, -1);
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), weak: weakText(), notes: chat.notes.map(n => n.text), history, message: msg, day: fmtDay(today) });
+    await catchUp(history);
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today) });
     busy = false;
     if (!res) {
       chat.items.push({ who: 'coach', text: coachErrorText(), t: Date.now(), err: true, retry: msg });
@@ -1248,6 +1262,16 @@ function openCoachChat() {
       row.appendChild(x);
       list.appendChild(row);
     });
+    if (chat.sum && chat.sum.text) {
+      list.appendChild(el('div', 'mem-sum-head', '지난 이야기 요약'));
+      const row = el('div', 'mem-row mem-sum');
+      row.appendChild(el('span', null, chat.sum.text));
+      const x = el('button', 'mem-del', '지우기');
+      x.type = 'button';
+      x.addEventListener('click', () => { chat.sum = { text: '', upTo: chat.sum.upTo }; saveChat(chat); drawMem(); }); // 줄인 데까지는 그대로 둬서 지운 이야기가 다시 요약되지 않게
+      row.appendChild(x);
+      list.appendChild(row);
+    }
     const wipe = $('#cc-wipe');
     wipe.textContent = '이야기와 기억 모두 지우기';
     wipe.dataset.sure = '';
@@ -1259,6 +1283,7 @@ function openCoachChat() {
     if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '한 번 더 누르면 지워요'; return; }
     chat.items = [{ who: 'coach', text: '다 지웠어요. 처음부터 다시 이야기해요.', t: Date.now() }];
     chat.notes = [];
+    chat.sum = null;
     card = null;
     saveChat(chat);
     mem.hidden = true;
