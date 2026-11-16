@@ -39,6 +39,24 @@ const el = (tag, cls, text) => {
   return e;
 };
 
+// ---------- 아이콘: 선 굵기·모서리를 맞춘 SVG 한 벌 (이모지 대신. 기기마다 모양이 달라지지 않게) ----------
+const svgIcon = body => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const ICON = {
+  speak: svgIcon('<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
+  gear: svgIcon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>'),
+  back: svgIcon('<path d="M19 12H5M12 19l-7-7 7-7"/>'),
+  close: svgIcon('<path d="M18 6 6 18M6 6l12 12"/>'),
+  bulb: svgIcon('<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/>'),
+  help: svgIcon('<circle cx="12" cy="12" r="9.5"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>'),
+  edit: svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  mark: svgIcon('<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>'),
+};
+// 아이콘 + 글자 버튼: 글자만 바꿀 땐 setLabel (아이콘은 그대로)
+const iconBtn = (cls, name, label) => { const b = el('button', cls); b.innerHTML = ICON[name] + '<span class="lbl"></span>'; b.lastChild.textContent = label; return b; };
+const setLabel = (b, t) => { const s = b.querySelector('.lbl'); if (s) s.textContent = t; else b.textContent = t; };
+// index.html의 data-icon 자리에 아이콘을 채움 (모듈이라 첫 화면 그리기 전에 실행됨)
+document.querySelectorAll('[data-icon]').forEach(b => b.insertAdjacentHTML('afterbegin', ICON[b.dataset.icon] || ''));
+
 const load = (k, def) => {
   try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; }
 };
@@ -297,6 +315,7 @@ function setTint(t) { if (t) document.body.dataset.tint = t; else delete documen
 function show(id, push = true) {
   if (id === 'home') setTint(null);
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+  document.body.dataset.screen = id; // 화면별 CSS (style.css body[data-screen])
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
   if (id === 'quiz' && current !== 'quiz') { clearTimeout(toast.timer); $('#toast').hidden = true; }
   current = id;
@@ -341,7 +360,8 @@ function speak(text) {
   speechSynthesis.speak(u);
 }
 function speakBtn(text, big) {
-  const b = el('button', 'speak' + (big ? ' big' : ''), '🔊');
+  const b = el('button', 'speak' + (big ? ' big' : ''));
+  b.innerHTML = ICON.speak;
   b.setAttribute('aria-label', '발음 듣기');
   b.addEventListener('click', e => { e.stopPropagation(); speak(text); });
   return b;
@@ -379,13 +399,22 @@ function setWords(list) {
   words = list;
   findWord = makeWordFinder(words);
   byId = new Map(words.map(w => [w.id, w]));
-  days = [...new Set(words.map(w => w.day))].sort((a, b) => a - b);
+  byDay = new Map();
+  for (const w of words) { if (!byDay.has(w.day)) byDay.set(w.day, []); byDay.get(w.day).push(w); }
+  days = [...byDay.keys()].sort((a, b) => a - b);
 }
+// DAY별 단어 (setWords에서 한 번 나눠 둠. 화면마다 words 전체를 다시 거르지 않게)
+let byDay = new Map();
+const dayWords = d => byDay.get(d) || [];
 
 // ---------- 홈 ----------
+// 학습 범위 단어: 홈 한 번 그릴 때 수십 번 불려서 범위·단어 목록이 같으면 앞서 거른 걸 그대로 씀 (고치지 말고 읽기만)
+let rangeMemo = { list: null, from: 0, to: 0, out: [] };
 function rangeWords() {
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
-  return words.filter(w => w.day >= from && w.day <= to);
+  const m = rangeMemo;
+  if (m.list !== words || m.from !== from || m.to !== to) rangeMemo = { list: words, from, to, out: words.filter(w => w.day >= from && w.day <= to) };
+  return rangeMemo.out;
 }
 // 단어 코치: 켜져 있고 시험일이 앞으로 남아 있으면 코치가 목표일과 하루 새 단어 수를 정함 (복습은 주기 복습 방식으로)
 const coachActive = () => !!(settings.coach && settings.exam && settings.exam > dateStr());
@@ -507,10 +536,9 @@ function renderHome() {
   grid.innerHTML = '';
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   for (const d of days) {
-    const dw = words.filter(w => w.day === d);
-    const seen = dw.filter(w => stats[w.id]).length;
-    const m = dw.filter(w => isMastered(stats[w.id])).length;
-    const wr = dw.filter(w => isWrongNote(stats[w.id])).length;
+    const dw = dayWords(d);
+    let seen = 0, m = 0, wr = 0;
+    for (const w of dw) { const s = stats[w.id]; if (s) seen++; if (isMastered(s)) m++; if (isWrongNote(s)) wr++; }
     const wrap = el('div', 'day-wrap');
     const b = el('button', 'day' + (d >= from && d <= to ? ' sel' : ''));
     b.append(el('b', null, `DAY ${d}`), el('span', 'muted', `${seen}/${dw.length}` + (wr ? ` · 다시 ${wr}` : '')));
@@ -1498,7 +1526,7 @@ function renderPlan() {
     for (const [n, l, onEdit] of items) {
       const d = el(onEdit ? 'button' : 'div', onEdit ? 'editable' : null);
       d.append(el('b', null, n), l);
-      if (onEdit) { d.title = '눌러서 개수 정하기'; d.appendChild(el('i', 'edit-ic', '✎')); d.addEventListener('click', onEdit); }
+      if (onEdit) { d.title = '눌러서 개수 정하기'; { const ic = el('i', 'edit-ic'); ic.innerHTML = ICON.edit; d.appendChild(ic); } d.addEventListener('click', onEdit); }
       box.appendChild(d);
     }
   };
@@ -1536,7 +1564,7 @@ function renderPlan() {
   let note = '';
 
   if (stage === 'day') {
-    const dw = words.filter(w => w.day === soloDay);
+    const dw = dayWords(soloDay);
     const seen = dw.filter(w => stats[w.id]).length;
     $('#btn-day').textContent = `DAY ${soloDay} 학습 시작 (${dw.length})`;
     $('#btn-day-reset').hidden = !dayHasRecords(soloDay);
@@ -1728,7 +1756,7 @@ async function startSession(mode, list) {
     label = '추가 복습';
   } else if (mode === 'day') {
     // 그 DAY만: 안 배운 단어는 교재 순서로 먼저, 배운 단어는 섞어서
-    const dw = words.filter(w => w.day === soloDay);
+    const dw = dayWords(soloDay);
     ids = [...dw.filter(w => !stats[w.id]), ...shuffle(dw.filter(w => stats[w.id]))].map(w => w.id);
     if (!ids.length) return;
     label = `DAY ${soloDay}`;
@@ -1794,7 +1822,7 @@ function resumeSession() {
 // 학습 기록·복습 일정·다시 볼 단어에 영향 없음. 이어하기에도 안 남김
 function startSynSession(day, list) {
   viewStage = null;
-  const pool = (list || words.filter(w => w.day === day)).filter(Boolean);
+  const pool = (list || dayWords(day)).filter(Boolean);
   const ids = shuffle(pool.filter(hasSynAnt)).map(w => w.id);
   if (!ids.length) { toast(`DAY ${day}에는 유의어·반의어가 있는 단어가 없어요`); return; }
   setTint('syn');
@@ -1862,7 +1890,7 @@ function renderSynQuestion(w) {
   mEl.textContent = sq.sentence ? sq.sentence.ko || meaningText(w) : `뜻: ${meaningText(w)}`;
   mEl.hidden = true;
   $('#btn-hint').hidden = !mEl.textContent;
-  $('#btn-hint').textContent = '💡 힌트';
+  setLabel($('#btn-hint'), '힌트');
   $('#btn-idk').hidden = false;
   const actions = $('#q-actions');
   actions.innerHTML = '';
@@ -1991,7 +2019,7 @@ function renderQuestion() {
   mEl.textContent = meaningText(w);
   mEl.hidden = !(settings.showMeaning || noBlank) || !mEl.textContent;
   $('#btn-hint').hidden = false;
-  $('#btn-hint').textContent = '💡 힌트';
+  setLabel($('#btn-hint'), '힌트');
 
   const actions = $('#q-actions');
   actions.innerHTML = '';
@@ -2091,7 +2119,7 @@ function renderWordQuestion(w) {
   mEl.textContent = wordHint(w);
   mEl.hidden = true;
   $('#btn-hint').hidden = !mEl.textContent;
-  $('#btn-hint').textContent = '💡 힌트';
+  setLabel($('#btn-hint'), '힌트');
   $('#btn-idk').hidden = false;
   const actions = $('#q-actions');
   actions.innerHTML = '';
@@ -2434,7 +2462,7 @@ function renderTyping(actions) {
     clearTimeout(coachIdle);
     const n = normalizeAnswer(value);
     const f = coachFeedback(value, q.w, { cands, find: t => findWord(t, q.w.id) });
-    const plain = () => { if (f) showCoach(actions, f); else if (!auto) toast('아직 정답이 아니에요. 모르면 💡 힌트를 눌러보세요'); };
+    const plain = () => { if (f) showCoach(actions, f); else if (!auto) toast('아직 정답이 아니에요. 모르면 힌트를 눌러보세요'); };
     if (!aiOnline() || n.length < 2 || q.revealed || (f && f.kind === 'spell')) return plain();
     const key = `${q.w.id}|${n}`;
     let r = coachCache.get(key);
@@ -2517,7 +2545,7 @@ let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
 function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlot = () => false) {
   $('#quiz').classList.add('kb-mode');
   const top = el('div', 'kb-top');
-  const hintBtn = el('button', 'btn ghost small kb-hint', '💡 힌트');
+  const hintBtn = iconBtn('btn ghost small kb-hint', 'bulb', '힌트');
   // 힌트는 힌트 버튼에서 누르기 시작한 탭만 (바로 아래 키보드 틈을 누른 탭이 힌트로 잡히지 않게)
   // (크롬은 버튼 바로 옆 빈 곳을 누른 탭을 버튼으로 옮김 → 실제 터치 위치가 힌트 버튼 아래면 키보드 입력으로 넘김)
   let hintArmed = false;
@@ -2672,7 +2700,7 @@ function useHint() {
       q.letterHint = true;
       if (next != null) {
         q.typing.set(next);
-        setHintButtons('💡 정답 보고 쓰기');
+        setHintButtons('정답 보고 쓰기');
         return;
       }
     }
@@ -2696,7 +2724,7 @@ function setHintButtons(label) {
   for (const b of [$('#btn-hint'), document.querySelector('.kb-hint')]) {
     if (!b) continue;
     b.hidden = label == null;
-    if (label) b.textContent = label;
+    if (label) setLabel(b, label);
   }
 }
 
@@ -3092,11 +3120,9 @@ function bookView() {
   };
 }
 
-const HL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>';
-
 function markBtn(id, onChange) {
   const b = el('button', 'mark-btn' + (isUnknown(id) ? ' on' : ''));
-  b.innerHTML = HL_ICON;
+  b.innerHTML = ICON.mark;
   b.setAttribute('aria-label', '형광펜');
   b.setAttribute('aria-pressed', isUnknown(id));
   b.addEventListener('click', e => {
@@ -3157,11 +3183,11 @@ function wordItem(w, view = bookView(), onMark) {
 // 그 DAY에 기록이 있는지 (예문·단어 모드 어느 쪽이든)
 function dayHasRecords(d) {
   const o = otherProgress().stats;
-  return words.some(w => w.day === d && (stats[w.id] || (o[w.id] && !o[w.id].del)));
+  return dayWords(d).some(w => stats[w.id] || (o[w.id] && !o[w.id].del));
 }
 // 그 DAY 단어들의 학습 기록을 예문·단어 두 모드 모두 지움. 동기화돼도 되살아나지 않게 지운 표시를 남김. 형광펜은 그대로
 async function deleteDayRecords(d) {
-  const dw = words.filter(w => w.day === d);
+  const dw = dayWords(d);
   const o = otherProgress().stats;
   const mine = dw.filter(w => stats[w.id]).map(w => w.id);
   const theirs = dw.filter(w => o[w.id] && !o[w.id].del).map(w => w.id);

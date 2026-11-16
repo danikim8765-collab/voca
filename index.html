@@ -41,12 +41,12 @@
   <!-- 화면을 다 그릴 준비가 될 때까지 첫 화면을 미룸 → 모드 전환 때 "불러오는 중"이 깜빡이지 않음 -->
   <script type="module" src="js/app.js" blocking="render"></script>
 </head>
-<body>
+<body data-screen="home">
   <!-- 홈 -->
   <section id="home" class="screen active">
     <header class="top">
       <h1>VOCA <span class="sub" data-only="ex">빈칸 암기</span><span class="sub" data-only="word">단어 암기</span></h1>
-      <span class="head-right"><span id="sync-badge" class="sync-badge" hidden></span><nav class="mode-switch" aria-label="학습 모드"><span class="mode-thumb" aria-hidden="true"></span><a href="./" data-m="ex" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="./?m=word" data-m="wd" aria-label="단어 (뜻 암기)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav><button class="icon-btn" id="btn-settings" aria-label="설정">⚙︎</button></span>
+      <span class="head-right"><span id="sync-badge" class="sync-badge" hidden></span><nav class="mode-switch" aria-label="학습 모드"><span class="mode-thumb" aria-hidden="true"></span><a href="./" data-m="ex" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="./?m=word" data-m="wd" aria-label="단어 (뜻 암기)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav><button class="icon-btn" id="btn-settings" aria-label="설정" data-icon="gear"></button></span>
     </header>
 
     <div id="load-status" class="status">단어를 불러오는 중…</div>
@@ -144,7 +144,7 @@
        설정에서 '홈 간단히 보기'를 끄면 이 카드들이 예전처럼 홈으로 옮겨짐 (applyHomeLayout) -->
   <section id="plan" class="screen">
     <header class="top">
-      <button class="icon-btn" id="btn-plan-back" aria-label="뒤로">←</button>
+      <button class="icon-btn" id="btn-plan-back" aria-label="뒤로" data-icon="back"></button>
       <h1>학습 계획</h1>
       <span></span>
     </header>
@@ -203,7 +203,7 @@
   <!-- 퀴즈 -->
   <section id="quiz" class="screen">
     <header class="quiz-top">
-      <button class="icon-btn" id="btn-quit" aria-label="그만하기">✕</button>
+      <button class="icon-btn" id="btn-quit" aria-label="그만하기" data-icon="close"></button>
       <div class="bar grow"><div class="bar-fill" id="quiz-bar"></div></div>
       <span class="count" id="quiz-count"></span>
     </header>
@@ -213,8 +213,8 @@
       <div id="q-sentences"></div>
       <div id="q-meaning" class="q-meaning" hidden></div>
       <div class="q-tools">
-        <button class="btn ghost small" id="btn-hint">💡 힌트</button>
-        <button class="btn ghost small" id="btn-idk" hidden>🤷 모르겠어요</button>
+        <button class="btn ghost small" id="btn-hint" data-icon="bulb"><span class="lbl">힌트</span></button>
+        <button class="btn ghost small" id="btn-idk" data-icon="help" hidden><span class="lbl">모르겠어요</span></button>
       </div>
     </div>
     <div class="quiz-actions" id="q-actions"></div>
@@ -238,8 +238,8 @@
         <div class="fb-pane" id="fb-mean"></div>
         <div class="fb-pane" id="fb-ex" hidden></div>
         <div class="fb-actions">
-          <button class="speak-btn" id="fb-speak" aria-label="단어 발음 듣기">🔊</button>
-          <button class="btn primary big next-btn" id="btn-next">▶ 계속하기</button>
+          <button class="speak-btn" id="fb-speak" aria-label="단어 발음 듣기" data-icon="speak"></button>
+          <button class="btn primary big next-btn" id="btn-next">계속하기</button>
         </div>
       </div>
     </div>
@@ -265,7 +265,7 @@
   <!-- 단어장 -->
   <section id="list" class="screen">
     <header class="top">
-      <button class="icon-btn" id="btn-list-back" aria-label="뒤로">←</button>
+      <button class="icon-btn" id="btn-list-back" aria-label="뒤로" data-icon="back"></button>
       <h1 id="list-title">단어장</h1>
       <span></span>
     </header>
@@ -293,7 +293,7 @@
   <!-- 설정 -->
   <section id="settings" class="screen">
     <header class="top">
-      <button class="icon-btn" id="btn-settings-back" aria-label="뒤로">←</button>
+      <button class="icon-btn" id="btn-settings-back" aria-label="뒤로" data-icon="back"></button>
       <h1>설정</h1>
       <span></span>
     </header>
@@ -387,7 +387,7 @@
       <div class="label">말하기 속도 <span id="rate-val" class="muted"></span></div>
       <input type="range" id="rate" min="0.6" max="1.2" step="0.1">
       <label class="switch-row"><span>정답 확인 후 단어 자동 발음</span><input type="checkbox" role="switch" class="switch" id="opt-autospeak"></label>
-      <button class="btn ghost small" id="btn-test-voice">🔊 발음 테스트</button>
+      <button class="btn ghost small" id="btn-test-voice" data-icon="speak"><span class="lbl">발음 테스트</span></button>
     </div>
     <!-- AI: 두 모드 공용 (키·스위치도 같이 씀) -->
     <div class="card" id="ai-card">
