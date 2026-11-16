@@ -87,7 +87,7 @@ export function issueUrl(repo, title, body, max = 7000) {
 // ---------- 로그인 없이 보내기: Google 설문지 ----------
 // 신고는 Google 설문지로 보내고, 응답은 그 설문지에 연결한 Google 시트에 쌓임 (Claude가 Google Sheets로 읽음).
 // id·entry는 설문지의 '미리 채워진 링크'에서 (parseFormLink). 비어 있으면 예전처럼 GitHub 이슈 화면을 엶
-export const REPORT_FORM = { id: '', entry: '' };
+export const REPORT_FORM = { id: '1FAIpQLSe5HE323TbUv7rPrew5GsvK11MC_TjJf5255DH0QjzYyIh2vA', entry: 'entry.565931740' }; // 'VOCA 신고' 설문지 (질문 '내용', 장문형)
 export const formReady = (f = REPORT_FORM) => !!(f && f.id && f.entry);
 
 // 미리 채워진 링크 https://docs.google.com/forms/d/e/<id>/viewform?usp=pp_url&entry.123456=… → { id, entry: 'entry.123456' }
