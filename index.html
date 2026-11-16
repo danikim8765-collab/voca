@@ -334,6 +334,14 @@
         </div>
         <p class="muted" id="strict-desc"></p>
       </div>
+      <div class="label mt">다시 나오기 <span class="muted">(틀리거나 힌트를 쓴 단어를 이번 학습에서 언제 또 낼지)</span></div>
+      <div class="seg" id="again-preset">
+        <button data-v="light">가볍게</button>
+        <button data-v="rec">추천</button>
+        <button data-v="full">꼼꼼하게</button>
+      </div>
+      <div class="again-grid" id="again-rows" role="group" aria-label="다시 나올 때"></div>
+      <p class="muted again-desc" id="again-desc"></p>
       <p class="muted set-note">문제 방식·하루 개수<span data-only="ex">·예문 해석 가리기</span>는 <button class="link-btn" id="btn-set-plan">학습 계획</button>에서 바꿔요.</p>
     </div>
     <div class="card" id="srs-card">
@@ -489,6 +497,7 @@
       <div class="dlg-title" id="cp-title">함께할 코치를 골라 주세요</div>
       <div class="dlg-body">설정에서 언제든 바꿀 수 있어요.</div>
       <div class="coach-choices" id="cp-choices"></div>
+      <p class="cp-bio" id="cp-bio" aria-live="polite"></p>
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="cp-cancel">취소</button>
         <button class="btn dlg-ok" id="cp-ok">이 코치로</button>

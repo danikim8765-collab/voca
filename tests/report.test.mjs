@@ -49,3 +49,20 @@ test('오류 기록: 같은 건 한 번, 최근 것만', () => {
   assert.deepEqual(l.at(-1), { t: 99, m: 'e9' });
   assert.equal(pushError(l, '  ', 1), l);
 });
+
+test('설문지로 보내기: 미리 채워진 링크에서 설문지와 칸을 찾고, 응답 주소로 보냄', async () => {
+  const { parseFormLink, formRequest, formReady, queueReport } = await import('../js/report.js');
+  const f = parseFormLink('https://docs.google.com/forms/d/e/1FAIpQLSdAbCdEfGhIjKlMnOpQrStUvWx/viewform?usp=pp_url&entry.123456789=%EC%95%88%EB%85%95');
+  assert.deepEqual(f, { id: '1FAIpQLSdAbCdEfGhIjKlMnOpQrStUvWx', entry: 'entry.123456789' });
+  assert.equal(parseFormLink('https://forms.gle/abc'), null);
+  assert.ok(formReady(f));
+  assert.ok(!formReady({ id: '', entry: '' }));
+  const r = formRequest(f, '[신고] fatal — 채점\n\n내용');
+  assert.equal(r.url, 'https://docs.google.com/forms/d/e/1FAIpQLSdAbCdEfGhIjKlMnOpQrStUvWx/formResponse');
+  assert.equal(new URLSearchParams(r.body).get('entry.123456789'), '[신고] fatal — 채점\n\n내용');
+  let q = [];
+  for (let i = 0; i < 35; i++) q = queueReport(q, { id: `r${i}`, text: 'x' });
+  assert.equal(q.length, 30);
+  assert.equal(q[0].id, 'r5');
+  assert.equal(queueReport(q, { id: 'r34', text: 'y' }).filter(x => x.id === 'r34').length, 1);
+});

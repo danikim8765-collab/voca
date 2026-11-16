@@ -881,8 +881,14 @@ export function mergeProgress(a, b) {
     // 쉬는 요일도 두 모드가 같이 써서(코치가 하나) 같은 까닭으로 따로, 더 최근에 바꾼 쪽(restAt)으로
     const r = restAt(pa) >= restAt(pb) ? pa : pb;
     prefs = { ...prefs, coachRest: Array.isArray(r.coachRest) ? r.coachRest : [], restAt: restAt(r) };
+    // 다시 나오기 설정도 두 모드가 같이 써서 따로, 더 최근에 바꾼 쪽(againAt)으로
+    const g = (pa.againAt || 0) >= (pb.againAt || 0) ? pa : pb;
+    if (g.again) prefs = { ...prefs, again: g.again, againAt: g.againAt || 0 };
   }
-  return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}) };
+  // 하던 학습(이어하기)도 기기끼리: 더 최근에 바꾼 쪽(at). data가 null이면 끝냈거나 지운 것
+  const sa = a && a.sess, sb = b && b.sess;
+  const sess = !sa ? sb : !sb ? sa : (sa.at || 0) >= (sb.at || 0) ? sa : sb;
+  return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}), ...(sess ? { sess } : {}) };
 }
 
 // 시험일을 바꾼 시각. examAt이 없던 예전 기록은 설정 전체를 바꾼 시각(at)으로 봄
@@ -1491,3 +1497,35 @@ export function makeSynQuestion(target, all, { byExample = true, rand = Math.ran
 
 // 유반의어 문제를 낼 수 있는 단어
 export const hasSynAnt = w => !!(synList(w).length || antList(w).length);
+
+// ---------- 이번 학습에서 다시 나오기 ----------
+// 틀림(wrong) · 힌트 두 번(hint2: 직접 입력에서 정답 보고 따라 씀) · 힌트 한 번(hint1: 힌트 쓰고 맞힘, 부분 정답)마다
+// 다시 나올 때를 여러 개 고름: 곧(1~2문제 뒤) · 조금 뒤(3~5) · 나중에(8~12) · 맨 끝(이번 학습 마지막). 하나도 없으면 이번엔 다시 안 나옴
+export const AGAIN_SLOTS = ['soon', 'mid', 'late', 'end'];
+export const AGAIN_GAPS = { soon: [1, 2], mid: [3, 5], late: [8, 12] };
+export const AGAIN_REC = { wrong: ['mid', 'end'], hint2: ['mid', 'late'], hint1: ['late'] }; // 추천
+export const AGAIN_OLD = { wrong: ['mid'], hint2: ['mid'], hint1: [] }; // 가볍게 (이 설정이 생기기 전과 같음)
+export const AGAIN_FULL = { wrong: ['soon', 'late', 'end'], hint2: ['mid', 'late', 'end'], hint1: ['mid', 'end'] }; // 꼼꼼하게
+export function cleanAgain(a) {
+  const out = {};
+  for (const k of Object.keys(AGAIN_REC)) {
+    const v = a && Array.isArray(a[k]) ? a[k] : AGAIN_REC[k];
+    out[k] = AGAIN_SLOTS.filter(s => v.includes(s));
+  }
+  return out;
+}
+export const sameAgain = (a, b) => JSON.stringify(cleanAgain(a)) === JSON.stringify(cleanAgain(b));
+
+// queue[pos]가 방금 푼 단어(id). 뒤에 남아 있던 그 단어는 빼고(다시 틀리면 새로 잡음) 고른 때마다 한 번씩 넣음.
+// 뒤쪽(나중에)부터 넣어서 앞쪽 간격이 흐트러지지 않게. 남은 문제가 모자라면 맨 끝으로, 같은 단어가 연달아 오면 하나만
+export function requeue(queue, pos, id, slots, rand = Math.random) {
+  const head = queue.slice(0, pos + 1);
+  const tail = queue.slice(pos + 1).filter(x => x !== id);
+  for (const s of ['late', 'mid', 'soon']) {
+    if (!slots.includes(s)) continue;
+    const [lo, hi] = AGAIN_GAPS[s];
+    tail.splice(Math.min(tail.length, lo + Math.floor(rand() * (hi - lo + 1))), 0, id);
+  }
+  if (slots.includes('end')) tail.push(id);
+  return [...head, ...tail.filter((x, i) => !(x === id && tail[i - 1] === id))];
+}

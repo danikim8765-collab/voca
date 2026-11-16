@@ -2,13 +2,13 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, coachPlan, cleanRest, isRestDay, studyDays,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
-import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
-import { reportRepo, reportReasons, reportText, issueUrl, pushError } from './report.js';
+import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js';
+import { reportRepo, reportReasons, reportText, issueUrl, pushError, REPORT_FORM, formReady, formRequest, queueReport } from './report.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
 const APP_VERSION = '202611131548';
@@ -82,6 +82,8 @@ const settings = Object.assign({
   // coachFix = 코치와 정한 하루 새 단어 수(0 = 고정 안 함. 고정하면 복습 날 수는 거기서 정해짐), coachTail = 남는 단어를 'last' 마지막 날에 붙임 · 'extra' 하루 더
   // coachRest = 쉬는 요일(0 일 … 6 토). 그날은 새 단어·전체 복습 몫 없이 쉼
   coach: false, coachGoal: '', coachBase: 0, coachKey: '', coachReview: 0, coachRest: [], coachFix: 0, coachTail: '',
+  // 다시 나오기 (core.js AGAIN_*): 틀림·힌트 두 번·힌트 한 번마다 이번 학습에서 다시 나올 때. 두 모드가 같이 씀(againAt = 바꾼 시각)
+  again: AGAIN_REC, againAt: 0,
 }, load(KEY.settings, {}));
 // 화면 설정 (기기마다, 예문·단어 모드가 같이 씀)
 const UI_KEY = 'voca.ui.v1';
@@ -144,6 +146,20 @@ function shareRest(v, at) {
   o.coachRest = cleanRest(v); o.restAt = at;
   save(OTHER_P + 'settings.v1', o);
 }
+// 다시 나오기 설정도 두 모드가 같이 씀 (쉬는 요일처럼 바꾼 시각을 따로)
+function shareAgain(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if ((o.againAt || 0) > at) return;
+  o.again = cleanAgain(v); o.againAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+function setAgain(v) {
+  settings.again = cleanAgain(v);
+  settings.againAt = Date.now();
+  saveSettings();
+  shareAgain(settings.again, settings.againAt);
+  sync.soon();
+}
 function setRest(v) {
   settings.coachRest = cleanRest(v);
   settings.restAt = Date.now();
@@ -153,7 +169,7 @@ function setRest(v) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -164,6 +180,17 @@ const sync = createSync({
       Object.assign(settings, { exam: m.prefs.exam || '', examAt: examAt(m.prefs) });
       saveSettings();
       shareExam(settings.exam, settings.examAt);
+    }
+    // 다른 기기에서 더 최근에 하던 학습이 있으면 그걸로 (지금 이 기기에서 문제를 풀고 있으면 건드리지 않음)
+    if (m.sess && (m.sess.at || 0) > load(SESS_AT, 0) && !(current === 'quiz' && session)) {
+      const d = m.sess.data;
+      if (d && d.queue) save(KEY.session, d); else localStorage.removeItem(KEY.session);
+      save(SESS_AT, m.sess.at);
+    }
+    if (m.prefs && m.prefs.again && (m.prefs.againAt || 0) > (settings.againAt || 0)) {
+      Object.assign(settings, { again: cleanAgain(m.prefs.again), againAt: m.prefs.againAt });
+      saveSettings();
+      shareAgain(settings.again, settings.againAt);
     }
     if (m.prefs && restAt(m.prefs) > myRestAt()) {
       Object.assign(settings, { coachRest: cleanRest(m.prefs.coachRest), restAt: restAt(m.prefs) });
@@ -203,7 +230,11 @@ const sync = createSync({
 });
 const saveSettings = () => save(KEY.settings, settings);
 // 유반의어 테스트(noSave)는 기록에 영향을 주지 않아서 이어하기에도 안 남김 (하던 정규 학습의 이어하기를 지우지 않게)
-const saveSession = () => (session ? session.noSave || save(KEY.session, session) : localStorage.removeItem(KEY.session));
+// 하던 학습은 기기끼리도 맞춤(동기화를 켰을 때): 바꾼 시각을 같이 적어 두고, 더 최근에 바꾼 기기의 것으로
+const SESS_AT = P + 'sessionAt.v1';
+const putSession = s => { if (s) save(KEY.session, s); else localStorage.removeItem(KEY.session); save(SESS_AT, Date.now()); };
+const dropSession = () => putSession(null);
+const saveSession = () => (session ? session.noSave || putSession(session) : dropSession());
 
 function toast(msg, ms = 2200) {
   const t = $('#toast');
@@ -721,6 +752,7 @@ function pickCoach() {
       b.addEventListener('click', () => { cur = c; draw(); });
       box.appendChild(b);
     }
+    $('#cp-bio').textContent = COACH_BIO[cur] || '';
   };
   draw();
   d.hidden = false;
@@ -1746,7 +1778,7 @@ async function startOrder() {
 function resumeSession() {
   const saved = load(KEY.session, null);
   if (!saved) return;
-  if (saved.date !== dateStr()) { localStorage.removeItem(KEY.session); renderHome(); toast('날짜가 바뀌어서 오늘의 학습을 새로 만들었어요'); return; }
+  if (saved.date !== dateStr()) { dropSession(); renderHome(); toast('날짜가 바뀌어서 오늘의 학습을 새로 만들었어요'); return; }
   saved.queue = saved.queue.filter(id => byId.has(id));
   saved.hinted = saved.hinted || [];
   delete saved.from;
@@ -1855,21 +1887,29 @@ function renderSynQuestion(w) {
   fitChoices();
 }
 
-// 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (틀리면 3~5문제 뒤에 다시)
+// 이번 학습에서 다시 나오게 큐에 넣음 (설정의 '다시 나오기'). 반환: 정답 화면 꼬리말
+function againLater(id, kind) {
+  const slots = cleanAgain(settings.again)[kind];
+  session.queue = requeue(session.queue, session.pos, id, slots);
+  if (slots.length) session.again[id] = (session.again[id] || 0) + 1;
+  return slots.length ? `${slots.map(s => (s === 'end' ? '맨 끝에' : AGAIN_NAME[s])).join('·')} 다시` : '내일 다시';
+}
+// 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (다시 나오기는 설정의 '틀렸을 때'·'힌트 한 번'대로)
 function synAnswer(correct, given, kind) {
   q.answered = true;
   const id = q.w.id;
   let label;
   if (!correct && kind !== 'hint') {
     if (!session.wrong.includes(id)) session.wrong.push(id);
-    session.again[id] = (session.again[id] || 0) + 1;
-    const at = Math.min(session.queue.length, session.pos + 1 + 3 + Math.floor(Math.random() * 3));
-    session.queue.splice(at, 0, id);
-    label = kind === 'idk' ? '모름 · 잠시 후 다시' : '오답 · 잠시 후 다시';
+    const when = againLater(id, 'wrong');
+    label = `${kind === 'idk' ? '모름' : '오답'}${when === '내일 다시' ? '' : ` · ${when}`}`; // 유반의어 테스트는 기록이 없어서 '내일'은 안 씀
   } else {
-    session.done.push(id);
-    if (kind === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
-    label = kind === 'hint' ? '힌트 사용' : '정답!';
+    if (!session.done.includes(id)) session.done.push(id);
+    if (kind === 'hint') {
+      const when = againLater(id, 'hint1');
+      label = `힌트 사용${when === '내일 다시' ? '' : ` · ${when}`}`;
+      if (!session.hinted.includes(id)) session.hinted.push(id);
+    } else label = '정답!';
   }
   session.pos++;
   showProgress();
@@ -2677,7 +2717,8 @@ function answer(correct, given, kind) {
   const outcome = correct ? 'ok' : kind === 'hint' || kind === 'partial' ? 'hint' : 'wrong';
   const before = stats[id];
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
-  const retry = session.wrong.includes(id);
+  // 힌트를 썼던 단어가 다시 나와서 맞힌 것도 연습으로 (복습 단계는 첫 결과대로)
+  const retry = session.wrong.includes(id) || session.hinted.includes(id);
   const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
   delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
   stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
@@ -2689,18 +2730,16 @@ function answer(correct, given, kind) {
 
   let label;
   if (outcome === 'wrong') {
-    if (!retry) session.wrong.push(id);
-    session.again[id] = (session.again[id] || 0) + 1;
-    // 같은 학습 중 3~5문제 뒤에 다시
-    const at = Math.min(session.queue.length, session.pos + 1 + 3 + Math.floor(Math.random() * 3));
-    session.queue.splice(at, 0, id);
-    label = kind === 'copied' ? '정답 보고 씀 · 잠시 후 다시' : kind === 'idk' ? '모름 · 잠시 후 다시' : '오답 · 잠시 후 다시';
+    if (!session.wrong.includes(id)) session.wrong.push(id);
+    const when = againLater(id, kind === 'copied' ? 'hint2' : 'wrong');
+    label = `${kind === 'copied' ? '정답 보고 씀' : kind === 'idk' ? '모름' : '오답'} · ${when}`;
   } else {
-    session.done.push(id);
+    if (!session.done.includes(id)) session.done.push(id);
+    const when = outcome === 'hint' ? againLater(id, 'hint1') : '';
     if (outcome === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
     const n = stats[id].due ? daysBetween(today, stats[id].due) : 0;
-    label = kind === 'partial' ? '부분 정답 · 내일 다시'
-      : outcome === 'hint' ? '힌트 사용 · 내일 다시'
+    label = kind === 'partial' ? `부분 정답 · ${when}`
+      : outcome === 'hint' ? `힌트 사용 · ${when}`
       : retry ? '정답! · 내일 다시'
         : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습`
           : cleared ? '정답! · 다시 볼 단어에서 뺐어요' : '정답!';
@@ -2839,7 +2878,25 @@ function reportApp() {
     device: `${ua} · ${innerWidth}×${innerHeight}${standalone ? ' · 홈 화면 앱' : ''}${navigator.onLine === false ? ' · 오프라인' : ''}`,
   };
 }
-// 신고 창: 이유(여러 개) + 메모 → GitHub 새 이슈 화면을 채워서 열거나 복사. ctx가 없으면 앱 전체 신고(설정에서)
+// 로그인 없이 보내는 신고: 먼저 이 기기에 쌓아 두고(voca.reports.v1) Google 설문지로 보냄. 인터넷이 안 되면 다음에 앱을 열 때·인터넷이 돌아올 때 다시
+const REPORT_Q = 'voca.reports.v1';
+let reportFlush = null;
+function flushReports() {
+  if (!formReady() || reportFlush) return reportFlush || Promise.resolve(load(REPORT_Q, []).length);
+  // 비어 있으면 기다릴 게 없어 곧바로 끝나므로, '보내는 중' 표시는 꼭 끝난 뒤에(finally) 지움
+  reportFlush = (async () => {
+    let list = load(REPORT_Q, []);
+    while (list.length && navigator.onLine !== false) {
+      const item = list[0], r = formRequest(REPORT_FORM, item.text);
+      try { await fetch(r.url, { method: 'POST', mode: 'no-cors', body: new URLSearchParams(r.body) }); } catch { break; }
+      list = load(REPORT_Q, []).filter(x => x.id !== item.id); // 보내는 사이에 새로 쌓인 것도 남김
+      save(REPORT_Q, list);
+    }
+    return list.length;
+  })().finally(() => { reportFlush = null; });
+  return reportFlush;
+}
+// 신고 창: 이유(여러 개) + 메모 → 설문지로 보냄(로그인 없음). 설문지를 아직 안 정했으면 GitHub 새 이슈 화면을 채워서 엶. 복사도 됨. ctx가 없으면 앱 전체 신고(설정에서)
 function openReport(ctx) {
   const d = $('#report'), box = $('#rp-reasons'), note = $('#rp-note'), pre = $('#rp-preview');
   const picked = new Set();
@@ -2879,9 +2936,18 @@ function openReport(ctx) {
     try { await navigator.clipboard.writeText(`${r.title}\n\n${r.body}`); toast('복사했어요. 메신저나 메일에 붙여 넣어 보내 주세요', 3000); }
     catch { $('#report .rp-peek').open = true; toast('복사가 안 돼요. 같이 보내는 내용을 길게 눌러 복사해 주세요', 3500); }
   };
-  $('#rp-send').onclick = () => {
+  $('#rp-send').textContent = formReady() ? '보내기' : 'GitHub에 올리기';
+  $('#rp-send').onclick = async () => {
     if (!picked.size && !note.value.trim()) { toast('무엇이 이상했는지 하나 골라 주세요'); return; }
     const r = build();
+    if (formReady()) {
+      const t = Date.now();
+      save(REPORT_Q, queueReport(load(REPORT_Q, []), { id: `${t}-${Math.random().toString(36).slice(2, 6)}`, t, text: `${r.title}\n\n${r.body}` }));
+      done();
+      const left = await flushReports();
+      toast(left ? '지금은 못 보냈어요. 인터넷이 되면 알아서 보낼게요' : '보냈어요. 알려 줘서 고마워요!', 3000);
+      return;
+    }
     const url = issueUrl(reportRepo(location), r.title, r.body);
     done();
     window.open(url, '_blank', 'noopener');
@@ -3375,9 +3441,39 @@ function renderSettings() {
   setSeg('#seg-layout', ui.choiceLayout);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
+  renderAgain();
   renderAiStatus();
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
+}
+
+// 다시 나오기 설정: 상황(줄) × 때(칸) 표에서 칸을 켜고 끔. 위의 가볍게·추천·꼼꼼하게는 한 번에 맞춤
+const AGAIN_ROWS = [['wrong', '틀렸을 때', '모름 포함'], ['hint2', '힌트 두 번', '정답 보고 씀'], ['hint1', '힌트 한 번', '힌트로 맞힘']];
+const AGAIN_NAME = { soon: '곧', mid: '조금 뒤', late: '나중에', end: '맨 끝' };
+const AGAIN_SUB = { soon: '1~2문제', mid: '3~5문제', late: '8~12문제', end: '마지막' };
+const AGAIN_PRESETS = { light: AGAIN_OLD, rec: AGAIN_REC, full: AGAIN_FULL };
+function renderAgain() {
+  const a = cleanAgain(settings.again), box = $('#again-rows');
+  const preset = Object.keys(AGAIN_PRESETS).find(k => sameAgain(a, AGAIN_PRESETS[k])) || '';
+  setSeg('#again-preset', preset);
+  box.innerHTML = '';
+  box.appendChild(el('span'));
+  for (const s of AGAIN_SLOTS) { const h = el('div', 'ag-head', AGAIN_NAME[s]); h.appendChild(el('small', null, AGAIN_SUB[s])); box.appendChild(h); }
+  for (const [k, name, sub] of AGAIN_ROWS) {
+    const r = el('div', 'ag-row', name);
+    r.appendChild(el('small', null, sub));
+    box.appendChild(r);
+    for (const s of AGAIN_SLOTS) {
+      const on = a[k].includes(s), b = el('button', 'again-cell' + (on ? ' on' : ''));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', on);
+      b.setAttribute('aria-label', `${name} · ${AGAIN_NAME[s]}`);
+      b.addEventListener('click', () => { setAgain({ ...a, [k]: on ? a[k].filter(x => x !== s) : [...a[k], s] }); renderAgain(); });
+      box.appendChild(b);
+    }
+  }
+  const say = k => (a[k].length ? a[k].map(s => AGAIN_NAME[s]).join('·') : '안 나옴');
+  $('#again-desc').textContent = `${preset ? '' : '직접 고름 · '}틀리면 ${say('wrong')}, 힌트 두 번은 ${say('hint2')}, 힌트 한 번은 ${say('hint1')}. 다시 나온 문제는 맞혀도 복습 단계가 안 올라가요.`;
 }
 
 // AI 고급 설정(숨긴 메뉴)이 열렸는지. 이 기기에만 저장
@@ -3460,7 +3556,7 @@ async function importProgress(file) {
         saveStats();
         if (stamp) { resetAt = now; save(KEY.resetAt, resetAt); }
         if (prefs(p.settings)) { Object.assign(settings, prefs(p.settings)); saveSettings(); }
-        localStorage.removeItem(KEY.session); // 하던 학습은 예전 진도 기준이라 지움
+        dropSession(); // 하던 학습은 예전 진도 기준이라 지움
       } else {
         save(OTHER_P + 'stats.v1', norm(p.stats));
         if (stamp) save(OTHER_P + 'resetAt.v1', now);
@@ -3570,7 +3666,8 @@ function bind() {
   $('#btn-resume').addEventListener('click', resumeSession);
   $('#btn-resume-drop').addEventListener('click', async () => {
     if (!(await ask({ title: '정말 지울까요?', body: '이어하던 학습 기록이 지워져요.\n지운 기록은 되돌릴 수 없어요.', ok: '지우기', danger: true }))) return;
-    localStorage.removeItem(KEY.session);
+    dropSession();
+    sync.soon();
     renderHome();
     toast('지웠어요');
   });
@@ -3602,7 +3699,11 @@ function bind() {
   $('#btn-settings').addEventListener('click', () => { renderSettings(); renderSyncStatus(); show('settings'); });
   $('#btn-settings-back').addEventListener('click', () => goHome());
   $('#btn-report').addEventListener('click', () => openReport(null));
+  // 못 보낸 신고가 있으면 앱을 열 때·인터넷이 돌아올 때 다시 보냄
+  flushReports();
+  window.addEventListener('online', () => flushReports());
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
+  onSeg('#again-preset', v => { setAgain(AGAIN_PRESETS[v] || AGAIN_REC); renderAgain(); });
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });
   $('#opt-autospeak').addEventListener('change', e => { settings.autoSpeak = e.target.checked; saveSettings(); });
@@ -3710,8 +3811,8 @@ function bind() {
     resetAt = Date.now(); // 다른 기기의 예전 기록도 함께 지워지게
     save(KEY.resetAt, resetAt);
     saveStats();
+    dropSession();
     sync.now();
-    localStorage.removeItem(KEY.session);
     toast(`${WORD ? '단어' : '예문'} 모드 진도를 초기화했어요`);
   });
   $('#btn-reload').addEventListener('click', async () => {
