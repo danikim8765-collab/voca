@@ -364,6 +364,12 @@ test('직접 입력 오답 풀이: 철자·형태(노랑) · 뜻이 통하는 �
   assert.ok(!sameSense(fatal.meaning, abide.meaning));
   assert.equal(shortMeaning('((주로 수동태로)) 사로잡다, 집착하게 하다[집착하다]'), '사로잡다');
   assert.match(coachFeedback('deprive', { word: 'deprive A of B', blank: 'deprive A of B', meaning: '빼앗다', extras: [] }, { cands: ['deprive a of b', 'deprive of'] }).text, /빈칸이 2곳/);
+  // 짧은 단어도 이웃한 두 글자 순서를 바꿔 친 건 알려 줌
+  const norm = { id: 'n', word: 'norm', blank: 'norm', meaning: '표준', extras: [] };
+  assert.equal(coachFeedback('nrom', norm, { cands: ['norm'] }).text, '두 글자 순서가 바뀌었어요');
+  assert.equal(coachFeedback('nrm', norm, { cands: ['norm'] }).kind, 'spell');
+  assert.equal(coachFeedback('mron', norm, { cands: ['norm'] }), null); // 너무 다르면 없음
+  assert.equal(coachFeedback('fatla', fatal, opt).text, '두 글자 순서가 바뀌었어요');
 });
 
 test('앱 키보드: 키 사이 틈을 눌러도 가장 가까운 키', async () => {
@@ -588,7 +594,11 @@ test('뜻 채점: [ ] 안의 바꿔 쓸 수 있는 말도 정답', async () => {
   // 오타는 자모 하나쯤만 봐줌: 한 글자가 통째로 다른 말은 다른 뜻
   assert.equal(gradeMeaning('수출하다', '수입하다', 'easy').score, 0);
   assert.equal(gradeMeaning('군대', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 0);
-  assert.equal(gradeMeaning('명학한', '명확한, 확고한', 'easy').score, 2); // ㅘ → ㅏ 오타
+  assert.equal(gradeMeaning('결정젹인', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 2); // ㅓ → ㅕ 오타
+  // 두 글자 말은 자모 하나만 달라도 다른 말이 되기 쉬워서 오타로 안 봄 · 첫소리가 다른 것도
+  assert.equal(gradeMeaning('수익', '수입하다 / 1. 수입, 수입품 2. 중요성', 'easy').score, 0);
+  assert.equal(gradeMeaning('최소의', '최고의, 최상의', 'easy').score, 0);
+  assert.equal(gradeMeaning('열정적인', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 0);
   assert.equal(gradeMeaning('치명적잉', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 2);
   // 상관없는 말은 여전히 오답
   assert.equal(gradeMeaning('행복하다', '1. 차별하다 2. 식별[구별]하다', 'easy').score, 0);
@@ -713,4 +723,54 @@ test('전체 복습 기간: 쉬는 요일엔 몫이 없고, 공부하는 날로 
   assert.deepEqual([sat.rest, sat.words.length], [true, 0]);
   // 금요일(다섯 번째 공부하는 날)이면 다섯 몫까지 (앞에서 안 본 것 전부)
   assert.equal(pickSrsReview(words, words, {}, { ...opt, today: '2026-11-20' }).words.length, 60);
+});
+
+test('해석 강조: 명사는 통째로만, 한 글자는 동사 어간만 (엉뚱한 말에 붙지 않게)', async () => {
+  const { highlightMeaning, senseOf } = await import('../js/core.js');
+  const hl = (ko, m, mark) => highlightMeaning(ko, m, mark).map(s => (s.t === 'mark' ? `[${s.v}]` : s.v)).join('');
+  const sovereign = '1. 주권을 가진, 자주적인 2. 최고 권력의 / 군주, 국왕';
+  const ko = '그들은 외세의 영향으로부터 자유로운 주권 국가를 세우고자 했다.';
+  assert.equal(hl(ko, sovereign), '그들은 외세의 영향으로부터 자유로운 [주권] 국가를 세우고자 했다.'); // 국왕 → 국가 ✗
+  assert.equal(senseOf(ko, sovereign), 1); // 명사 '군주, 국왕'이 아니라 형용사 뜻
+  assert.equal(hl('그는 한마디도 하지 않고 내 질문에 그저 한숨만 내쉬었다.', '(입 밖에) 내다, 말하다 / 완전한, 전적인').includes('[내 질문에]'), false);
+  assert.equal(hl('아사 직전의 상황에서는 식량이 조금 증가했다.', '(가격·경기 등의) 상승, 호전'), '아사 직전의 상황에서는 식량이 조금 증가했다.');
+  assert.equal(hl('많은 사람들이 유제품 우유에 대한 대용품으로 아몬드 우유를 사용한다.', '대용품, 대리인 / 대체[대신]하다'),
+    '많은 사람들이 유제품 우유에 대한 [대용품으로] 아몬드 우유를 사용한다.');
+  // 직접 지정한 강조어가 있으면 그 말로 뜻 갈래를 정함 (모르면 0)
+  const resort = '((~ to)) (부득이하게) 의지하다 / 1. 휴양지, 리조트 2. 수단, 방편 3. 의지, 호소';
+  assert.equal(senseOf('경찰은 폭력에 의존하지 않고 위험한 상황을 처리하는 다양한 방법을 배운다.', resort, '의존하지'), 0);
+  assert.equal(senseOf('그들은 바닷가 휴양지에서 휴가를 보냈다.', resort), 2);
+});
+
+test('4지선다 보기: 정답의 유의어는 빈칸에도 맞으니 보기로 내지 않음 · 단어 모드 뜻 보기도 품사를 맞춤', async () => {
+  const { pickDistractors, pickMeaningDistractors } = await import('../js/core.js');
+  const mk = (word, meaning, syn = '') => ({ id: `1|${word}`, day: 1, word, blank: word, meaning, ex1ko: '', extras: syn ? [['유의어', syn]] : [] });
+  const fierce = mk('fierce', '1. 사나운, 험악한 2. 격렬한, 맹렬한', '1. harsh / 2. intense, severe');
+  const pool = [fierce, mk('intense', '1. 극심한, 강렬한 2. 치열한'), mk('severe', '심한, 혹독한'), mk('calm', '침착한'), mk('vivid', '생생한'), mk('bare', '벌거벗은'), mk('mild', '온화한')];
+  for (let k = 0; k < 30; k++) {
+    const out = pickDistractors(fierce, pool, 3).map(w => w.word);
+    assert.ok(!out.includes('intense') && !out.includes('severe'), out.join());
+  }
+  const abide = mk('abide', '1. 준수하다 2. 참다, 견디다');
+  const pool2 = [abide, mk('peasant', '소작농'), mk('harassment', '괴롭힘'), mk('obey', '복종하다'), mk('avoid', '피하다'), mk('quit', '그만두다'), mk('nation', '국가')];
+  for (let k = 0; k < 30; k++) {
+    const out = pickMeaningDistractors(abide, pool2, 3).map(w => w.word);
+    assert.deepEqual(out.sort(), ['avoid', 'obey', 'quit']);
+  }
+});
+
+test('뜻 채점: 정답 뜻의 일부 글자만 쓴 건 오답 (반대말·다른 말이 되기 쉬움)', async () => {
+  const { gradeMeaning } = await import('../js/core.js');
+  assert.equal(gradeMeaning('대칭, 균형', '1. 비대칭 2. 불균형', 'easy').score, 0); // 반대말
+  assert.equal(gradeMeaning('나운, 격렬', '1. 사나운, 험악한 2. 격렬한, 맹렬한', 'mid').score, 1); // 격렬만 맞음
+  assert.equal(gradeMeaning('나운', '1. 사나운, 험악한 2. 격렬한, 맹렬한', 'easy').score, 0);
+  assert.equal(gradeMeaning('선고, 수감', '유죄를 선고하다 / 죄수, 수감자', 'easy').score, 0);
+  assert.equal(gradeMeaning('적인', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 0);
+  assert.equal(gradeMeaning('가루', '꽃가루', 'easy').score, 0);
+  assert.equal(gradeMeaning('결정', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 0);
+  // 어미·조사만 다르면 정답
+  assert.equal(gradeMeaning('치명적', '1. 치명적인 2. 결정적인, 중대한', 'easy').score, 2);
+  assert.equal(gradeMeaning('비대칭의', '1. 비대칭 2. 불균형', 'easy').score, 2);
+  assert.equal(gradeMeaning('유죄를 선고하다', '유죄를 선고하다 / 죄수, 수감자', 'easy').score, 2);
+  assert.equal(gradeMeaning('수감자', '유죄를 선고하다 / 죄수, 수감자', 'easy').score, 2);
 });

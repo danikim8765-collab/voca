@@ -8,6 +8,7 @@ import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
+import { reportRepo, reportReasons, reportText, issueUrl, pushError } from './report.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
 const APP_VERSION = '202611131548';
@@ -44,6 +45,12 @@ const load = (k, def) => {
 const save = (k, v) => {
   try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; }
 };
+
+// 버그 신고에 붙일 최근 오류 (두 모드가 같이 씀, 이 기기에만)
+const ERR_KEY = 'voca.errlog.v1';
+const logError = m => save(ERR_KEY, pushError(load(ERR_KEY, []), m));
+window.addEventListener('error', e => logError(`${e.message || e.error || '오류'}${e.filename ? ` @${String(e.filename).split('/').pop()}:${e.lineno}` : ''}`));
+window.addEventListener('unhandledrejection', e => logError(`(promise) ${(e.reason && (e.reason.stack || e.reason.message)) || e.reason}`));
 
 let words = [];
 let byId = new Map();
@@ -820,7 +827,8 @@ function optionSay({ r, p, rec }, a) {
 // AI를 못 부른 까닭을 코치 말로
 function coachErrorText() {
   const e = aiCoachError();
-  return e === '429' ? 'AI가 지금 바쁘거나 오늘 무료 한도를 다 썼어요. 조금 뒤에 다시 보내 주세요.'
+  return e === '429' ? 'AI가 지금 바쁘거나 무료 한도를 다 썼어요. 1분쯤 뒤에 다시 보내 주세요.'
+    : e === '413' ? '보낼 이야기가 AI 무료 한도보다 길어요. 1분쯤 뒤에 짧게 다시 보내 주세요.'
     : e === 'timeout' ? 'AI 답이 너무 늦어요. 다시 보내 볼까요?'
       : e === 'offline' || e === 'network' ? '인터넷이 안 돼서 AI와 이야기할 수 없어요. 연결을 확인하고 다시 보내 주세요.'
         : e === '401' || e === '403' ? 'AI 키가 맞지 않아요. 설정 > AI에서 다시 연결해 주세요.'
@@ -1388,11 +1396,13 @@ function renderPlan() {
   });
   for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
-  // 주기 복습이면 목표일 전엔 목표 D-n, 그 뒤엔 시험 D-n
+  // 주기 복습이면 목표일 전엔 목표 D-n, 그 뒤엔 시험 D-n.
+  // 코치는 'O월 O일까지 새 단어'로 새 단어를 보는 마지막 날(목표일 전날)을 보여 주니, D-n도 그날로 셈 (D-11과 27일까지가 하루 어긋나 보이지 않게)
   const toGoal = srsOn() && dateStr() < goalDate();
-  const left = toGoal ? daysBetween(dateStr(), goalDate()) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
+  const goalEnd = coachActive() ? lastLearnDay() : goalDate();
+  const left = toGoal ? daysBetween(dateStr(), goalEnd) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   dd.hidden = left == null || left < 0 || stage === 'day';
-  if (!dd.hidden) { dd.textContent = left === 0 && !toGoal ? 'D-day' : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
+  if (!dd.hidden) { dd.textContent = left === 0 ? (toGoal ? '목표 D-day' : 'D-day') : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
   let note = '';
 
   if (stage === 'day') {
@@ -1770,6 +1780,7 @@ function synAnswer(correct, given, kind) {
 
 function showSynFeedback(correct, given, kind, label) {
   const { w, syn: sq } = q;
+  Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
   const state = correct ? 'ok' : kind === 'hint' ? 'hint' : 'bad';
   const head = $('#fb-head');
   head.hidden = false;
@@ -1859,7 +1870,7 @@ function renderQuestion() {
       $('#quiz').classList.add('pin-choices');
       if (ui.choiceLayout === 'grid') actions.prepend(leanBar(actions)); // 쏠림은 격자에서만
       else delete actions.dataset.lean;
-      $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
+      pinSpace();
     }
     fitChoices();
   }
@@ -1888,6 +1899,16 @@ function choiceNotes(choices, right, picked) {
   }
   return card;
 }
+
+// 폰 4지선다: 아래 고정된 보기 높이만큼 문장 아래 여백. 힌트 버튼은 보기 바로 위에 떠 있으니(style.css .pin-choices .q-tools) 그만큼 더.
+// 쏠림을 바꾸거나 화면을 돌려 보기 높이가 바뀌어도 다시 맞춤
+function pinSpace() {
+  if (!$('#quiz').classList.contains('pin-choices')) return;
+  const h = $('#q-actions').offsetHeight;
+  $('#quiz').style.setProperty('--pin-h', `${h}px`);
+  $('.quiz-body').style.paddingBottom = `${h + 12 + ($('#btn-hint').hidden ? 0 : 44)}px`;
+}
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(pinSpace).observe($('#q-actions'));
 
 // 컴퓨터: 선지가 창 아래로 넘치면(낮은 창, 긴 예문) 2×2로 줄여서 한 화면에
 function fitChoices() {
@@ -1946,9 +1967,11 @@ function renderWordQuestion(w) {
 function renderMeaningChoices(actions) {
   const w = q.w;
   const pool = rangeWords().length >= 8 ? rangeWords() : words;
-  let opts = pickMeaningDistractors(w, pool, 3);
-  if (opts.length < 3) opts = opts.concat(pickMeaningDistractors(w, words, 3).filter(o => !opts.some(x => x.meaning === o.meaning))).slice(0, 3);
-  const choices = shuffle([w, ...opts]);
+  const choices = keptChoices(w, () => {
+    let opts = pickMeaningDistractors(w, pool, 3);
+    if (opts.length < 3) opts = opts.concat(pickMeaningDistractors(w, words, 3).filter(o => !opts.some(x => x.meaning === o.meaning))).slice(0, 3);
+    return shuffle([w, ...opts]);
+  });
   q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
@@ -1991,6 +2014,7 @@ function renderMeaningTyping(actions) {
     input.blur();
     // 규칙 채점으로 바로. 정답이 아닐 때만(오답·부분 정답) 인터넷이 되면 AI가 다시 봄. AI가 실패하면 규칙 결과 그대로
     let res = gradeMeaning(v, cur.w.meaning, settings.strict);
+    let aiMissed = false; // AI를 불렀는데 못 받음(한도 429·시간 초과 등) → 규칙 채점 결과라는 걸 알려 줌
     if (res.score < 2 && aiOnline()) {
       busy = true;
       input.disabled = ok.disabled = true;
@@ -2000,10 +2024,10 @@ function renderMeaningTyping(actions) {
       if (q !== cur || cur.answered) return; // 채점 중에 다른 화면으로 나갔으면 버림
       input.disabled = ok.disabled = false;
       ok.textContent = '확인';
-      if (ai) res = ai;
+      if (ai) res = ai; else aiMissed = true;
     }
     const { score, missing, note = '' } = res;
-    const tail = note ? ` · ${note}` : score === 1 ? ` · ${missing}개 뜻이 빠졌어요` : '';
+    const tail = (note ? ` · ${note}` : score === 1 ? ` · ${missing}개 뜻이 빠졌어요` : '') + (aiMissed ? ' · AI 확인 못 함(규칙으로만 채점)' : '');
     if (score === 2) answer(!cur.usedHint, null, cur.usedHint ? 'hint' : undefined);
     else if (score === 1) answer(false, v + tail, 'partial');
     else answer(false, v + tail);
@@ -2135,12 +2159,23 @@ function leanBar(actions) {
   return bar;
 }
 
+// 그만뒀다 이어해도 보기가 그대로이게: 지금 문제의 보기를 진행 기록(session)에 남겨 둠. 답하면 지움 (answer)
+function keptChoices(w, pick) {
+  const kept = session && session.opts && session.opts.id === w.id ? session.opts.ids.map(id => byId.get(id)) : null;
+  if (kept && kept.every(Boolean) && kept.includes(w) && new Set(kept).size === kept.length) return kept;
+  const choices = pick();
+  if (session && !session.noSave) { session.opts = { id: w.id, ids: choices.map(c => c.id) }; saveSession(); }
+  return choices;
+}
+
 function renderChoices(actions) {
   const w = q.w;
   const pool = rangeWords().length >= 8 ? rangeWords() : words;
-  let opts = pickDistractors(w, pool, 3);
-  if (opts.length < 3) opts = opts.concat(pickDistractors(w, words, 3).filter(o => !opts.includes(o))).slice(0, 3);
-  const choices = shuffle([w, ...opts]);
+  const choices = keptChoices(w, () => {
+    let opts = pickDistractors(w, pool, 3);
+    if (opts.length < 3) opts = opts.concat(pickDistractors(w, words, 3).filter(o => !opts.includes(o))).slice(0, 3);
+    return shuffle([w, ...opts]);
+  });
   q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
@@ -2552,6 +2587,7 @@ function answer(correct, given, kind) {
   const cleared = outcome === 'ok' && !retry && !scheduled && isWrongRaw(before) && (session.mode === 'wrong' || session.mode === 'retry');
   if (cleared) stats[id].r = today; else delete stats[id].r;
   if (hintedId() === id) { const d = loadDay(); delete d.hint; save(KEY.day, d); }
+  if (session.opts && session.opts.id === id) delete session.opts; // 다음에 또 나오면 보기를 새로 뽑음
 
   let label;
   if (outcome === 'wrong') {
@@ -2591,6 +2627,7 @@ function giveUp() {
 
 function showFeedback(correct, given, kind, label) {
   const w = q.w;
+  Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
   const state = correct ? 'ok' : kind === 'partial' ? 'hint' : kind === 'idk' ? 'bad' : kind || 'bad';
   // 카드 위 상태 표시
   const head = $('#fb-head');
@@ -2635,6 +2672,7 @@ function openSheet(w, more = []) {
   const fm = $('#fb-mark');
   fm.classList.toggle('on', isUnknown(w.id));
   fm.onclick = () => fm.classList.toggle('on', toggleUnknown(w.id));
+  $('#fb-report').onclick = () => openReport(reportCtx());
 
   const mean = $('#fb-mean');
   mean.innerHTML = '';
@@ -2669,6 +2707,88 @@ function openSheet(w, more = []) {
   if (!wideDesk()) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
   $('#fb-mean').scrollTop = 0;
   if (settings.autoSpeak) speak(w.word);
+}
+
+// ---------- 버그 신고 ----------
+// 지금 정답 시트에 뜬 문제를 신고 내용으로 (해석은 앱이 굵게 강조한 데를 **로 표시)
+function reportCtx() {
+  if (!q || !q.w) return null;
+  const w = q.w;
+  const bold = ko => (ko ? highlightMeaning(ko, w.meaning, w.koMark).map(x => (x.t === 'mark' ? `**${x.v}**` : x.v)).join('') : '');
+  const mode = q.syn ? 'syn' : WORD ? 'word' : 'ex';
+  const how = q.syn ? 'choice' : settings.kind;
+  const opts = q.syn ? q.syn.options : q.choices;
+  const text = o => (q.syn ? o.text : WORD ? o.meaning : displayAnswer(o));
+  const ctx = {
+    word: w.word, id: w.id, day: w.day, mode, how, label: q.fbLabel, given: q.fbGiven || q.userAnswer || '',
+    strict: mode === 'word' && how === 'type' ? `채점 ${{ easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통'}` : '',
+    meaning: w.meaning, ex1: w.ex1, ex1ko: bold(w.ex1ko), ex2: w.ex2, ex2ko: bold(w.ex2ko), marked: w.koMark || '',
+  };
+  if (opts && opts.length) {
+    ctx.choices = opts.map(text);
+    ctx.picked = opts.indexOf(q.picked);
+    ctx.right = q.syn ? opts.findIndex(o => o.ok) : opts.indexOf(w);
+  }
+  if (q.syn && q.syn.sentence) ctx.ex1 = q.syn.sentence.en || ctx.ex1;
+  return ctx;
+}
+function reportApp() {
+  const ua = navigator.userAgent || '';
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  return {
+    version: APP_VERSION,
+    ai: aiSwitch() && aiHasKey() ? aiName() : '',
+    device: `${ua} · ${innerWidth}×${innerHeight}${standalone ? ' · 홈 화면 앱' : ''}${navigator.onLine === false ? ' · 오프라인' : ''}`,
+  };
+}
+// 신고 창: 이유(여러 개) + 메모 → GitHub 새 이슈 화면을 채워서 열거나 복사. ctx가 없으면 앱 전체 신고(설정에서)
+function openReport(ctx) {
+  const d = $('#report'), box = $('#rp-reasons'), note = $('#rp-note'), pre = $('#rp-preview');
+  const picked = new Set();
+  const build = () => reportText({ reasons: [...picked], note: note.value, ctx, app: reportApp(), errors: load(ERR_KEY, []) });
+  const refresh = () => { const r = build(); pre.textContent = `${r.title}\n\n${r.body}`; };
+  $('#rp-title').textContent = ctx ? '이 문제 신고하기' : '이상한 점 알려 주기';
+  $('#rp-sub').textContent = ctx ? `${ctx.word} · DAY ${ctx.day} — 무엇이 이상했나요?` : '무엇이 이상했나요? 학습 기록과 키는 보내지 않아요.';
+  box.innerHTML = '';
+  for (const r of reportReasons(ctx)) {
+    const b = el('button', 'chip', r);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => {
+      if (picked.has(r)) picked.delete(r); else picked.add(r);
+      b.classList.toggle('on', picked.has(r));
+      b.setAttribute('aria-pressed', picked.has(r));
+      refresh();
+    });
+    box.appendChild(b);
+  }
+  note.value = '';
+  note.oninput = refresh;
+  $('#report .rp-peek').open = false;
+  refresh();
+  const prev = document.activeElement;
+  d.hidden = false;
+  // 창이 열린 동안엔 퀴즈 단축키(스페이스·Enter로 다음 등)가 먹지 않게. 글자는 그대로 써짐
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(); } e.stopPropagation(); };
+  const close = () => { d.hidden = true; d.onclick = null; document.removeEventListener('keydown', key, true); if (prev && prev.focus) prev.focus(); };
+  const done = () => { close(); modalDone(() => {}); };
+  modalOpen(close);
+  document.addEventListener('keydown', key, true);
+  d.onclick = e => { if (e.target === d) done(); };
+  $('#rp-cancel').onclick = done;
+  $('#rp-copy').onclick = async () => {
+    const r = build();
+    try { await navigator.clipboard.writeText(`${r.title}\n\n${r.body}`); toast('복사했어요. 메신저나 메일에 붙여 넣어 보내 주세요', 3000); }
+    catch { $('#report .rp-peek').open = true; toast('복사가 안 돼요. 같이 보내는 내용을 길게 눌러 복사해 주세요', 3500); }
+  };
+  $('#rp-send').onclick = () => {
+    if (!picked.size && !note.value.trim()) { toast('무엇이 이상했는지 하나 골라 주세요'); return; }
+    const r = build();
+    const url = issueUrl(reportRepo(location), r.title, r.body);
+    done();
+    window.open(url, '_blank', 'noopener');
+    toast('GitHub에서 아래 초록 버튼(Create)을 누르면 접수돼요', 4000);
+  };
 }
 
 // 단어 모드 오답: 누르면 AI가 왜 틀렸는지 설명 (AI 사용 스위치가 켜져 있고 인터넷이 될 때만 보임)
@@ -3383,6 +3503,7 @@ function bind() {
 
   $('#btn-settings').addEventListener('click', () => { renderSettings(); renderSyncStatus(); show('settings'); });
   $('#btn-settings-back').addEventListener('click', () => goHome());
+  $('#btn-report').addEventListener('click', () => openReport(null));
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });

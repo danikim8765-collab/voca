@@ -228,6 +228,7 @@
             <div class="muted" id="fb-pron"></div>
           </div>
           <div class="fb-coach" id="fb-coach" hidden></div>
+          <button class="mark-btn report-btn" id="fb-report" aria-label="이 문제 신고하기" title="이 문제 신고하기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4.5"/><path d="M5 4.5c4-2 7 2 11 0v9c-4 2-7-2-11 0"/></svg></button>
           <button class="mark-btn" id="fb-mark" aria-label="형광펜" title="형광펜"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></button>
         </div>
         <div class="fb-tabs" id="fb-tabs">
@@ -462,6 +463,7 @@
       <div class="label mt">앱 버전</div>
       <p class="app-ver"><b id="app-ver"></b> <span class="muted" id="app-ver-state"></span></p>
       <button class="btn ghost small" id="btn-update">새 버전 확인</button>
+      <button class="link-btn report-link" id="btn-report" type="button">이상한 점 알려 주기</button>
     </div>
   </section>
 
@@ -534,6 +536,22 @@
         <textarea id="cc-input" class="type-input" rows="1" placeholder="코치에게 말하기" autocomplete="off" enterkeyhint="send" maxlength="1000" aria-label="코치에게 말하기"></textarea>
         <button class="btn secondary small" id="cc-send" type="button">보내기</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 버그 신고: 정답 시트의 깃발(그 문제) · 설정 맨 아래(앱 전체). GitHub 이슈 쓰는 화면을 채워서 엶 -->
+  <div class="dialog" id="report" role="dialog" aria-modal="true" aria-labelledby="rp-title" hidden>
+    <div class="dialog-card report-card">
+      <div class="dlg-title" id="rp-title">이상한 점 알려 주기</div>
+      <div class="dlg-body" id="rp-sub"></div>
+      <div class="rp-reasons" id="rp-reasons" role="group" aria-label="무엇이 이상한가요"></div>
+      <textarea id="rp-note" class="type-input rp-note" rows="2" maxlength="600" placeholder="어떻게 이상했는지 (안 써도 돼요)" aria-label="자세히"></textarea>
+      <details class="rp-peek"><summary>같이 보내는 내용</summary><pre id="rp-preview"></pre></details>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="rp-cancel" type="button">취소</button>
+        <button class="btn dlg-ok" id="rp-send" type="button">GitHub에 올리기</button>
+      </div>
+      <button class="link-btn rp-copy" id="rp-copy" type="button">내용만 복사하기</button>
     </div>
   </div>
 

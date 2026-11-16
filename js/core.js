@@ -712,7 +712,7 @@ function posSet(w) {
 // 예문에서 쓰인 뜻의 품사 (해석으로 몇 번째 뜻인지 찾음). 모르면 그 단어의 품사 전부
 function targetPos(w) {
   if (!w.pos && w.meaning && w.ex1ko) {
-    const i = senseOf(w.ex1ko, w.meaning);
+    const i = senseOf(w.ex1ko, w.meaning, w.koMark);
     const k = i ? koPos(senseList(w.meaning)[i - 1]) : '';
     if (k) return new Set([k]);
   }
@@ -727,12 +727,22 @@ export function pickDistractors(target, all, n = 3, rand = Math.random) {
   const wordCount = k => k.split(' ').length;
   const tWords = wordCount(tKey);
   const tPos = targetPos(target);
+  // 정답의 유의어(서로 유의어로 적힌 단어, 같은 뜻을 가진 단어)는 빈칸에 들어가도 말이 되니 보기로 내지 않음 (fierce ↔ intense)
+  const tw = String(target.word || '').toLowerCase();
+  const tSyn = new Set(synList(target)), tKo = relLists(target).ko; // relLists는 단어마다 한 번만 풀어 둠 (단어장 전체를 훑어서)
+  const fitsToo = w => {
+    const k = String(w.word || '').toLowerCase();
+    if (tSyn.has(k) || synList(w).includes(tw)) return true;
+    for (const x of relLists(w).ko) if (tKo.has(x)) return true; // 같은 뜻을 가진 단어 (sameSense와 같은 기준)
+    return false;
+  };
   const seen = new Set([tKey]);
-  const cands = [];
+  const cands = [], spare = [];
   for (const w of all) {
     const key = normalizeAnswer(answerParts(w.blank).join(' '));
     if (!key || seen.has(key)) continue;
     seen.add(key);
+    if (fitsToo(w)) { spare.push(w); continue; }
     const p = answerParts(w.blank).length;
     // 품사가 다르면 문장 구조만 봐도 답이 보이므로(the ___ accident ↔ 동사 보기) 같은 품사의 보기를 먼저. 품사를 모르면 따지지 않음
     const wPos = posSet(w);
@@ -743,7 +753,7 @@ export function pickDistractors(target, all, n = 3, rand = Math.random) {
     cands.push({ w, score });
   }
   cands.sort((a, b) => a.score - b.score);
-  return cands.slice(0, n).map(c => c.w);
+  return [...cands.map(c => c.w), ...spare].slice(0, n); // 보기가 모자랄 때만 유의어도
 }
 
 // ---------- 해석에서 뜻 부분 강조 ----------
@@ -753,6 +763,10 @@ const KO_SKIP = new Set([
   '와', '과', '도', '하게', '하는', '하다', '되다', '것을', '것이', '것에', '것으로', '한테', '께',
 ]);
 const KO_WORD_END = /[\s.,!?;:"'“”‘’()\[\]…·~]/;
+// 뜻 낱말에서 떼면 어근이 남는 꼬리 (질식시키다 → 질식, 윤리적인 → 윤리, 전염성의 → 전염, 어수선함 → 어수선)
+// 한 글자 명사 뒤에 붙는 조사만 (그 뒤는 어절 끝)
+const KO_PARTICLE = /^(이|가|을|를|은|는|의|에|에서|로|으로|과|와|도|만|이다|이며|이고|들|들이|들을|들과)(?=[\s.,!?;:"'“”‘’()\[\]…·~]|$)/;
+const KO_ROOT_TAIL = /(시키다|당하다|받다|하다|되다|스럽다|롭다|해지다|하게|하는|적인|적으로|적|스러운|로운|스런|한|할|된|되는|될|함|성|히|의)$/;
 
 export function highlightMeaning(ko, meaning, mark) {
   const text = String(ko || '');
@@ -783,21 +797,41 @@ export function highlightMeaning(ko, meaning, mark) {
   const ranges = [];
   const covered = i => ranges.some(r => i >= r.start && i < r.end);
   const wordStart = i => i === 0 || KO_WORD_END.test(text[i - 1]);
-  for (const tok of tokens) {
-    if (KO_SKIP.has(tok)) continue;
-    const stem = tok.length > 1 && tok.endsWith('다') ? tok.slice(0, -1) : tok;
+  const isHangul = ch => !!ch && ch >= '가' && ch <= '힣';
+  for (const tok0 of tokens) {
+    if (KO_SKIP.has(tok0)) continue;
+    // 뜻 끝의 조사는 뗌: 주권을 (가진) → 주권, (최고) 권력의 → 권력
+    const bare = tok0.endsWith('다') ? tok0 : tok0.replace(/(으로|을|를|의|에|로)$/, '');
+    const tok = bare.length >= 2 ? bare : tok0;
+    const pred = tok.length > 1 && tok.endsWith('다');   // 동사·형용사: 끝이 활용으로 바뀜 (확신시키다 → 확신시켰다)
+    const mod = !pred && tok.length >= 2 && /[인한은운는된진난른던친린]$/.test(tok); // 꾸미는 말: 치명적인 → 치명적이었다
+    const stem = pred ? tok.slice(0, -1) : tok;
     if (KO_SKIP.has(stem)) continue;
-    const minLen = stem.length >= 3 ? 2 : 1;
+    // 명사는 통째로만 찾음. 앞 글자만 맞춰 찾으면 엉뚱한 말에 붙음(상승 → 상황, 전송 → 전화기, 국왕 → 국가)
+    // 찾는 순서: 통째 → (동사·꾸미는 말) 끝 한 글자를 뗀 것 → 하다·되다·적인 같은 꼬리를 뗀 두 글자 이상 어근(차별하다 → 차별받아서는)
+    const tries = [{ pre: stem }];
+    if ((pred || mod) && stem.length >= 2) tries.push({ pre: stem.slice(0, -1), cut: stem.at(-1) });
+    let root = tok;
+    for (let k = 0; k < 2; k++) { const r = root.replace(KO_ROOT_TAIL, ''); if (r.length >= 2 && r !== root) root = r; }
+    if (root !== tok && !tries.some(t => t.pre === root)) tries.push({ pre: root });
     let hit = null;
-    for (let len = stem.length; len >= minLen && !hit; len--) {
-      const pre = stem.slice(0, len);
-      if (len === 1 && KO_SKIP.has(pre)) break;
-      for (let i = text.indexOf(pre); i >= 0; i = text.indexOf(pre, i + 1)) {
+    for (const { pre, cut } of tries) {
+      const len = pre.length;
+      if (len === 1 && KO_SKIP.has(pre)) continue;
+      // 한 글자: 동사·꾸미는 말의 어간(막다 → 막았다, 졸린 → 졸리기)은 어절 맨 앞에서 뒤에 어미가 붙은 것만(내 질문에 ✗),
+      // 한 글자 명사(떼, 꽃, 약)는 그 글자 하나로 된 어절(뒤에 조사만)일 때만 (주권 ✗, 소 떼로 ✓)
+      const verbish = pred || mod || cut;
+      for (let i = text.indexOf(pre); i >= 0 && hit == null; i = text.indexOf(pre, i + 1)) {
         if (covered(i)) continue;
-        if (len === 1 && !wordStart(i)) continue; // 한 글자는 어절 맨 앞에서만
+        const next = text[i + len];
+        if (len === 1 && !wordStart(i)) continue;
+        if (len === 1 && verbish && !isHangul(next)) continue;
+        if (len === 1 && !verbish && next && !KO_WORD_END.test(next) && !(KO_PARTICLE.test(text.slice(i + 1)))) continue;
+        // 한 글자 어간이 활용으로 바뀌면 바뀐 글자도 첫소리는 같음 (버리 → 버려, 돌리 → 돌렸)
+        if (len === 1 && cut && next !== cut && toJamo(next)[0] !== toJamo(cut)[0]) continue;
         hit = i;
-        break;
       }
+      if (hit != null) break;
     }
     if (hit == null) continue;
     let end = hit;
@@ -929,9 +963,26 @@ function toJamo(s) {
   }
   return out;
 }
-// 오타 조금, 한쪽이 다른 쪽을 포함하면 같은 뜻으로 봄.
+// 같은 말로 보는 경우: 똑같음 · 한쪽이 다른 쪽 + 어미/조사만 더 붙음(치명적 ↔ 치명적인) · 자모 단위로 오타 조금.
+// 한쪽이 다른 쪽에 들어 있기만 한 건 다른 말: 대칭 ↔ 비대칭, 나운 ↔ 사나운, 가루 ↔ 꽃가루, 선고 ↔ 유죄를선고, 수감 ↔ 수감자
 // 오타는 자모 단위로: 한 글자가 통째로 다른 말(수입 ↔ 수출, 중대 ↔ 군대)은 오타가 아니라 다른 뜻이라 안 봐줌
+const KO_TAIL = /^(인|의|이|히|게|하게|스러운|스런|스럽게|로운|롭게|한|하는|하게|된|되는|되게|하|되|시키|시킨|시켜|함|됨|을|를|은|는|이다|였다|했다|된다|한다|하기|되기|해|돼)$/;
 function nearKo(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length < 2 || b.length < 2) return false;
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+  if (l.startsWith(s)) return KO_TAIL.test(l.slice(s.length));
+  // 오타: 세 글자 이상이고 글자 수가 같고, 첫 글자가 아닌 한 글자에서 모음·받침이 자모 하나만 다를 때 (명확한 → 명학한, 치명적인 → 치명적잉).
+  // 두 글자 말이나 첫소리가 다른 건 자모 하나만 달라도 거의 다른 말이라(수입 ↔ 수익, 방해 ↔ 방패, 최고 ↔ 최소, 열정 ↔ 결정) 오타로 안 봄
+  if (s.length < 3 || a.length !== b.length || a[0] !== b[0]) return false;
+  const diff = [...a].map((ch, i) => i).filter(i => a[i] !== b[i]);
+  if (diff.length !== 1) return false;
+  const x = toJamo(a[diff[0]]), y = toJamo(b[diff[0]]);
+  return x.length > 1 && y.length > 1 && x[0] === y[0] && lev(x, y) <= 1;
+}
+// 오답 보기를 고를 때는 느슨하게: 한쪽이 다른 쪽에 들어 있기만 해도 비슷한 뜻으로 봄 (비슷한 뜻의 보기를 피하려고)
+function looseKo(a, b) {
   if (!a || !b) return false;
   if (a === b) return true;
   if (a.length < 2 || b.length < 2) return false;
@@ -1011,11 +1062,20 @@ export function gradeMeaning(user, answer, strict = 'mid') {
 // 두 뜻이 겹치는지 (오답 보기로 비슷한 뜻을 내지 않게)
 export function meaningsClash(a, b) {
   const A = meaningSenses(a), B = meaningSenses(b);
-  return A.some(x => B.some(y => x.some(p => y.some(q => nearKo(p, q)))));
+  return A.some(x => B.some(y => x.some(p => y.some(q => looseKo(p, q)))));
 }
 // 오답 뜻 보기 n개: 같은 범위에서, 정답·서로와 뜻이 겹치지 않게
 export function pickMeaningDistractors(target, all, n = 3, rand = Math.random) {
-  const cands = shuffle(all.filter(w => w.word !== target.word && w.meaning && w.meaning !== target.meaning), rand);
+  // 품사가 같은 뜻부터 (동사 문제에 명사 뜻 보기가 섞이면 품사만 봐도 답이 보임). 품사를 모르면 중간
+  const tPos = posSet(target);
+  const posRank = w => {
+    const p = posSet(w);
+    if (!tPos.size || !p.size) return 1;
+    if (p.size === tPos.size && [...p].every(k => tPos.has(k))) return 0;
+    return [...p].some(k => tPos.has(k)) ? 1 : 2;
+  };
+  const cands = shuffle(all.filter(w => w.word !== target.word && w.meaning && w.meaning !== target.meaning), rand)
+    .map((w, i) => ({ w, r: posRank(w), i })).sort((a, b) => a.r - b.r || a.i - b.i).map(x => x.w);
   const out = [];
   for (const w of cands) {
     if (out.length >= n) break;
@@ -1150,15 +1210,32 @@ export function coachFeedback(input, w, { cands = [], find = () => null } = {}) 
     return { kind: 'near', text: `'${other.word}'도 좋아요. 그런데 다른 단어는 없을까요? 첫 글자는 '${first.toLowerCase()}'예요.` };
   }
   // 철자 비교는 정답 중 가장 가까운 것과
+  // 이웃한 두 글자의 순서를 바꿔 친 건 한 번 틀린 걸로 셈 (nrom → norm). 짧은 단어는 한 번까지만 봐줘서
   let best = null;
   for (const c of cands) {
     const r = spellDiff(typed, c);
-    if (!best || r.dist < best.dist) best = { ...r, c };
+    const swaps = r.dist - typoDist(typed, c); // 순서 바뀜 횟수만큼 줄어듦
+    const cost = r.dist - swaps;
+    if (!best || cost < best.cost) best = { ...r, c, cost, swaps };
   }
-  if (best && best.dist <= (best.c.length <= 4 ? 1 : best.c.length <= 8 ? 2 : 3)) {
-    return { kind: 'spell', diff: best.segs, text: `정답과 ${best.dist === 1 ? '한' : best.dist === 2 ? '두' : '세'} 글자 달라요` };
+  if (best && best.cost <= (best.c.length <= 4 ? 1 : best.c.length <= 8 ? 2 : 3)) {
+    const n = k => (k === 1 ? '한' : k === 2 ? '두' : '세');
+    const text = best.swaps && best.cost === best.swaps ? '두 글자 순서가 바뀌었어요'
+      : best.swaps ? `글자 순서가 바뀐 데가 있고, 정답과 ${n(best.cost - best.swaps)} 글자 달라요` : `정답과 ${n(best.dist)} 글자 달라요`;
+    return { kind: 'spell', diff: best.segs, text };
   }
   return null;
+}
+
+// 오타 횟수: 넣기·빼기·바꾸기 한 번씩, 이웃한 두 글자 순서 바꿈도 한 번 (Damerau)
+function typoDist(a, b) {
+  const n = a.length, m = b.length;
+  const d = Array.from({ length: n + 1 }, (_, i) => Array.from({ length: m + 1 }, (_, j) => (i ? (j ? 0 : i) : j)));
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[n][m];
 }
 
 // 두 단어가 같은 뜻 하나를 공유하는지 (방해하다 ↔ 방해하다, 결정적인 ↔ 결정적인). 오답 보기용 meaningsClash보다 엄격하게
@@ -1239,12 +1316,15 @@ export const synList = w => relLists(w).syn;
 export const antList = w => relLists(w).ant;
 
 // 예문 해석에서 그 예문이 몇 번째 뜻(뜻 묶음 전체를 펼친 순서, 1부터)으로 쓰였는지 (뜻 강조가 가장 길게 잡히는 갈래). 모르면 0
-export function senseOf(ko, meaning) {
+// mark: 직접 지정한 강조어(해석강조 · highlights.json). 이 해석에 있으면 그 말이 어느 뜻과 맞는지로만 판정
+export function senseOf(ko, meaning, mark) {
   const senses = senseList(meaning);
   if (senses.length <= 1) return senses.length;
+  const marks = String(mark || '').split('|').map(x => x.trim()).filter(m => m && String(ko || '').includes(m));
+  const text = marks.length ? marks.join(' ') : ko;
   let best = 0, bestLen = 0, tie = false;
   senses.forEach((s, i) => {
-    const len = highlightMeaning(ko, s).filter(x => x.t === 'mark').reduce((a, x) => a + x.v.length, 0);
+    const len = highlightMeaning(text, s).filter(x => x.t === 'mark').reduce((a, x) => a + x.v.length, 0);
     if (len > bestLen) { best = i + 1; bestLen = len; tie = false; } else if (len && len === bestLen) tie = true;
   });
   return tie ? 0 : best;
@@ -1307,7 +1387,7 @@ export function makeSynQuestion(target, all, { byExample = true, rand = Math.ran
       if (!en) return;
       const b = makeBlanks(en, target.blank, target.word);
       if (!b.ok) return;
-      const sense = senseOf(ko, target.meaning);
+      const sense = senseOf(ko, target.meaning, target.koMark);
       for (const [kind, str] of [['syn', synStr], ['ant', antStr]]) {
         const cands = relForSense(target.meaning, str, sense);
         if (cands.length) combos.push({ kind, cands, sense, s: { en, ko, n: i + 1, b } });
