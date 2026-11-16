@@ -798,3 +798,13 @@ test('쉬는 요일은 다른 설정과 따로, 더 최근에 바꾼 쪽으로 (
   const old = mergeProgress({ stats: {}, prefs: { at: 500, coachRest: [0] } }, b);
   assert.deepEqual(old.prefs.coachRest, [0]);
 });
+
+test('하던 학습(이어하기)도 기기끼리: 더 최근에 바꾼 쪽으로, 끝내거나 지운 것(data: null)도 퍼짐', async () => {
+  const { mergeProgress } = await import('../js/core.js');
+  const phone = { stats: {}, sess: { at: 200, data: { queue: ['a', 'b'], pos: 1 } } };
+  const pc = { stats: {}, sess: { at: 100, data: null } };
+  assert.deepEqual(mergeProgress(pc, phone).sess, phone.sess);
+  assert.deepEqual(mergeProgress(phone, { stats: {}, sess: { at: 300, data: null } }).sess, { at: 300, data: null });
+  assert.deepEqual(mergeProgress(phone, { stats: {} }).sess, phone.sess); // 예전 앱(sess 없음)과 합쳐도 그대로
+  assert.equal(mergeProgress({ stats: {} }, { stats: {} }).sess, undefined);
+});

@@ -882,7 +882,10 @@ export function mergeProgress(a, b) {
     const r = restAt(pa) >= restAt(pb) ? pa : pb;
     prefs = { ...prefs, coachRest: Array.isArray(r.coachRest) ? r.coachRest : [], restAt: restAt(r) };
   }
-  return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}) };
+  // 하던 학습(이어하기)도 기기끼리: 더 최근에 바꾼 쪽(at). data가 null이면 끝냈거나 지운 것
+  const sa = a && a.sess, sb = b && b.sess;
+  const sess = !sa ? sb : !sb ? sa : (sa.at || 0) >= (sb.at || 0) ? sa : sb;
+  return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}), ...(sess ? { sess } : {}) };
 }
 
 // 시험일을 바꾼 시각. examAt이 없던 예전 기록은 설정 전체를 바꾼 시각(at)으로 봄

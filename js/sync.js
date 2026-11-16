@@ -61,7 +61,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       const remote = await readFile(g, FILE);
       const local = getLocal();
       const merged = mergeProgress(local, remote);
-      const differs = x => !sameStats(merged.stats, x.stats || {}) || merged.resetAt !== (x.resetAt || 0) || !samePrefs(merged.prefs, x.prefs);
+      const differs = x => !sameStats(merged.stats, x.stats || {}) || merged.resetAt !== (x.resetAt || 0) || !samePrefs(merged.prefs, x.prefs) || !samePrefs(merged.sess, x.sess);
       const files = {};
       if (differs(local)) applyMerged(merged);
       if (differs(remote)) files[FILE] = { content: JSON.stringify(merged) };

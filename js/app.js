@@ -153,7 +153,7 @@ function setRest(v) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -164,6 +164,12 @@ const sync = createSync({
       Object.assign(settings, { exam: m.prefs.exam || '', examAt: examAt(m.prefs) });
       saveSettings();
       shareExam(settings.exam, settings.examAt);
+    }
+    // 다른 기기에서 더 최근에 하던 학습이 있으면 그걸로 (지금 이 기기에서 문제를 풀고 있으면 건드리지 않음)
+    if (m.sess && (m.sess.at || 0) > load(SESS_AT, 0) && !(current === 'quiz' && session)) {
+      const d = m.sess.data;
+      if (d && d.queue) save(KEY.session, d); else localStorage.removeItem(KEY.session);
+      save(SESS_AT, m.sess.at);
     }
     if (m.prefs && restAt(m.prefs) > myRestAt()) {
       Object.assign(settings, { coachRest: cleanRest(m.prefs.coachRest), restAt: restAt(m.prefs) });
@@ -203,7 +209,11 @@ const sync = createSync({
 });
 const saveSettings = () => save(KEY.settings, settings);
 // 유반의어 테스트(noSave)는 기록에 영향을 주지 않아서 이어하기에도 안 남김 (하던 정규 학습의 이어하기를 지우지 않게)
-const saveSession = () => (session ? session.noSave || save(KEY.session, session) : localStorage.removeItem(KEY.session));
+// 하던 학습은 기기끼리도 맞춤(동기화를 켰을 때): 바꾼 시각을 같이 적어 두고, 더 최근에 바꾼 기기의 것으로
+const SESS_AT = P + 'sessionAt.v1';
+const putSession = s => { if (s) save(KEY.session, s); else localStorage.removeItem(KEY.session); save(SESS_AT, Date.now()); };
+const dropSession = () => putSession(null);
+const saveSession = () => (session ? session.noSave || putSession(session) : dropSession());
 
 function toast(msg, ms = 2200) {
   const t = $('#toast');
@@ -1746,7 +1756,7 @@ async function startOrder() {
 function resumeSession() {
   const saved = load(KEY.session, null);
   if (!saved) return;
-  if (saved.date !== dateStr()) { localStorage.removeItem(KEY.session); renderHome(); toast('날짜가 바뀌어서 오늘의 학습을 새로 만들었어요'); return; }
+  if (saved.date !== dateStr()) { dropSession(); renderHome(); toast('날짜가 바뀌어서 오늘의 학습을 새로 만들었어요'); return; }
   saved.queue = saved.queue.filter(id => byId.has(id));
   saved.hinted = saved.hinted || [];
   delete saved.from;
@@ -3487,7 +3497,7 @@ async function importProgress(file) {
         saveStats();
         if (stamp) { resetAt = now; save(KEY.resetAt, resetAt); }
         if (prefs(p.settings)) { Object.assign(settings, prefs(p.settings)); saveSettings(); }
-        localStorage.removeItem(KEY.session); // 하던 학습은 예전 진도 기준이라 지움
+        dropSession(); // 하던 학습은 예전 진도 기준이라 지움
       } else {
         save(OTHER_P + 'stats.v1', norm(p.stats));
         if (stamp) save(OTHER_P + 'resetAt.v1', now);
@@ -3597,7 +3607,8 @@ function bind() {
   $('#btn-resume').addEventListener('click', resumeSession);
   $('#btn-resume-drop').addEventListener('click', async () => {
     if (!(await ask({ title: '정말 지울까요?', body: '이어하던 학습 기록이 지워져요.\n지운 기록은 되돌릴 수 없어요.', ok: '지우기', danger: true }))) return;
-    localStorage.removeItem(KEY.session);
+    dropSession();
+    sync.soon();
     renderHome();
     toast('지웠어요');
   });
@@ -3740,8 +3751,8 @@ function bind() {
     resetAt = Date.now(); // 다른 기기의 예전 기록도 함께 지워지게
     save(KEY.resetAt, resetAt);
     saveStats();
+    dropSession();
     sync.now();
-    localStorage.removeItem(KEY.session);
     toast(`${WORD ? '단어' : '예문'} 모드 진도를 초기화했어요`);
   });
   $('#btn-reload').addEventListener('click', async () => {
