@@ -948,6 +948,13 @@ body[data-tint] {
 @media (prefers-reduced-motion: reduce) { .chat-msg.typing i { animation: none; } }
 .coach-row { margin-bottom: 6px; }
 #btn-coach-replan { margin: 0 0 8px; }
+/* 다시 나오기: 상황마다 다시 나올 때 고르기 */
+.again-rows { display: grid; gap: 8px; margin: 10px 0 4px; }
+.again-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.again-row > b { flex: none; width: 76px; font-size: 14px; }
+.again-row .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.again-row .chip { color: var(--text); }
+.again-row .chip.on { background: var(--primary); border-color: transparent; color: var(--on-primary); }
 /* 버그 신고: 정답 시트의 깃발은 형광펜보다 한 단계 조용하게(테두리 없음), 설정 맨 아래는 작은 회색 글자 */
 .fb-word .report-btn { margin-left: auto; border-color: transparent; opacity: .75; }
 .report-btn:active { opacity: 1; background: var(--line); }
@@ -965,3 +972,4 @@ body[data-tint] {
 .rp-copy { display: block; margin: 12px auto 0; color: var(--muted); font-size: 13px; font-weight: 600; }
 .mem-sum-head { margin: 14px 0 2px; font-size: 13px; font-weight: 700; color: var(--muted); }
 .mem-sum span { white-space: pre-line; font-size: 13.5px; color: var(--muted); }
+.cp-bio { min-height: 3em; margin: 10px 2px 0; font-size: 13.5px; line-height: 1.5; color: var(--muted); word-break: keep-all; }

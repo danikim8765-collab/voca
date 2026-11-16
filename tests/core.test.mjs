@@ -808,3 +808,39 @@ test('하던 학습(이어하기)도 기기끼리: 더 최근에 바꾼 쪽으�
   assert.deepEqual(mergeProgress(phone, { stats: {} }).sess, phone.sess); // 예전 앱(sess 없음)과 합쳐도 그대로
   assert.equal(mergeProgress({ stats: {} }, { stats: {} }).sess, undefined);
 });
+
+test('다시 나오기: 고른 때마다 한 번씩, 남아 있던 같은 단어는 빼고 새로', async () => {
+  const { requeue, cleanAgain, AGAIN_REC, AGAIN_OLD } = await import('../js/core.js');
+  const q = ['x', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n'];
+  const lo = () => 0, hi = () => 0.999;
+  // 조금 뒤(3~5) + 나중에(8~12): 가장 짧은 간격이면 3문제 뒤, 그다음 (조금 뒤 하나가 끼어서) 9문제 뒤
+  const r = requeue(q, 0, 'x', ['mid', 'late'], lo);
+  assert.equal(r.indexOf('x', 1), 4);
+  assert.equal(r.lastIndexOf('x'), 10);
+  assert.equal(r.filter(v => v === 'x').length, 3);
+  // 곧(1~2) 가장 긴 간격 → 2문제 뒤, 맨 끝 → 마지막
+  const s = requeue(q, 0, 'x', ['soon', 'end'], hi);
+  assert.equal(s.indexOf('x', 1), 3);
+  assert.equal(s.at(-1), 'x');
+  // 다시 틀리면 남아 있던 것은 지우고 새로
+  const t = requeue(s, 3, 'x', ['mid'], lo);
+  assert.equal(t.filter((v, i) => v === 'x' && i > 3).length, 1);
+  // 하나도 안 고르면 이번엔 다시 안 나옴
+  assert.deepEqual(requeue(q, 0, 'x', [], lo), q);
+  // 남은 문제가 모자라면 맨 끝 하나로 (연달아 같은 단어 안 나옴)
+  assert.deepEqual(requeue(['x', 'a'], 0, 'x', ['mid', 'late', 'end'], lo), ['x', 'a', 'x']);
+  // 설정 정리: 모르는 값은 버리고, 없으면 추천
+  assert.deepEqual(cleanAgain(null), AGAIN_REC);
+  assert.deepEqual(cleanAgain({ wrong: ['end', 'mid', 'zzz'], hint2: [], hint1: ['late'] }), { wrong: ['mid', 'end'], hint2: [], hint1: ['late'] });
+  assert.deepEqual(AGAIN_OLD.hint1, []);
+});
+
+test('다시 나오기 설정도 두 모드·기기끼리 더 최근에 바꾼 쪽으로', async () => {
+  const { mergeProgress } = await import('../js/core.js');
+  const a = { stats: {}, prefs: { at: 300, again: { wrong: ['mid'], hint2: ['mid'], hint1: [] }, againAt: 100 } };
+  const b = { stats: {}, prefs: { at: 100, again: { wrong: ['end'], hint2: [], hint1: ['late'] }, againAt: 200 } };
+  const m = mergeProgress(a, b);
+  assert.equal(m.prefs.at, 300);
+  assert.deepEqual(m.prefs.again, b.prefs.again);
+  assert.equal(m.prefs.againAt, 200);
+});

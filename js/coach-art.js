@@ -5,6 +5,13 @@ export const COACH_COLORS = {
 };
 
 export const COACH_NAMES = { cat: '고양이', hamster: '햄스터', owl: '부엉이', slime: '슬라임' };
+// 코치 고르기 창에 보여 줄 한 줄 소개 (AI 코치의 이야기·말투는 js/ai.js COACH_PERSONA)
+export const COACH_BIO = {
+  cat: '헌책방에서 영어 소설을 몰래 읽으며 자란 까칠한 과외 선배. 칭찬은 짧게, 핵심만 콕.',
+  hamster: '단어를 씨앗처럼 모으는 응원단장. 작은 진도에도 신나서 같이 달려요.',
+  owl: '도서관 꼭대기를 지키는 사서 선생님. 차분하게 까닭과 어원을 짚어 줘요.',
+  slime: '연못가에서 천천히 흡수하는 말랑한 쉼터 친구. 밀려도 괜찮다고 다독여요.',
+};
 
 export const COACH_ART = {
   cat: {

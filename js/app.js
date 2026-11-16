@@ -2,12 +2,12 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, coachPlan, cleanRest, isRestDay, studyDays,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
-import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
+import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js';
 import { reportRepo, reportReasons, reportText, issueUrl, pushError, REPORT_FORM, formReady, formRequest, queueReport } from './report.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
@@ -82,6 +82,8 @@ const settings = Object.assign({
   // coachFix = 코치와 정한 하루 새 단어 수(0 = 고정 안 함. 고정하면 복습 날 수는 거기서 정해짐), coachTail = 남는 단어를 'last' 마지막 날에 붙임 · 'extra' 하루 더
   // coachRest = 쉬는 요일(0 일 … 6 토). 그날은 새 단어·전체 복습 몫 없이 쉼
   coach: false, coachGoal: '', coachBase: 0, coachKey: '', coachReview: 0, coachRest: [], coachFix: 0, coachTail: '',
+  // 다시 나오기 (core.js AGAIN_*): 틀림·힌트 두 번·힌트 한 번마다 이번 학습에서 다시 나올 때. 두 모드가 같이 씀(againAt = 바꾼 시각)
+  again: AGAIN_REC, againAt: 0,
 }, load(KEY.settings, {}));
 // 화면 설정 (기기마다, 예문·단어 모드가 같이 씀)
 const UI_KEY = 'voca.ui.v1';
@@ -144,6 +146,20 @@ function shareRest(v, at) {
   o.coachRest = cleanRest(v); o.restAt = at;
   save(OTHER_P + 'settings.v1', o);
 }
+// 다시 나오기 설정도 두 모드가 같이 씀 (쉬는 요일처럼 바꾼 시각을 따로)
+function shareAgain(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if ((o.againAt || 0) > at) return;
+  o.again = cleanAgain(v); o.againAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+function setAgain(v) {
+  settings.again = cleanAgain(v);
+  settings.againAt = Date.now();
+  saveSettings();
+  shareAgain(settings.again, settings.againAt);
+  sync.soon();
+}
 function setRest(v) {
   settings.coachRest = cleanRest(v);
   settings.restAt = Date.now();
@@ -153,7 +169,7 @@ function setRest(v) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
+  getLocal: () => ({ v: 2, resetAt, stats: allStats(), prefs: { exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: settings.srs, srsPreset: settings.srsPreset, goal: settings.goal, reviewLimit: settings.reviewLimit, reviewSize: settings.reviewSize, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -170,6 +186,11 @@ const sync = createSync({
       const d = m.sess.data;
       if (d && d.queue) save(KEY.session, d); else localStorage.removeItem(KEY.session);
       save(SESS_AT, m.sess.at);
+    }
+    if (m.prefs && m.prefs.again && (m.prefs.againAt || 0) > (settings.againAt || 0)) {
+      Object.assign(settings, { again: cleanAgain(m.prefs.again), againAt: m.prefs.againAt });
+      saveSettings();
+      shareAgain(settings.again, settings.againAt);
     }
     if (m.prefs && restAt(m.prefs) > myRestAt()) {
       Object.assign(settings, { coachRest: cleanRest(m.prefs.coachRest), restAt: restAt(m.prefs) });
@@ -731,6 +752,7 @@ function pickCoach() {
       b.addEventListener('click', () => { cur = c; draw(); });
       box.appendChild(b);
     }
+    $('#cp-bio').textContent = COACH_BIO[cur] || '';
   };
   draw();
   d.hidden = false;
@@ -1865,21 +1887,25 @@ function renderSynQuestion(w) {
   fitChoices();
 }
 
-// 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (틀리면 3~5문제 뒤에 다시)
+// 이번 학습에서 다시 나오게 큐에 넣음 (설정의 '다시 나오기'). 반환: 정답 화면 꼬리말
+function againLater(id, kind) {
+  const slots = cleanAgain(settings.again)[kind];
+  session.queue = requeue(session.queue, session.pos, id, slots);
+  if (slots.length) session.again[id] = (session.again[id] || 0) + 1;
+  return slots.length ? `${slots.map(s => (s === 'end' ? '맨 끝에' : AGAIN_NAME[s])).join('·')} 다시` : '내일 다시';
+}
+// 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (다시 나오기는 설정의 '틀렸을 때'·'힌트 한 번'대로)
 function synAnswer(correct, given, kind) {
   q.answered = true;
   const id = q.w.id;
   let label;
   if (!correct && kind !== 'hint') {
     if (!session.wrong.includes(id)) session.wrong.push(id);
-    session.again[id] = (session.again[id] || 0) + 1;
-    const at = Math.min(session.queue.length, session.pos + 1 + 3 + Math.floor(Math.random() * 3));
-    session.queue.splice(at, 0, id);
-    label = kind === 'idk' ? '모름 · 잠시 후 다시' : '오답 · 잠시 후 다시';
+    label = `${kind === 'idk' ? '모름' : '오답'} · ${againLater(id, 'wrong').replace('내일 다시', '이번엔 끝')}`;
   } else {
-    session.done.push(id);
+    if (!session.done.includes(id)) session.done.push(id);
+    label = kind === 'hint' && !session.hinted.includes(id) ? `힌트 사용${cleanAgain(settings.again).hint1.length ? ` · ${againLater(id, 'hint1')}` : ''}` : '정답!';
     if (kind === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
-    label = kind === 'hint' ? '힌트 사용' : '정답!';
   }
   session.pos++;
   showProgress();
@@ -2687,7 +2713,8 @@ function answer(correct, given, kind) {
   const outcome = correct ? 'ok' : kind === 'hint' || kind === 'partial' ? 'hint' : 'wrong';
   const before = stats[id];
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
-  const retry = session.wrong.includes(id);
+  // 힌트를 썼던 단어가 다시 나와서 맞힌 것도 연습으로 (복습 단계는 첫 결과대로)
+  const retry = session.wrong.includes(id) || session.hinted.includes(id);
   const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
   delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
   stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
@@ -2699,18 +2726,16 @@ function answer(correct, given, kind) {
 
   let label;
   if (outcome === 'wrong') {
-    if (!retry) session.wrong.push(id);
-    session.again[id] = (session.again[id] || 0) + 1;
-    // 같은 학습 중 3~5문제 뒤에 다시
-    const at = Math.min(session.queue.length, session.pos + 1 + 3 + Math.floor(Math.random() * 3));
-    session.queue.splice(at, 0, id);
-    label = kind === 'copied' ? '정답 보고 씀 · 잠시 후 다시' : kind === 'idk' ? '모름 · 잠시 후 다시' : '오답 · 잠시 후 다시';
+    if (!session.wrong.includes(id)) session.wrong.push(id);
+    const when = againLater(id, kind === 'copied' ? 'hint2' : 'wrong');
+    label = `${kind === 'copied' ? '정답 보고 씀' : kind === 'idk' ? '모름' : '오답'} · ${when}`;
   } else {
-    session.done.push(id);
+    if (!session.done.includes(id)) session.done.push(id);
+    const when = outcome === 'hint' ? againLater(id, 'hint1') : '';
     if (outcome === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
     const n = stats[id].due ? daysBetween(today, stats[id].due) : 0;
-    label = kind === 'partial' ? '부분 정답 · 내일 다시'
-      : outcome === 'hint' ? '힌트 사용 · 내일 다시'
+    label = kind === 'partial' ? `부분 정답 · ${when}`
+      : outcome === 'hint' ? `힌트 사용 · ${when}`
       : retry ? '정답! · 내일 다시'
         : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습`
           : cleared ? '정답! · 다시 볼 단어에서 뺐어요' : '정답!';
@@ -3412,9 +3437,33 @@ function renderSettings() {
   setSeg('#seg-layout', ui.choiceLayout);
   setSeg('#seg-strict', settings.strict);
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
+  renderAgain();
   renderAiStatus();
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
+}
+
+// 다시 나오기 설정: 줄마다 곧·조금 뒤·나중에·맨 끝을 켜고 끔. 위의 추천·예전처럼은 한 번에 맞춤
+const AGAIN_ROWS = [['wrong', '틀렸을 때'], ['hint2', '힌트 두 번'], ['hint1', '힌트 한 번']];
+const AGAIN_NAME = { soon: '곧', mid: '조금 뒤', late: '나중에', end: '맨 끝' };
+function renderAgain() {
+  const a = cleanAgain(settings.again), box = $('#again-rows');
+  setSeg('#again-preset', sameAgain(a, AGAIN_REC) ? 'rec' : sameAgain(a, AGAIN_OLD) ? 'old' : '');
+  box.innerHTML = '';
+  for (const [k, name] of AGAIN_ROWS) {
+    const row = el('div', 'again-row'), chips = el('div', 'chips');
+    row.appendChild(el('b', null, name));
+    for (const s of AGAIN_SLOTS) {
+      const on = a[k].includes(s), b = el('button', 'chip' + (on ? ' on' : ''), AGAIN_NAME[s]);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', on);
+      b.addEventListener('click', () => { setAgain({ ...a, [k]: on ? a[k].filter(x => x !== s) : [...a[k], s] }); renderAgain(); });
+      chips.appendChild(b);
+    }
+    row.appendChild(chips);
+    box.appendChild(row);
+  }
+  $('#again-desc').textContent = `곧 1~2문제 뒤 · 조금 뒤 3~5문제 뒤 · 나중에 8~12문제 뒤 · 맨 끝은 이번 학습 마지막. 힌트 한 번은 힌트 쓰고 맞힘·부분 정답, 힌트 두 번은 정답 보고 따라 쓰기. 다시 나온 문제는 맞혀도 복습 단계가 안 올라가요(내일 다시).${sameAgain(a, AGAIN_REC) ? '' : ' 추천: 틀리면 조금 뒤·맨 끝, 힌트 두 번은 조금 뒤·나중에, 힌트 한 번은 나중에.'}`;
 }
 
 // AI 고급 설정(숨긴 메뉴)이 열렸는지. 이 기기에만 저장
@@ -3644,6 +3693,7 @@ function bind() {
   flushReports();
   window.addEventListener('online', () => flushReports());
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
+  onSeg('#again-preset', v => { setAgain(v === 'old' ? AGAIN_OLD : AGAIN_REC); renderAgain(); toast(v === 'old' ? '예전처럼: 틀렸을 때만 조금 뒤에 다시' : '추천대로 바꿨어요'); });
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });
   $('#opt-autospeak').addEventListener('change', e => { settings.autoSpeak = e.target.checked; saveSettings(); });
