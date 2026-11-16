@@ -334,13 +334,14 @@
         </div>
         <p class="muted" id="strict-desc"></p>
       </div>
-      <div class="label mt">다시 나오기 <span class="muted">(이번 학습 안에서. 여러 개 고르면 그때마다 한 번씩)</span></div>
-      <div class="seg again-preset" id="again-preset">
+      <div class="label mt">다시 나오기 <span class="muted">(틀리거나 힌트를 쓴 단어를 이번 학습에서 언제 또 낼지)</span></div>
+      <div class="seg" id="again-preset">
+        <button data-v="light">가볍게</button>
         <button data-v="rec">추천</button>
-        <button data-v="old">예전처럼</button>
+        <button data-v="full">꼼꼼하게</button>
       </div>
-      <div class="again-rows" id="again-rows"></div>
-      <p class="muted" id="again-desc"></p>
+      <div class="again-grid" id="again-rows" role="group" aria-label="다시 나올 때"></div>
+      <p class="muted again-desc" id="again-desc"></p>
       <p class="muted set-note">문제 방식·하루 개수<span data-only="ex">·예문 해석 가리기</span>는 <button class="link-btn" id="btn-set-plan">학습 계획</button>에서 바꿔요.</p>
     </div>
     <div class="card" id="srs-card">

@@ -1504,7 +1504,8 @@ export const hasSynAnt = w => !!(synList(w).length || antList(w).length);
 export const AGAIN_SLOTS = ['soon', 'mid', 'late', 'end'];
 export const AGAIN_GAPS = { soon: [1, 2], mid: [3, 5], late: [8, 12] };
 export const AGAIN_REC = { wrong: ['mid', 'end'], hint2: ['mid', 'late'], hint1: ['late'] }; // 추천
-export const AGAIN_OLD = { wrong: ['mid'], hint2: ['mid'], hint1: [] }; // 예전처럼
+export const AGAIN_OLD = { wrong: ['mid'], hint2: ['mid'], hint1: [] }; // 가볍게 (이 설정이 생기기 전과 같음)
+export const AGAIN_FULL = { wrong: ['soon', 'late', 'end'], hint2: ['mid', 'late', 'end'], hint1: ['mid', 'end'] }; // 꼼꼼하게
 export function cleanAgain(a) {
   const out = {};
   for (const k of Object.keys(AGAIN_REC)) {

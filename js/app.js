@@ -2,7 +2,7 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
@@ -3443,27 +3443,33 @@ function renderSettings() {
   $('#data-info').style.whiteSpace = 'pre-line';
 }
 
-// 다시 나오기 설정: 줄마다 곧·조금 뒤·나중에·맨 끝을 켜고 끔. 위의 추천·예전처럼은 한 번에 맞춤
-const AGAIN_ROWS = [['wrong', '틀렸을 때'], ['hint2', '힌트 두 번'], ['hint1', '힌트 한 번']];
+// 다시 나오기 설정: 상황(줄) × 때(칸) 표에서 칸을 켜고 끔. 위의 가볍게·추천·꼼꼼하게는 한 번에 맞춤
+const AGAIN_ROWS = [['wrong', '틀렸을 때', '모름 포함'], ['hint2', '힌트 두 번', '정답 보고 씀'], ['hint1', '힌트 한 번', '힌트로 맞힘']];
 const AGAIN_NAME = { soon: '곧', mid: '조금 뒤', late: '나중에', end: '맨 끝' };
+const AGAIN_SUB = { soon: '1~2문제', mid: '3~5문제', late: '8~12문제', end: '마지막' };
+const AGAIN_PRESETS = { light: AGAIN_OLD, rec: AGAIN_REC, full: AGAIN_FULL };
 function renderAgain() {
   const a = cleanAgain(settings.again), box = $('#again-rows');
-  setSeg('#again-preset', sameAgain(a, AGAIN_REC) ? 'rec' : sameAgain(a, AGAIN_OLD) ? 'old' : '');
+  const preset = Object.keys(AGAIN_PRESETS).find(k => sameAgain(a, AGAIN_PRESETS[k])) || '';
+  setSeg('#again-preset', preset);
   box.innerHTML = '';
-  for (const [k, name] of AGAIN_ROWS) {
-    const row = el('div', 'again-row'), chips = el('div', 'chips');
-    row.appendChild(el('b', null, name));
+  box.appendChild(el('span'));
+  for (const s of AGAIN_SLOTS) { const h = el('div', 'ag-head', AGAIN_NAME[s]); h.appendChild(el('small', null, AGAIN_SUB[s])); box.appendChild(h); }
+  for (const [k, name, sub] of AGAIN_ROWS) {
+    const r = el('div', 'ag-row', name);
+    r.appendChild(el('small', null, sub));
+    box.appendChild(r);
     for (const s of AGAIN_SLOTS) {
-      const on = a[k].includes(s), b = el('button', 'chip' + (on ? ' on' : ''), AGAIN_NAME[s]);
+      const on = a[k].includes(s), b = el('button', 'again-cell' + (on ? ' on' : ''));
       b.type = 'button';
       b.setAttribute('aria-pressed', on);
+      b.setAttribute('aria-label', `${name} · ${AGAIN_NAME[s]}`);
       b.addEventListener('click', () => { setAgain({ ...a, [k]: on ? a[k].filter(x => x !== s) : [...a[k], s] }); renderAgain(); });
-      chips.appendChild(b);
+      box.appendChild(b);
     }
-    row.appendChild(chips);
-    box.appendChild(row);
   }
-  $('#again-desc').textContent = `곧 1~2문제 뒤 · 조금 뒤 3~5문제 뒤 · 나중에 8~12문제 뒤 · 맨 끝은 이번 학습 마지막. 힌트 한 번은 힌트 쓰고 맞힘·부분 정답, 힌트 두 번은 정답 보고 따라 쓰기. 다시 나온 문제는 맞혀도 복습 단계가 안 올라가요(내일 다시).${sameAgain(a, AGAIN_REC) ? '' : ' 추천: 틀리면 조금 뒤·맨 끝, 힌트 두 번은 조금 뒤·나중에, 힌트 한 번은 나중에.'}`;
+  const say = k => (a[k].length ? a[k].map(s => AGAIN_NAME[s]).join('·') : '안 나옴');
+  $('#again-desc').textContent = `${preset ? '' : '직접 고름 · '}틀리면 ${say('wrong')}, 힌트 두 번은 ${say('hint2')}, 힌트 한 번은 ${say('hint1')}. 다시 나온 문제는 맞혀도 복습 단계가 안 올라가요.`;
 }
 
 // AI 고급 설정(숨긴 메뉴)이 열렸는지. 이 기기에만 저장
@@ -3693,7 +3699,7 @@ function bind() {
   flushReports();
   window.addEventListener('online', () => flushReports());
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
-  onSeg('#again-preset', v => { setAgain(v === 'old' ? AGAIN_OLD : AGAIN_REC); renderAgain(); toast(v === 'old' ? '예전처럼: 틀렸을 때만 조금 뒤에 다시' : '추천대로 바꿨어요'); });
+  onSeg('#again-preset', v => { setAgain(AGAIN_PRESETS[v] || AGAIN_REC); renderAgain(); });
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });
   $('#opt-autospeak').addEventListener('change', e => { settings.autoSpeak = e.target.checked; saveSettings(); });
