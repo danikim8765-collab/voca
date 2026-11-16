@@ -8,7 +8,7 @@ import { createSync } from './sync.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES } from './coach-art.js';
-import { reportRepo, reportReasons, reportText, issueUrl, pushError } from './report.js';
+import { reportRepo, reportReasons, reportText, issueUrl, pushError, REPORT_FORM, formReady, formRequest, queueReport } from './report.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
 const APP_VERSION = '202611131548';
@@ -2839,7 +2839,25 @@ function reportApp() {
     device: `${ua} · ${innerWidth}×${innerHeight}${standalone ? ' · 홈 화면 앱' : ''}${navigator.onLine === false ? ' · 오프라인' : ''}`,
   };
 }
-// 신고 창: 이유(여러 개) + 메모 → GitHub 새 이슈 화면을 채워서 열거나 복사. ctx가 없으면 앱 전체 신고(설정에서)
+// 로그인 없이 보내는 신고: 먼저 이 기기에 쌓아 두고(voca.reports.v1) Google 설문지로 보냄. 인터넷이 안 되면 다음에 앱을 열 때·인터넷이 돌아올 때 다시
+const REPORT_Q = 'voca.reports.v1';
+let reportFlush = null;
+function flushReports() {
+  if (!formReady() || reportFlush) return reportFlush || Promise.resolve(load(REPORT_Q, []).length);
+  // 비어 있으면 기다릴 게 없어 곧바로 끝나므로, '보내는 중' 표시는 꼭 끝난 뒤에(finally) 지움
+  reportFlush = (async () => {
+    let list = load(REPORT_Q, []);
+    while (list.length && navigator.onLine !== false) {
+      const item = list[0], r = formRequest(REPORT_FORM, item.text);
+      try { await fetch(r.url, { method: 'POST', mode: 'no-cors', body: new URLSearchParams(r.body) }); } catch { break; }
+      list = load(REPORT_Q, []).filter(x => x.id !== item.id); // 보내는 사이에 새로 쌓인 것도 남김
+      save(REPORT_Q, list);
+    }
+    return list.length;
+  })().finally(() => { reportFlush = null; });
+  return reportFlush;
+}
+// 신고 창: 이유(여러 개) + 메모 → 설문지로 보냄(로그인 없음). 설문지를 아직 안 정했으면 GitHub 새 이슈 화면을 채워서 엶. 복사도 됨. ctx가 없으면 앱 전체 신고(설정에서)
 function openReport(ctx) {
   const d = $('#report'), box = $('#rp-reasons'), note = $('#rp-note'), pre = $('#rp-preview');
   const picked = new Set();
@@ -2879,9 +2897,18 @@ function openReport(ctx) {
     try { await navigator.clipboard.writeText(`${r.title}\n\n${r.body}`); toast('복사했어요. 메신저나 메일에 붙여 넣어 보내 주세요', 3000); }
     catch { $('#report .rp-peek').open = true; toast('복사가 안 돼요. 같이 보내는 내용을 길게 눌러 복사해 주세요', 3500); }
   };
-  $('#rp-send').onclick = () => {
+  $('#rp-send').textContent = formReady() ? '보내기' : 'GitHub에 올리기';
+  $('#rp-send').onclick = async () => {
     if (!picked.size && !note.value.trim()) { toast('무엇이 이상했는지 하나 골라 주세요'); return; }
     const r = build();
+    if (formReady()) {
+      const t = Date.now();
+      save(REPORT_Q, queueReport(load(REPORT_Q, []), { id: `${t}-${Math.random().toString(36).slice(2, 6)}`, t, text: `${r.title}\n\n${r.body}` }));
+      done();
+      const left = await flushReports();
+      toast(left ? '지금은 못 보냈어요. 인터넷이 되면 알아서 보낼게요' : '보냈어요. 알려 줘서 고마워요!', 3000);
+      return;
+    }
     const url = issueUrl(reportRepo(location), r.title, r.body);
     done();
     window.open(url, '_blank', 'noopener');
@@ -3602,6 +3629,9 @@ function bind() {
   $('#btn-settings').addEventListener('click', () => { renderSettings(); renderSyncStatus(); show('settings'); });
   $('#btn-settings-back').addEventListener('click', () => goHome());
   $('#btn-report').addEventListener('click', () => openReport(null));
+  // 못 보낸 신고가 있으면 앱을 열 때·인터넷이 돌아올 때 다시 보냄
+  flushReports();
+  window.addEventListener('online', () => flushReports());
   onSeg('#seg-accent', v => { settings.accent = v; saveSettings(); });
   onSeg('#seg-strict', v => { settings.strict = v; saveSettings(); $('#strict-desc').textContent = STRICT_DESC[v] || ''; });
   $('#rate').addEventListener('input', e => { settings.rate = +e.target.value; $('#rate-val').textContent = `${settings.rate}x`; saveSettings(); });

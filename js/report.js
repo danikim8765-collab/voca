@@ -83,3 +83,28 @@ export function issueUrl(repo, title, body, max = 7000) {
   }
   return url;
 }
+
+// ---------- 로그인 없이 보내기: Google 설문지 ----------
+// 신고는 Google 설문지로 보내고, 응답은 그 설문지에 연결한 Google 시트에 쌓임 (Claude가 Google Sheets로 읽음).
+// id·entry는 설문지의 '미리 채워진 링크'에서 (parseFormLink). 비어 있으면 예전처럼 GitHub 이슈 화면을 엶
+export const REPORT_FORM = { id: '', entry: '' };
+export const formReady = (f = REPORT_FORM) => !!(f && f.id && f.entry);
+
+// 미리 채워진 링크 https://docs.google.com/forms/d/e/<id>/viewform?usp=pp_url&entry.123456=… → { id, entry: 'entry.123456' }
+export function parseFormLink(url) {
+  const s = String(url || '');
+  const id = (s.match(/\/forms\/d\/e\/([\w-]{20,})\//) || [])[1];
+  const entry = (s.match(/[?&](entry\.\d+)=/) || [])[1];
+  return id && entry ? { id, entry } : null;
+}
+
+// 설문지 응답 보내기 요청. 브라우저에선 no-cors로 보내서 답은 못 읽음(보내졌는지는 네트워크가 됐는지로만 앎)
+export function formRequest(f, text) {
+  const body = new URLSearchParams({ [f.entry]: String(text).slice(0, 30000) }).toString();
+  return { url: `https://docs.google.com/forms/d/e/${f.id}/formResponse`, body };
+}
+
+// 아직 못 보낸 신고 줄: 새 것을 뒤에, 너무 많으면 오래된 것부터 버림
+export function queueReport(list, item, max = 30) {
+  return [...(Array.isArray(list) ? list : []).filter(x => x && x.id !== item.id), item].slice(-max);
+}
