@@ -27,6 +27,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
+
+      # 머지 전에 테스트를 돌려서 깨진 PR이 배포되지 않게
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: "'머지 대기' PR 머지"
         env:
@@ -37,6 +43,16 @@ jobs:
           prs=$(gh pr list --state open --base main --label "머지 대기" --json number,isDraft \
                 --jq 'sort_by(.number) | .[] | select(.isDraft | not) | .number')
           for n in $prs; do
+            # 그 PR을 main에 합친 모습(pull/N/merge)으로 테스트. 실패하면 머지하지 않고 남김
+            # (merge ref가 없으면 충돌이 있는 것이라 아래 머지도 실패함)
+            if git fetch -q origin "pull/$n/merge" && git checkout -q --detach FETCH_HEAD; then
+              if ! node --test tests/*.mjs; then
+                git checkout -q main
+                failed="$failed #$n"; echo "::warning::#$n 테스트 실패라 머지 안 함 (PR에서 node --test tests/*.mjs 결과를 확인해 주세요)"
+                continue
+              fi
+              git checkout -q main
+            fi
             ok=0
             # 바로 앞 PR을 머지하면 GitHub이 머지 가능 여부를 다시 계산하느라 잠깐 실패할 수 있어서 몇 번 다시 시도
             for try in 1 2 3; do

@@ -820,7 +820,8 @@ function optionSay({ r, p, rec }, a) {
 // AI를 못 부른 까닭을 코치 말로
 function coachErrorText() {
   const e = aiCoachError();
-  return e === '429' ? 'AI가 지금 바쁘거나 오늘 무료 한도를 다 썼어요. 조금 뒤에 다시 보내 주세요.'
+  return e === '429' ? 'AI가 지금 바쁘거나 무료 한도를 다 썼어요. 1분쯤 뒤에 다시 보내 주세요.'
+    : e === '413' ? '보낼 이야기가 AI 무료 한도보다 길어요. 1분쯤 뒤에 짧게 다시 보내 주세요.'
     : e === 'timeout' ? 'AI 답이 너무 늦어요. 다시 보내 볼까요?'
       : e === 'offline' || e === 'network' ? '인터넷이 안 돼서 AI와 이야기할 수 없어요. 연결을 확인하고 다시 보내 주세요.'
         : e === '401' || e === '403' ? 'AI 키가 맞지 않아요. 설정 > AI에서 다시 연결해 주세요.'
@@ -1388,11 +1389,13 @@ function renderPlan() {
   });
   for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
-  // 주기 복습이면 목표일 전엔 목표 D-n, 그 뒤엔 시험 D-n
+  // 주기 복습이면 목표일 전엔 목표 D-n, 그 뒤엔 시험 D-n.
+  // 코치는 'O월 O일까지 새 단어'로 새 단어를 보는 마지막 날(목표일 전날)을 보여 주니, D-n도 그날로 셈 (D-11과 27일까지가 하루 어긋나 보이지 않게)
   const toGoal = srsOn() && dateStr() < goalDate();
-  const left = toGoal ? daysBetween(dateStr(), goalDate()) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
+  const goalEnd = coachActive() ? lastLearnDay() : goalDate();
+  const left = toGoal ? daysBetween(dateStr(), goalEnd) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   dd.hidden = left == null || left < 0 || stage === 'day';
-  if (!dd.hidden) { dd.textContent = left === 0 && !toGoal ? 'D-day' : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
+  if (!dd.hidden) { dd.textContent = left === 0 ? (toGoal ? '목표 D-day' : 'D-day') : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
   let note = '';
 
   if (stage === 'day') {
@@ -1859,7 +1862,7 @@ function renderQuestion() {
       $('#quiz').classList.add('pin-choices');
       if (ui.choiceLayout === 'grid') actions.prepend(leanBar(actions)); // 쏠림은 격자에서만
       else delete actions.dataset.lean;
-      $('.quiz-body').style.paddingBottom = `${actions.offsetHeight + 12}px`;
+      pinSpace();
     }
     fitChoices();
   }
@@ -1888,6 +1891,16 @@ function choiceNotes(choices, right, picked) {
   }
   return card;
 }
+
+// 폰 4지선다: 아래 고정된 보기 높이만큼 문장 아래 여백. 힌트 버튼은 보기 바로 위에 떠 있으니(style.css .pin-choices .q-tools) 그만큼 더.
+// 쏠림을 바꾸거나 화면을 돌려 보기 높이가 바뀌어도 다시 맞춤
+function pinSpace() {
+  if (!$('#quiz').classList.contains('pin-choices')) return;
+  const h = $('#q-actions').offsetHeight;
+  $('#quiz').style.setProperty('--pin-h', `${h}px`);
+  $('.quiz-body').style.paddingBottom = `${h + 12 + ($('#btn-hint').hidden ? 0 : 44)}px`;
+}
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(pinSpace).observe($('#q-actions'));
 
 // 컴퓨터: 선지가 창 아래로 넘치면(낮은 창, 긴 예문) 2×2로 줄여서 한 화면에
 function fitChoices() {
@@ -1946,9 +1959,11 @@ function renderWordQuestion(w) {
 function renderMeaningChoices(actions) {
   const w = q.w;
   const pool = rangeWords().length >= 8 ? rangeWords() : words;
-  let opts = pickMeaningDistractors(w, pool, 3);
-  if (opts.length < 3) opts = opts.concat(pickMeaningDistractors(w, words, 3).filter(o => !opts.some(x => x.meaning === o.meaning))).slice(0, 3);
-  const choices = shuffle([w, ...opts]);
+  const choices = keptChoices(w, () => {
+    let opts = pickMeaningDistractors(w, pool, 3);
+    if (opts.length < 3) opts = opts.concat(pickMeaningDistractors(w, words, 3).filter(o => !opts.some(x => x.meaning === o.meaning))).slice(0, 3);
+    return shuffle([w, ...opts]);
+  });
   q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
@@ -1991,6 +2006,7 @@ function renderMeaningTyping(actions) {
     input.blur();
     // 규칙 채점으로 바로. 정답이 아닐 때만(오답·부분 정답) 인터넷이 되면 AI가 다시 봄. AI가 실패하면 규칙 결과 그대로
     let res = gradeMeaning(v, cur.w.meaning, settings.strict);
+    let aiMissed = false; // AI를 불렀는데 못 받음(한도 429·시간 초과 등) → 규칙 채점 결과라는 걸 알려 줌
     if (res.score < 2 && aiOnline()) {
       busy = true;
       input.disabled = ok.disabled = true;
@@ -2000,10 +2016,10 @@ function renderMeaningTyping(actions) {
       if (q !== cur || cur.answered) return; // 채점 중에 다른 화면으로 나갔으면 버림
       input.disabled = ok.disabled = false;
       ok.textContent = '확인';
-      if (ai) res = ai;
+      if (ai) res = ai; else aiMissed = true;
     }
     const { score, missing, note = '' } = res;
-    const tail = note ? ` · ${note}` : score === 1 ? ` · ${missing}개 뜻이 빠졌어요` : '';
+    const tail = (note ? ` · ${note}` : score === 1 ? ` · ${missing}개 뜻이 빠졌어요` : '') + (aiMissed ? ' · AI 확인 못 함(규칙으로만 채점)' : '');
     if (score === 2) answer(!cur.usedHint, null, cur.usedHint ? 'hint' : undefined);
     else if (score === 1) answer(false, v + tail, 'partial');
     else answer(false, v + tail);
@@ -2135,12 +2151,23 @@ function leanBar(actions) {
   return bar;
 }
 
+// 그만뒀다 이어해도 보기가 그대로이게: 지금 문제의 보기를 진행 기록(session)에 남겨 둠. 답하면 지움 (answer)
+function keptChoices(w, pick) {
+  const kept = session && session.opts && session.opts.id === w.id ? session.opts.ids.map(id => byId.get(id)) : null;
+  if (kept && kept.every(Boolean) && kept.includes(w) && new Set(kept).size === kept.length) return kept;
+  const choices = pick();
+  if (session && !session.noSave) { session.opts = { id: w.id, ids: choices.map(c => c.id) }; saveSession(); }
+  return choices;
+}
+
 function renderChoices(actions) {
   const w = q.w;
   const pool = rangeWords().length >= 8 ? rangeWords() : words;
-  let opts = pickDistractors(w, pool, 3);
-  if (opts.length < 3) opts = opts.concat(pickDistractors(w, words, 3).filter(o => !opts.includes(o))).slice(0, 3);
-  const choices = shuffle([w, ...opts]);
+  const choices = keptChoices(w, () => {
+    let opts = pickDistractors(w, pool, 3);
+    if (opts.length < 3) opts = opts.concat(pickDistractors(w, words, 3).filter(o => !opts.includes(o))).slice(0, 3);
+    return shuffle([w, ...opts]);
+  });
   q.choices = choices;
   choices.forEach((c, i) => {
     const b = el('button', 'choice');
@@ -2552,6 +2579,7 @@ function answer(correct, given, kind) {
   const cleared = outcome === 'ok' && !retry && !scheduled && isWrongRaw(before) && (session.mode === 'wrong' || session.mode === 'retry');
   if (cleared) stats[id].r = today; else delete stats[id].r;
   if (hintedId() === id) { const d = loadDay(); delete d.hint; save(KEY.day, d); }
+  if (session.opts && session.opts.id === id) delete session.opts; // 다음에 또 나오면 보기를 새로 뽑음
 
   let label;
   if (outcome === 'wrong') {

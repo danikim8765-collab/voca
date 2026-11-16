@@ -770,6 +770,12 @@ body:has(#quiz.active.kb-mode) .toast { bottom: auto; top: calc(env(safe-area-in
 .explain-text { line-height: 1.6; white-space: pre-line; }
 .q-tools { display: flex; gap: 6px; flex-wrap: wrap; }
 .q-tools .btn { width: auto; margin-bottom: 0; }
+/* 폰 4지선다: 힌트 버튼을 아래 고정된 보기 바로 위 오른쪽에 띄움 (예문이 길어도 보기 뒤에 숨지 않게) */
+.pin-choices .q-tools {
+  position: fixed; z-index: 6; bottom: calc(var(--pin-h, 0px) - 6px);
+  right: max(16px, calc((100% - var(--bar-w)) / 2 + 16px));
+}
+.pin-choices .q-tools .btn { background: var(--card); box-shadow: var(--shadow); }
 #btn-idk { color: var(--muted); }
 
 /* ---------- 유반의어 테스트 ---------- */
