@@ -1901,11 +1901,15 @@ function synAnswer(correct, given, kind) {
   let label;
   if (!correct && kind !== 'hint') {
     if (!session.wrong.includes(id)) session.wrong.push(id);
-    label = `${kind === 'idk' ? '모름' : '오답'} · ${againLater(id, 'wrong').replace('내일 다시', '이번엔 끝')}`;
+    const when = againLater(id, 'wrong');
+    label = `${kind === 'idk' ? '모름' : '오답'}${when === '내일 다시' ? '' : ` · ${when}`}`; // 유반의어 테스트는 기록이 없어서 '내일'은 안 씀
   } else {
     if (!session.done.includes(id)) session.done.push(id);
-    label = kind === 'hint' && !session.hinted.includes(id) ? `힌트 사용${cleanAgain(settings.again).hint1.length ? ` · ${againLater(id, 'hint1')}` : ''}` : '정답!';
-    if (kind === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
+    if (kind === 'hint') {
+      const when = againLater(id, 'hint1');
+      label = `힌트 사용${when === '내일 다시' ? '' : ` · ${when}`}`;
+      if (!session.hinted.includes(id)) session.hinted.push(id);
+    } else label = '정답!';
   }
   session.pos++;
   showProgress();
