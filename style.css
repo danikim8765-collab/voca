@@ -963,3 +963,5 @@ body[data-tint] {
 .rp-peek summary { cursor: pointer; }
 .rp-peek pre { white-space: pre-wrap; word-break: break-word; max-height: 150px; overflow: auto; margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--bg); font-size: 11.5px; line-height: 1.45; color: var(--text); }
 .rp-copy { display: block; margin: 12px auto 0; color: var(--muted); font-size: 13px; font-weight: 600; }
+.mem-sum-head { margin: 14px 0 2px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.mem-sum span { white-space: pre-line; font-size: 13.5px; color: var(--muted); }
