@@ -3369,12 +3369,12 @@ function renderSyncStatus() {
   const badge = $('#sync-badge');
   badge.hidden = !sync.enabled;
   badge.className = 'sync-badge ' + sync.status;
-  badge.textContent = { syncing: '☁︎ 동기화 중', ok: '☁︎ 동기화됨', error: '☁︎ 동기화 오류', idle: '☁︎' }[sync.status] || '';
+  badge.textContent = { syncing: '☁︎ 동기화 중', ok: '☁︎ 동기화됨', error: '☁︎ 동기화 오류', wait: '☁︎ 잠시 뒤 동기화', idle: '☁︎' }[sync.status] || '';
   $('#sync-off').hidden = sync.enabled;
   $('#sync-on').hidden = !sync.enabled;
   if (sync.enabled) {
     const t = sync.last ? new Date(sync.last).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '아직 없음';
-    $('#sync-info').textContent = `GitHub 계정 ${sync.login}에 연결됨\n마지막 동기화: ${t}` + (sync.status === 'error' ? `\n⚠︎ ${sync.error}` : sync.status === 'syncing' ? '\n동기화 중…' : '');
+    $('#sync-info').textContent = `GitHub 계정 ${sync.login}에 연결됨\n마지막 동기화: ${t}` + (sync.status === 'error' || sync.status === 'wait' ? `\n⚠︎ ${sync.error}` : sync.status === 'syncing' ? '\n동기화 중…' : '');
   }
 }
 

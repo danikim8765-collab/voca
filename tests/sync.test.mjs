@@ -15,7 +15,7 @@ globalThis.fetch = async (url, opts = {}) => {
   if (/\/gists\/g1$/.test(url)) return ok({ files: Object.fromEntries(Object.entries(gist).map(([k, v]) => [k, { content: v }])) });
   return ok({});
 };
-const { createSync } = await import('../js/sync.js');
+const { createSync, isLimited, limitWait } = await import('../js/sync.js');
 
 // 한 기기: 진도는 비워 두고 코치 캐릭터만
 function device(char) {
@@ -98,4 +98,59 @@ test('화면 꾸미기: 더 최근에 바꾼 기기 것으로, 끈 기기는 주
   await pad.sync.now();
   await phone.sync.now();
   assert.equal(phone.look.size, 'l');
+});
+
+test('GitHub 쓰기 제한: 막힌 것과 권한 문제를 구분, 기다릴 시간은 1분~1시간', () => {
+  assert.ok(isLimited(429));
+  assert.ok(isLimited(403, { remaining: '0' }));
+  assert.ok(isLimited(403, { retryAfter: '60' }));
+  assert.ok(isLimited(403, {}, 'You have exceeded a secondary rate limit.'));
+  assert.ok(!isLimited(403, {}, 'Resource not accessible by personal access token'));
+  assert.ok(!isLimited(404));
+  assert.equal(limitWait({ wait: 5000 }), 60000);
+  assert.equal(limitWait({ wait: 120000 }), 120000);
+  assert.equal(limitWait({}, 0), 60000);
+  assert.equal(limitWait({}, 2), 240000);
+  assert.equal(limitWait({}, 20), 3600000);
+});
+
+test('GitHub가 막으면 기다리는 동안 아무것도 안 보내고, Gist가 지워졌으면 바로 새로 만듦', async () => {
+  const real = globalThis.fetch;
+  const headers = h => ({ get: n => h[n] ?? null });
+  store.clear();
+  store.set('voca.sync.v1', JSON.stringify({ token: 't', gistId: 'g1' }));
+  // 1) 막힘: 상태는 '잠시 뒤', 다시 불러도 GitHub에 안 감
+  calls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url, opts });
+    return { ok: false, status: 403, headers: headers({ 'retry-after': '120' }), json: async () => ({ message: 'You have exceeded a secondary rate limit.' }) };
+  };
+  const d = device(null);
+  await d.sync.now();
+  assert.equal(d.sync.status, 'wait');
+  assert.match(d.sync.error, /2분 뒤/);
+  const n = calls.length;
+  await d.sync.now();
+  d.sync.soon(0);
+  assert.equal(calls.length, n);
+  assert.ok(JSON.parse(store.get('voca.sync.v1')).pauseUntil > Date.now());
+  d.sync.disconnect(); // 다시 하기 타이머 정리
+
+  // 2) Gist가 지워짐(404): 같은 동기화 안에서 새로 만들고 정상
+  store.set('voca.sync.v1', JSON.stringify({ token: 't', gistId: 'gone' }));
+  gist = {};
+  globalThis.fetch = async (url, opts = {}) => {
+    calls.push({ url, opts });
+    const ok = body => ({ ok: true, status: 200, json: async () => body });
+    if (/\/gists\/gone$/.test(url)) return { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) };
+    if (/\/gists\?/.test(url)) return ok([]);
+    if (/\/gists$/.test(url) && opts.method === 'POST') return ok({ id: 'g1' });
+    return real(url, opts);
+  };
+  const e = device({ char: 'owl', at: 1 });
+  await e.sync.now();
+  assert.equal(e.sync.status, 'ok');
+  assert.equal(JSON.parse(store.get('voca.sync.v1')).gistId, 'g1');
+  assert.deepEqual(JSON.parse(gist['voca-marks.json']).coach, { char: 'owl', at: 1 });
+  globalThis.fetch = real;
 });
