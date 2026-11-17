@@ -1,6 +1,7 @@
 // 컴퓨터 단축키 (설정 > 단축키): 퀴즈에서 누를 키를 직접 정함.
 // 키는 자판 자리(e.code)로 저장해서 한글 자판 상태여도 같은 자리면 먹음. 이 기기에만 저장 (키보드가 기기마다 달라서)
 // Shift·Ctrl·Alt·⌘ 같은 조합 키는 '혼자 눌렀다 떼면'으로 씀 (Shift+글자로 대문자 친 건 안 먹음)
+// 조합 키는 왼쪽·오른쪽을 따로 붙일 수 있음. 처음 힌트의 'Shift'처럼 쪽이 없으면 양쪽 다
 
 export const KEYS_KEY = 'voca.keys.v1';
 
@@ -15,17 +16,20 @@ export const FIXED_KEYS = ['Enter', 'Tab'];
 // 문제를 푸는 중(답하기 전)에 쓰는 것: 직접 입력 문제에선 글자 키가 입력으로 먼저 감
 export const WHILE_ANSWERING = ['hint', 'idk', 'quit'];
 
-const MODS = { ShiftLeft: 'Shift', ShiftRight: 'Shift', ControlLeft: 'Control', ControlRight: 'Control', AltLeft: 'Alt', AltRight: 'Alt', MetaLeft: 'Meta', MetaRight: 'Meta', OSLeft: 'Meta', OSRight: 'Meta' };
+const MOD_RE = /^(Shift|Control|Alt|Meta)(Left|Right)?$/;
 
-// 왼쪽·오른쪽 Shift는 같은 키, 숫자 패드 숫자는 위 숫자와 같은 키, 숫자 패드 Enter는 Enter
+// 숫자 패드 숫자는 위 숫자와 같은 키, 숫자 패드 Enter는 Enter (예전 이름 OSLeft·OSRight는 Meta)
 export function normKey(code) {
-  code = String(code || '');
-  if (MODS[code]) return MODS[code];
+  code = String(code || '').replace(/^OS(Left|Right)$/, 'Meta$1');
   if (code === 'NumpadEnter') return 'Enter';
   const m = /^Numpad(\d)$/.exec(code);
   return m ? 'Digit' + m[1] : code;
 }
-export const isModKey = c => c === 'Shift' || c === 'Control' || c === 'Alt' || c === 'Meta';
+export const isModKey = c => MOD_RE.test(c);
+// 조합 키의 쪽을 뗀 이름 (ShiftRight → Shift)
+export const modBase = c => (MOD_RE.exec(c) || [])[1] || '';
+// 같은 키로 치는가: 같거나, 한쪽이 'Shift'(양쪽)이고 다른 쪽이 ShiftLeft·ShiftRight
+const overlap = (a, b) => !!a && !!b && (a === b || (isModKey(a) && isModKey(b) && modBase(a) === modBase(b) && (a === modBase(a) || b === modBase(b))));
 // 앱 키보드(직접 입력 문제)가 글자로 받는 키
 export const kbTypes = c => /^(Key[A-Z]|Space|Quote|Minus|Backspace)$/.test(c);
 // 글 칸(검색·입력 칸)에서 글자로 쳐지는 키
@@ -37,7 +41,7 @@ export function cleanKeys(o) {
   const out = {}, used = new Set();
   for (const [a] of KEY_ACTIONS) {
     let c = a in o ? (typeof o[a] === 'string' ? normKey(o[a]) : KEY_DEFAULT[a]) : KEY_DEFAULT[a];
-    if (c && (!/^[A-Za-z0-9]{1,24}$/.test(c) || FIXED_KEYS.includes(c) || used.has(c))) c = '';
+    if (c && (!/^[A-Za-z0-9]{1,24}$/.test(c) || FIXED_KEYS.includes(c) || [...used].some(u => overlap(u, c)))) c = '';
     if (c) used.add(c);
     out[a] = c;
   }
@@ -45,24 +49,36 @@ export function cleanKeys(o) {
 }
 
 // action에 code를 붙임. 다른 동작이 쓰던 키면 서로 맞바꿈 (code ''이면 지움)
+// 다른 동작이 양쪽 'Shift'인데 오른쪽 Shift를 붙이면, 그 동작은 남은 왼쪽 Shift로 (narrowed)
 export function assignKey(map, action, code) {
   const m = cleanKeys(map);
   code = normKey(code);
-  if (!(action in m) || FIXED_KEYS.includes(code)) return { map: m, swapped: null };
-  const other = code ? Object.keys(m).find(a => a !== action && m[a] === code) || null : null;
-  if (other) m[other] = m[action];
+  const none = { map: m, swapped: null, narrowed: null };
+  if (!(action in m) || FIXED_KEYS.includes(code)) return none;
+  const other = code ? Object.keys(m).find(a => a !== action && overlap(m[a], code)) || null : null;
+  let swapped = null, narrowed = null;
+  if (other && m[other] === modBase(code) && code !== m[other]) {
+    m[other] = m[other] + (code.endsWith('Right') ? 'Left' : 'Right');
+    narrowed = other;
+  } else if (other) {
+    m[other] = m[action];
+    swapped = other;
+  }
   m[action] = code;
-  return { map: m, swapped: other };
+  return { map: cleanKeys(m), swapped, narrowed };
 }
 
+// 누른 키(e.code)에 붙은 동작. 오른쪽 Shift를 누르면 'ShiftRight' 다음 양쪽 'Shift' 순서로 찾음
 export function actionFor(map, code) {
   code = normKey(code);
   if (!code) return null;
-  return Object.keys(map).find(a => map[a] === code) || null;
+  return Object.keys(map).find(a => map[a] === code) || (isModKey(code) && Object.keys(map).find(a => map[a] === modBase(code))) || null;
 }
 
 const NAMES = {
-  Space: 'Space', Escape: 'Esc', Shift: 'Shift', Control: 'Ctrl', Alt: 'Alt', Meta: '⌘/Win', Backspace: 'Backspace', Delete: 'Del',
+  Space: 'Space', Escape: 'Esc', Shift: 'Shift', Control: 'Ctrl', Alt: 'Alt', Meta: '⌘/Win',
+  ShiftLeft: '왼쪽 Shift', ShiftRight: '오른쪽 Shift', ControlLeft: '왼쪽 Ctrl', ControlRight: '오른쪽 Ctrl',
+  AltLeft: '왼쪽 Alt', AltRight: '오른쪽 Alt', MetaLeft: '왼쪽 ⌘/Win', MetaRight: '오른쪽 ⌘/Win', Backspace: 'Backspace', Delete: 'Del',
   ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Quote: "'", Minus: '-', Equal: '=', Comma: ',', Period: '.', Slash: '/',
   Semicolon: ';', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Backquote: '`', CapsLock: 'Caps Lock', Insert: 'Ins',
   PageUp: 'PgUp', PageDown: 'PgDn', Home: 'Home', End: 'End', ContextMenu: 'Menu',

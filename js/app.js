@@ -5,7 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
-import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, normKey, isModKey, kbTypes, isTypingKey, keyLabel } from './keys.js';
+import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, normKey, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js';
@@ -2869,7 +2869,13 @@ function openSheet(w, more = []) {
   $('#fb-speak').onclick = () => speak(w.word);
   const fm = $('#fb-mark');
   fm.classList.toggle('on', isUnknown(w.id));
-  fm.onclick = () => fm.classList.toggle('on', toggleUnknown(w.id));
+  fm.classList.remove('swipe', 'wipe');
+  fm.onclick = () => {
+    const on = fm.classList.toggle('on', toggleUnknown(w.id));
+    // 칠하면 형광펜이 쓱 지나가고, 지우면 빠지듯 (다시 누르면 처음부터)
+    fm.classList.remove('swipe', 'wipe'); void fm.offsetWidth;
+    fm.classList.add(on ? 'swipe' : 'wipe');
+  };
   $('#fb-report').onclick = () => openReport(reportCtx());
 
   const mean = $('#fb-mean');
@@ -4031,7 +4037,7 @@ function bind() {
   document.addEventListener('keydown', e => {
     const c = normKey(e.code);
     const others = { Shift: e.shiftKey, Control: e.ctrlKey, Alt: e.altKey, Meta: e.metaKey };
-    modAlone = isModKey(c) && !e.repeat && !Object.keys(others).some(m => m !== c && others[m]) ? c : null;
+    modAlone = isModKey(c) && !e.repeat && !Object.keys(others).some(m => m !== modBase(c) && others[m]) ? c : null;
   }, true);
   document.addEventListener('keyup', e => {
     const c = normKey(e.code);
@@ -4098,9 +4104,7 @@ function quizKey(a) {
   if (a === 'speak') { if (!fb) return false; $('#fb-speak').click(); return true; }
   if (a === 'mark') {
     if (!fb) return false;
-    const m = $('#fb-mark');
-    m.click();
-    toast(m.classList.contains('on') ? '형광펜을 칠했어요' : '형광펜을 지웠어요', 1200);
+    $('#fb-mark').click();
     return true;
   }
   if (a === 'hint') { if (!open) return false; useHint(); return true; }
@@ -4149,6 +4153,7 @@ function startKeyCapture(a, b) {
     stopKeyCapture();
     renderKeys();
     if (r.swapped) toast(`'${actionName(r.swapped)}' 키와 맞바꿨어요`);
+    else if (r.narrowed) toast(`'${actionName(r.narrowed)}' 키는 ${keyLabel(keymap[r.narrowed])}로 바꿨어요`);
     else if (WHILE_ANSWERING.includes(a) && kbTypes(code)) toast('직접 입력 문제에선 이 키가 글자로 쳐져서 그때는 안 먹어요', 3500);
   };
   const down = e => {

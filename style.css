@@ -592,7 +592,21 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .rel .ant b { background: var(--bad-soft); }
 .mark-btn { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border: 1.5px solid var(--line); background: transparent; color: var(--muted); border-radius: 50%; padding: 0; }
 .mark-btn svg { width: 19px; height: 19px; }
-.mark-btn.on { background: var(--mark-bg); border-color: transparent; color: var(--text); }
+.mark-btn { position: relative; overflow: hidden; isolation: isolate; }
+.mark-btn svg { position: relative; z-index: 1; }
+/* 칠한 바탕은 ::before: 칠할 때 왼쪽에서 오른쪽으로 쓱, 지울 때 오른쪽으로 빠짐 (app.js가 swipe·wipe를 붙임) */
+.mark-btn::before { content: ''; position: absolute; inset: 0; background: var(--mark-bg); transform: scaleX(0); transform-origin: left; }
+.mark-btn.on { border-color: transparent; color: var(--text); }
+.mark-btn.on::before { transform: scaleX(1); }
+.mark-btn.swipe { animation: mark-pop .42s cubic-bezier(.3, 1.5, .5, 1); }
+.mark-btn.swipe::before { animation: mark-in .3s cubic-bezier(.4, 0, .2, 1) both; }
+.mark-btn.swipe svg { animation: mark-pen .42s ease-out; }
+.mark-btn.wipe::before { transform-origin: right; animation: mark-out .26s ease-in both; }
+@keyframes mark-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes mark-out { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes mark-pop { 0% { transform: scale(1); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
+@keyframes mark-pen { 0% { transform: translateX(-7px) rotate(-14deg); } 55% { transform: translateX(4px) rotate(8deg); } 100% { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .mark-btn.swipe, .mark-btn.swipe::before, .mark-btn.swipe svg, .mark-btn.wipe::before { animation: none; } }
 /* 형광펜 친 단어는 단어에 형광펜 */
 .item.hl .w { background: linear-gradient(transparent var(--mark-top), var(--mark-bg) var(--mark-top)); border-radius: 2px; padding: 0 2px; }
 .list-note { font-size: 12px; margin: -4px 2px 10px; }
