@@ -7,10 +7,10 @@ export const KEYS_KEY = 'voca.keys.v1';
 // [이름, 설정 화면에 보일 말] (이 순서로 보임)
 export const KEY_ACTIONS = [
   ['c1', '보기 1'], ['c2', '보기 2'], ['c3', '보기 3'], ['c4', '보기 4'],
-  ['hint', '힌트'], ['idk', '모르겠어요'], ['next', '계속하기'], ['speak', '발음 듣기'], ['quit', '그만하기'],
+  ['hint', '힌트'], ['idk', '모르겠어요'], ['next', '계속하기'], ['mark', '형광펜'], ['speak', '발음 듣기'], ['quit', '그만하기'],
 ];
-export const KEY_DEFAULT = { c1: 'Digit1', c2: 'Digit2', c3: 'Digit3', c4: 'Digit4', hint: 'Shift', idk: '', next: 'Space', speak: '', quit: 'Escape' };
-// Enter는 늘 채점·계속하기, Tab은 칸 옮기기라 못 바꿈
+export const KEY_DEFAULT = { c1: 'Digit1', c2: 'Digit2', c3: 'Digit3', c4: 'Digit4', hint: 'Shift', idk: '', next: '', mark: 'Space', speak: '', quit: 'Escape' };
+// Enter는 늘 채점·계속하기 (그래서 Space는 처음부터 채점 다음 형광펜에), Tab은 칸 옮기기라 못 바꿈
 export const FIXED_KEYS = ['Enter', 'Tab'];
 // 문제를 푸는 중(답하기 전)에 쓰는 것: 직접 입력 문제에선 글자 키가 입력으로 먼저 감
 export const WHILE_ANSWERING = ['hint', 'idk', 'quit'];

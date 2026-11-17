@@ -4096,6 +4096,13 @@ function quizKey(a) {
   if (a === 'quit') { quitQuiz(); return true; }
   if (a === 'next') { if (!fb) return false; next(); return true; }
   if (a === 'speak') { if (!fb) return false; $('#fb-speak').click(); return true; }
+  if (a === 'mark') {
+    if (!fb) return false;
+    const m = $('#fb-mark');
+    m.click();
+    toast(m.classList.contains('on') ? '형광펜을 칠했어요' : '형광펜을 지웠어요', 1200);
+    return true;
+  }
   if (a === 'hint') { if (!open) return false; useHint(); return true; }
   if (a === 'idk') { if (!open || $('#btn-idk').hidden) return false; giveUp(); return true; }
   const i = ['c1', 'c2', 'c3', 'c4'].indexOf(a);
@@ -4124,7 +4131,7 @@ function renderKeys() {
   fixed.append(el('span', null, '채점 · 계속하기'), el('span', 'key-chip fixed', 'Enter'));
   box.appendChild(fixed);
   // 퀴즈 버튼에 마우스를 올리면 단축키가 보이게
-  for (const [id, a, name] of [['#btn-hint', 'hint', '힌트'], ['#btn-idk', 'idk', '모르겠어요'], ['#fb-speak', 'speak', '발음 듣기'], ['#btn-quit', 'quit', '그만하기']]) {
+  for (const [id, a, name] of [['#btn-hint', 'hint', '힌트'], ['#btn-idk', 'idk', '모르겠어요'], ['#fb-speak', 'speak', '발음 듣기'], ['#fb-mark', 'mark', '형광펜'], ['#btn-quit', 'quit', '그만하기']]) {
     $(id).title = keymap[a] ? `${name} (${keyLabel(keymap[a])})` : name;
   }
 }

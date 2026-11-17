@@ -8,7 +8,7 @@ test('단축키: 비었거나 고장 난 값이면 기본값', () => {
 });
 
 test('단축키: 없음(\'\')은 그대로, 못 쓰는 키·겹친 키는 비움', () => {
-  const m = cleanKeys({ idk: '', hint: 'Enter', speak: 'KeyS', next: 'KeyS', quit: '<x>' });
+  const m = cleanKeys({ idk: '', hint: 'Enter', speak: 'KeyS', next: 'KeyS', quit: '<x>', mark: '' });
   assert.equal(m.idk, '');
   assert.equal(m.hint, '');
   assert.equal(m.next, 'KeyS'); // 겹치면 목록 앞쪽(계속하기)이 가짐
@@ -24,7 +24,10 @@ test('단축키: 같은 키를 붙이면 서로 맞바꿈, 빈 키면 지움', (
   const r2 = assignKey(r.map, 'c1', '');
   assert.equal(r2.map.c1, '');
   assert.equal(r2.swapped, null);
-  assert.equal(assignKey(KEY_DEFAULT, 'next', 'Enter').map.next, 'Space'); // Enter는 못 바꿈
+  assert.equal(assignKey(KEY_DEFAULT, 'mark', 'Enter').map.mark, 'Space'); // Enter는 못 바꿈
+  const r3 = assignKey(KEY_DEFAULT, 'next', 'Space'); // 계속하기를 Space로 돌리면 형광펜은 없음으로
+  assert.equal(r3.map.next, 'Space');
+  assert.equal(r3.map.mark, '');
 });
 
 test('단축키: 왼·오른 Shift, 숫자 패드 숫자는 같은 키', () => {
