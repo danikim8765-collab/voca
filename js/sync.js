@@ -10,8 +10,8 @@ const KEY = 'voca.sync.v1'; // 토큰·Gist는 두 모드가 같이 씀
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 
 // GitHub는 '쓰기'(Gist 고치기)를 한 시간에 500번쯤까지만 받고, 넘으면 한동안 막음(403·429).
-// 그래서 문제 풀 때 저절로 올리는 건 30초에 한 번까지만 (앱을 닫거나 다른 앱으로 갈 때는 바로 올림)
-export const SOON_GAP = 30000;
+// 그래서 문제 풀 때 저절로 올리는 건 15초에 한 번까지만 (기기 둘이 동시에 풀어도 한 시간에 480번) (앱을 닫거나 다른 앱으로 갈 때는 바로 올림)
+export const SOON_GAP = 15000;
 // 막혔을 때 기다릴 시간: GitHub가 알려 주면 그만큼, 아니면 1분 → 2분 → 4분 … 최대 1시간
 export function limitWait(err, tries = 0) {
   const told = err && err.wait > 0 ? err.wait : 60000 * 2 ** Math.min(tries, 6);
@@ -183,7 +183,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     get token() { return conf.token || ''; },
     now,
     // 답을 고를 때마다 바로 보내지 않고 잠깐 모아서 보냄
-    // 마지막으로 다녀온 지 30초가 안 됐으면 30초가 될 때까지 모아 둠 (GitHub 쓰기 제한 안 넘게)
+    // 마지막으로 다녀온 지 15초가 안 됐으면 15초가 될 때까지 모아 둠 (GitHub 쓰기 제한 안 넘게)
     // 이미 기다리는 게 있으면 그대로 둠 (계속 빨리 풀어도 미뤄지기만 하지 않게)
     soon(ms = 4000) {
       if (!conf.token || timer) return;
