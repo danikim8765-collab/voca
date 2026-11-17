@@ -553,8 +553,6 @@ function renderHome() {
   grid.className = 'days' + (view === 'grid' ? '' : ' ' + view);
   setSeg('#seg-days', view);
   $('#heat-legend').hidden = view !== 'heat';
-  $('#days-hint').textContent = (view === 'heat' ? '진할수록 많이 외운 DAY' : '연한 막대 학습 · 진한 막대 암기 완료')
-    + ' · 누르면 단어장 · ← 밀면 유반의어 · 밀면 학습 →';
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   for (const d of days) {
     const dw = dayWords(d);
@@ -2191,7 +2189,7 @@ function renderMeaningTyping(actions) {
   const ok = el('button', 'btn primary', '확인');
   const level = { easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통';
   const grader = aiOnline() ? `${level} · 오답이면 AI 재확인` : aiEnabled() ? `${level} (오프라인)` : level;
-  actions.append(input, el('div', 'type-help', `채점: ${grader} · 설정에서 바꿀 수 있어요`), ok);
+  actions.append(input, el('div', 'type-help', `채점: ${grader}`), ok);
   let busy = false;
   const submit = async () => {
     if (q.answered || busy) return;
@@ -2415,7 +2413,7 @@ function renderTyping(actions) {
   // 빈칸 수: 숙어는 단어마다 한 칸 (반복된 숙어는 한 번 분량)
   const parts = blankUnit((q.b1 && q.b1.blanks.length ? q.b1 : q.b2 || { blanks: [] }).blanks).length || answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
-  const helpText = parts > 1 ? '칸을 다 채우면 다음 칸으로 넘어가요 (띄어쓰기로도 넘어가요)' : '대소문자는 구분하지 않아요';
+  const helpText = parts > 1 ? '칸을 다 채우면 다음 칸으로 넘어가요 (띄어쓰기로도 넘어가요)' : '';
   // 정답: 단어 원형(abound)도, 예문 속 형태(abounds)도 인정 — 단어를 외우는 게 우선
   const cands = [...new Set([
     q.w.word, // 단어장에 적힌 그대로 (convince A of B도)
@@ -2508,7 +2506,7 @@ function renderTyping(actions) {
   };
   if (settings.appKeyboard || DESK) {
     const kbHelp = DESK ? `${parts > 1 ? `빈칸 ${parts}곳 · ` : ''}키보드로 바로 치세요 · Enter 확인 · Shift 힌트`
-      : parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '키보드로 바로 입력하세요';
+      : parts > 1 ? `빈칸 ${parts}곳 · 다 채우면 다음 칸으로` : '';
     return renderAppKeyboard(actions, kbHelp, check, autoCheck, notYet, fillsSlot);
   }
 
@@ -3588,8 +3586,6 @@ function renderAgain() {
       box.appendChild(b);
     }
   }
-  const say = k => (a[k].length ? a[k].map(s => AGAIN_NAME[s]).join('·') : '안 나옴');
-  $('#again-desc').textContent = `${preset ? '' : '직접 고름 · '}틀리면 ${say('wrong')}, 힌트 두 번은 ${say('hint2')}, 힌트 한 번은 ${say('hint1')}. 다시 나온 문제는 맞혀도 복습 단계가 안 올라가요.`;
 }
 
 // AI 고급 설정(숨긴 메뉴)이 열렸는지. 이 기기에만 저장
