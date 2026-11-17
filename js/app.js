@@ -5,6 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
+import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, normKey, isModKey, kbTypes, isTypingKey, keyLabel } from './keys.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js';
@@ -330,6 +331,7 @@ function show(id, push = true) {
   if (id === 'home') setTint(null);
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   document.body.dataset.screen = id; // 화면별 CSS (style.css body[data-screen])
+  if (id !== 'settings') stopKeyCapture();
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
   if (id === 'quiz' && current !== 'quiz') { clearTimeout(toast.timer); $('#toast').hidden = true; }
   current = id;
@@ -355,17 +357,21 @@ if (window.speechSynthesis) {
   loadVoices();
   speechSynthesis.onvoiceschanged = loadVoices;
 }
+// 기기 안의 목소리를 먼저: 크롬·엣지의 'Google …'·'… Online' 목소리는 인터넷으로 받아 와서 한 박자 늦게 나옴
 function pickVoice() {
   if (!voices.length) loadVoices();
   const lang = settings.accent.toLowerCase();
   const en = voices.filter(v => v.lang && v.lang.toLowerCase().replace('_', '-').startsWith(lang));
   const pref = /samantha|google us|google uk|daniel|serena|karen|ava|allison|natural|premium|enhanced/i;
-  return en.find(v => pref.test(v.name)) || en[0] || voices.find(v => /^en/i.test(v.lang)) || null;
+  const local = en.filter(v => v.localService);
+  return local.find(v => pref.test(v.name)) || local[0] || en.find(v => pref.test(v.name)) || en[0] || voices.find(v => /^en/i.test(v.lang)) || null;
 }
 function speak(text) {
   if (!text) return;
   if (!window.speechSynthesis) { toast('이 브라우저는 발음 듣기를 지원하지 않아요'); return; }
-  speechSynthesis.cancel();
+  // 말하는 중일 때만 끊음 (크롬은 아무것도 안 할 때 cancel()하면 바로 다음 말이 늦게 나옴)
+  if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
+  if (speechSynthesis.paused) speechSynthesis.resume();
   const u = new SpeechSynthesisUtterance(text.replace(/\[[^\]]*\]/g, ' ').replace(/[~〜…_]+|\.{3}/g, ' '));
   u.lang = settings.accent;
   u.rate = settings.rate;
@@ -2562,6 +2568,9 @@ function fillBlanks(value, targets) {
 }
 const KB_ROWS = ['qwertyuiop', 'asdfghjkl', "'zxcvbnm⌫"];
 let kb = null; // 현재 키보드 상태 { value, type(key), submit() }
+// 컴퓨터 단축키 (설정 > 단축키, js/keys.js)
+let keymap = cleanKeys(load(KEYS_KEY, {}));
+let keyCapture = null; // 지금 키를 기다리는 { action, stop() }
 
 function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlot = () => false) {
   $('#quiz').classList.add('kb-mode');
@@ -2817,6 +2826,7 @@ function showFeedback(correct, given, kind, label) {
   Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
   const state = correct ? 'ok' : kind === 'partial' ? 'hint' : kind === 'idk' ? 'bad' : kind || 'bad';
   answerFx(state);
+  if (settings.autoSpeak) speak(w.word); // 시트를 다 그리기 전에 먼저 (그리는 동안 기다리지 않게)
   // 카드 위 상태 표시
   const head = $('#fb-head');
   head.hidden = false;
@@ -2894,7 +2904,6 @@ function openSheet(w, more = []) {
   // 넓은 컴퓨터 화면에선 정답 시트가 오른쪽 칸이라 여백 필요 없음
   if (!wideDesk()) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
   $('#fb-mean').scrollTop = 0;
-  if (settings.autoSpeak) speak(w.word);
 }
 
 // ---------- 버그 신고 ----------
@@ -3481,20 +3490,38 @@ const ACCENT_NAME = { navy: '네이비', forest: '숲', grape: '포도', coral: 
 const ACCENT_SW = { navy: '#1f3a68', forest: '#1e6b4f', grape: '#5b3f9e', coral: '#c2493d', ink: '#1a1a17' };
 const HOME_PART = { coach: '코치 말풍선', plan: '학습 계획 요약', practice: '다시 볼 단어 · 범위 연습', book: '단어장 보기 버튼', days: 'DAY별 진도' };
 // 짧은 소리 (파일 없이 Web Audio로): tone([[주파수, 길이초], …], 크기, 파형)
+// 소리 낼 때 처음 켜면 스피커·이어폰이 깨어나는 동안 늦게 들려서, 화면을 처음 누를 때 미리 켜 둠 (warmAudio)
 let audioCtx = null;
-function tone(notes, vol = .06, type = 'sine') {
+function audio() {
   try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    let t = audioCtx.currentTime;
-    for (const [f, d] of notes) {
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = type; o.frequency.value = f;
-      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
-      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + d + .02);
-      t += d * .8;
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+      const s = audioCtx.createBufferSource(); // 아이폰: 누를 때 소리 없는 소리를 한 번 내야 열림
+      s.buffer = audioCtx.createBuffer(1, 1, 22050);
+      s.connect(audioCtx.destination); s.start(0);
     }
-  } catch { /* 소리를 못 내는 브라우저 */ }
+    if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+  } catch { audioCtx = null; }
+  return audioCtx;
+}
+function warmAudio() { const lk = LOOK.get(); if (lk.sound || lk.kbSound) audio(); }
+function tone(notes, vol = .06, type = 'sine') {
+  const ctx = audio();
+  if (!ctx) return;
+  const play = () => {
+    try {
+      let t = ctx.currentTime + .005;
+      for (const [f, d] of notes) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = type; o.frequency.value = f;
+        g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+        o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + d + .02);
+        t += d * .8;
+      }
+    } catch { /* 소리를 못 내는 브라우저 */ }
+  };
+  // 잠들어 있었으면 깨어난 다음에 (멈춘 시계에 맞춰 놓으면 깨어날 때 한꺼번에 밀려서 남)
+  if (ctx.state === 'running') play(); else ctx.resume().then(play, () => {});
 }
 // 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 문제 풀기). test = 스위치를 켤 때 한 번 들려 주기
 function answerFx(state, test = false) {
@@ -3542,6 +3569,7 @@ function renderLook() {
 
 function renderSettings() {
   renderLook();
+  renderKeys();
   renderVersion();
   renderSrs();
   setSeg('#seg-accent', settings.accent);
@@ -3997,27 +4025,47 @@ function bind() {
   });
   $('#csv-file').addEventListener('change', e => { if (e.target.files.length) importLocalCSV([...e.target.files]); e.target.value = ''; });
 
-  // 컴퓨터 키보드: Shift만 눌렀다 떼면 힌트 (대문자 치려고 Shift+글자를 누른 건 힌트 아님)
-  let shiftAlone = false;
-  document.addEventListener('keydown', e => { shiftAlone = e.key === 'Shift' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey; }, true);
-  document.addEventListener('keyup', e => {
-    if (e.key !== 'Shift' || !shiftAlone) return;
-    shiftAlone = false;
-    if (current === 'quiz' && $('#feedback').hidden && q && !q.answered) useHint();
-  });
-  document.addEventListener('pointerdown', () => { shiftAlone = false; }, true);
-
-  // 키보드 (PC에서 테스트할 때)
+  // 컴퓨터 키보드 단축키 (설정 > 단축키에서 바꿈, js/keys.js). Enter는 늘 채점·계속하기
+  // Shift·Ctrl·Alt·⌘에 붙인 동작은 그 키만 눌렀다 뗄 때 (대문자 치려고 Shift+글자를 누른 건 아님)
+  let modAlone = null;
   document.addEventListener('keydown', e => {
-    if (current !== 'quiz') return;
-    if (!$('#feedback').hidden && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); next(); return; }
+    const c = normKey(e.code);
+    const others = { Shift: e.shiftKey, Control: e.ctrlKey, Alt: e.altKey, Meta: e.metaKey };
+    modAlone = isModKey(c) && !e.repeat && !Object.keys(others).some(m => m !== c && others[m]) ? c : null;
+  }, true);
+  document.addEventListener('keyup', e => {
+    const c = normKey(e.code);
+    if (!modAlone || c !== modAlone) return;
+    modAlone = null;
+    const a = current === 'quiz' && !keyCapture ? actionFor(keymap, c) : null;
+    if (a) quizKey(a);
+  });
+  document.addEventListener('pointerdown', () => { modAlone = null; }, true);
+  // 맞히는 그 순간에 소리를 켜면 늦어서, 누르기 시작할 때 미리 깨워 둠
+  document.addEventListener('pointerdown', warmAudio, true);
+  document.addEventListener('keydown', warmAudio, true);
+
+  document.addEventListener('keydown', e => {
+    if (current !== 'quiz' || keyCapture) return;
+    const fb = !$('#feedback').hidden;
+    if (fb && e.key === 'Enter') { e.preventDefault(); next(); return; }
     // 4지선다: 숫자는 보기를 고르기만 하고 Enter로 채점 (마우스로 누르면 바로 채점)
     if (e.key === 'Enter' && !(q && q.answered) && !e.isComposing) {
       const p = $('#q-actions').querySelector('.choice.picked:not(:disabled)');
       if (p) { e.preventDefault(); p.click(); return; }
     }
-    if (e.key === 'Escape' && !e.isComposing) { e.preventDefault(); quitQuiz(); return; }
-    if (kb && !(q && q.answered) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
+    const typing = !!(kb && q && !q.answered);
+    const code = normKey(e.code);
+    if (plain && !e.isComposing && !isModKey(code)) {
+      // 답하는 중엔 글자 키가 입력으로 먼저 감 (앱 키보드·글 칸)
+      const answering = q && !q.answered && !fb;
+      const editable = e.target && e.target.matches && e.target.matches('input, textarea, [contenteditable="true"]');
+      const blocked = answering && ((typing && kbTypes(code)) || (editable && isTypingKey(code)));
+      const a = blocked ? null : actionFor(keymap, code);
+      if (a && quizKey(a)) { e.preventDefault(); return; }
+    }
+    if (typing && plain) {
       // 한글 자판 상태(e.key가 'Process'나 한글)여도 누른 자리(e.code)의 영문자로 받음
       const byCode = /^Key[A-Z]$/.test(e.code) ? e.code[3].toLowerCase() : e.code === 'Space' ? ' ' : e.code === 'Quote' ? "'" : e.code === 'Minus' ? '-' : '';
       const ch = /^[a-zA-Z' -]$/.test(e.key) ? e.key.toLowerCase() : e.key.length !== 1 || e.key.charCodeAt(0) > 127 ? byCode : '';
@@ -4026,20 +4074,106 @@ function bind() {
       else if (ch) kb.type(ch);
       else return;
       e.preventDefault();
-      return;
-    }
-    if ((settings.kind === 'choice' || (q && q.syn)) && /^[1-4]$/.test(e.key) && !(q && q.answered)) {
-      const c = $('#q-actions').querySelectorAll('.choice')[+e.key - 1];
-      if (c && !c.disabled) {
-        e.preventDefault();
-        $('#q-actions').querySelectorAll('.choice.picked').forEach(x => x.classList.remove('picked'));
-        c.classList.add('picked');
-        c.scrollIntoView({ block: 'nearest' });
-      }
     }
   });
+
+  // 설정 > 단축키: 버튼을 누르고 쓸 키를 누름 (Backspace·Delete = 없음, 다른 곳을 누르면 그만)
+  $('#btn-keys-reset').addEventListener('click', () => {
+    stopKeyCapture();
+    keymap = cleanKeys({}); save(KEYS_KEY, keymap);
+    renderKeys(); toast('단축키를 처음대로 돌렸어요');
+  });
+  renderKeys(); // 퀴즈 버튼에 단축키 이름 달기
 }
 
+// ---------- 컴퓨터 단축키 (js/keys.js) ----------
+const actionName = a => (KEY_ACTIONS.find(([k]) => k === a) || [a, a])[1];
+
+// 퀴즈에서 단축키를 누름. 지금 할 수 없는 동작이면 false (그 키의 원래 동작을 막지 않게)
+function quizKey(a) {
+  const fb = !$('#feedback').hidden;
+  const open = !!(q && !q.answered && !fb);
+  if (a === 'quit') { quitQuiz(); return true; }
+  if (a === 'next') { if (!fb) return false; next(); return true; }
+  if (a === 'speak') { if (!fb) return false; $('#fb-speak').click(); return true; }
+  if (a === 'hint') { if (!open) return false; useHint(); return true; }
+  if (a === 'idk') { if (!open || $('#btn-idk').hidden) return false; giveUp(); return true; }
+  const i = ['c1', 'c2', 'c3', 'c4'].indexOf(a);
+  if (i < 0 || !open) return false;
+  const c = $('#q-actions').querySelectorAll('.choice')[i];
+  if (!c || c.disabled) return false;
+  $('#q-actions').querySelectorAll('.choice.picked').forEach(x => x.classList.remove('picked'));
+  c.classList.add('picked');
+  c.scrollIntoView({ block: 'nearest' });
+  return true;
+}
+
+function renderKeys() {
+  const box = $('#key-rows');
+  box.innerHTML = '';
+  for (const [a, name] of KEY_ACTIONS) {
+    const row = el('div', 'key-row');
+    const b = el('button', 'key-chip' + (keymap[a] ? '' : ' none'), keyLabel(keymap[a]));
+    b.type = 'button';
+    b.setAttribute('aria-label', `${name} 단축키 ${keyLabel(keymap[a])}, 눌러서 바꾸기`);
+    b.addEventListener('click', () => (keyCapture && keyCapture.action === a ? stopKeyCapture() : startKeyCapture(a, b)));
+    row.append(el('span', null, name), b);
+    box.appendChild(row);
+  }
+  const fixed = el('div', 'key-row');
+  fixed.append(el('span', null, '채점 · 계속하기'), el('span', 'key-chip fixed', 'Enter'));
+  box.appendChild(fixed);
+  // 퀴즈 버튼에 마우스를 올리면 단축키가 보이게
+  for (const [id, a, name] of [['#btn-hint', 'hint', '힌트'], ['#btn-idk', 'idk', '모르겠어요'], ['#fb-speak', 'speak', '발음 듣기'], ['#btn-quit', 'quit', '그만하기']]) {
+    $(id).title = keymap[a] ? `${name} (${keyLabel(keymap[a])})` : name;
+  }
+}
+
+function stopKeyCapture() { if (keyCapture) keyCapture.stop(); }
+function startKeyCapture(a, b) {
+  stopKeyCapture();
+  b.classList.add('listening');
+  b.textContent = '키를 누르세요';
+  let mod = null;
+  const finish = code => {
+    const r = assignKey(keymap, a, code);
+    keymap = r.map;
+    save(KEYS_KEY, keymap);
+    stopKeyCapture();
+    renderKeys();
+    if (r.swapped) toast(`'${actionName(r.swapped)}' 키와 맞바꿨어요`);
+    else if (WHILE_ANSWERING.includes(a) && kbTypes(code)) toast('직접 입력 문제에선 이 키가 글자로 쳐져서 그때는 안 먹어요', 3500);
+  };
+  const down = e => {
+    e.preventDefault(); e.stopPropagation();
+    const c = normKey(e.code);
+    if (isModKey(c)) { if (!e.repeat) mod = c; return; }
+    mod = null;
+    if (e.ctrlKey || e.metaKey || e.altKey) { toast('Ctrl·Alt·⌘와 같이 누르는 키는 못 써요'); return; }
+    if (c === 'Backspace' || c === 'Delete') { finish(''); return; }
+    if (!c || c === 'Enter' || c === 'Tab') { toast('Enter·Tab은 바꿀 수 없어요'); return; }
+    finish(c);
+  };
+  const up = e => {
+    e.preventDefault(); e.stopPropagation();
+    if (mod && normKey(e.code) === mod) finish(mod);
+  };
+  const away = e => { if (e.target !== b) stopKeyCapture(); };
+  // window에서 먼저 받아 다른 화면 단축키(Esc로 뒤로 등)가 먹지 않게
+  window.addEventListener('keydown', down, true);
+  window.addEventListener('keyup', up, true);
+  document.addEventListener('pointerdown', away, true);
+  keyCapture = {
+    action: a,
+    stop() {
+      window.removeEventListener('keydown', down, true);
+      window.removeEventListener('keyup', up, true);
+      document.removeEventListener('pointerdown', away, true);
+      keyCapture = null;
+      renderKeys();
+    },
+  };
+}
 bind();
 window.__vocaStarted = true;
 // 저장해 둔 단어로 바로 화면을 띄우고(모드 전환이 빠르게), 서버 확인은 뒤에서.
