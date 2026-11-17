@@ -9,6 +9,21 @@ const KEY = 'voca.sync.v1'; // 토큰·Gist는 두 모드가 같이 씀
 
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 
+// GitHub는 '쓰기'(Gist 고치기)를 한 시간에 500번쯤까지만 받고, 넘으면 한동안 막음(403·429).
+// 그래서 문제 풀 때 저절로 올리는 건 15초에 한 번까지만 (기기 둘이 동시에 풀어도 한 시간에 480번) (앱을 닫거나 다른 앱으로 갈 때는 바로 올림)
+export const SOON_GAP = 15000;
+// 막혔을 때 기다릴 시간: GitHub가 알려 주면 그만큼, 아니면 1분 → 2분 → 4분 … 최대 1시간
+export function limitWait(err, tries = 0) {
+  const told = err && err.wait > 0 ? err.wait : 60000 * 2 ** Math.min(tries, 6);
+  return Math.min(Math.max(told, 60000), 3600000);
+}
+// GitHub가 너무 자주 쓴다고 막은 거면 true (토큰 권한 문제인 403과 구분)
+export function isLimited(status, headers = {}, message = '') {
+  if (status === 429) return true;
+  if (status !== 403) return false;
+  return headers.remaining === '0' || !!headers.retryAfter || /rate limit|abuse|secondary/i.test(message);
+}
+
 // look: { get, set, merge, same } 화면 꾸미기 (get이 null이면 이 기기는 꾸미기를 주고받지 않음, js/look.js).
 // marks: { get, set } 모름 표시. coach: { get, set } 고른 코치 캐릭터 { char, at } (토큰을 넣어 동기화할 때만 다른 기기와 맞춰짐). other: { get, set } 다른 모드 진도(단어장에서 두 모드 기록을 합쳐 보여 주려고 받아만 둠)
 export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, look = null, other = null }) {
@@ -20,6 +35,8 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
   let timer = null;
   let status = conf.token ? 'idle' : 'off';
   let error = '';
+  let lastRun = 0; // 마지막으로 GitHub에 다녀온 시각 (soon 간격용)
+  let pauseTimer = null;
 
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(conf)); } catch {} };
   const setStatus = (s, e = '') => { status = s; error = e; onStatus && onStatus(); };
@@ -31,6 +48,12 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     if (!res.ok) {
       const err = new Error(String(res.status));
       err.status = res.status;
+      const h = n => (res.headers && res.headers.get ? res.headers.get(n) : null);
+      let message = '';
+      try { message = (await res.json()).message || ''; } catch { /* 본문이 없을 수도 */ }
+      const retryAfter = h('retry-after'), reset = h('x-ratelimit-reset');
+      err.limited = isLimited(res.status, { remaining: h('x-ratelimit-remaining'), retryAfter }, message);
+      err.wait = retryAfter ? +retryAfter * 1000 : reset ? +reset * 1000 - Date.now() : 0;
       throw err;
     }
     return res.json();
@@ -54,11 +77,21 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     try { return JSON.parse(text || '{}'); } catch { return {}; }
   }
 
+  // Gist를 받아 옴. 지워졌으면(404) 바로 찾거나 새로 만들어서 다시 (오류로 안 보이게)
+  async function getGist() {
+    if (!conf.gistId) { conf.gistId = await findOrCreateGist(); save(); }
+    try { return await gh(`/gists/${conf.gistId}`); } catch (e) {
+      if (e.status !== 404) throw e;
+      conf.gistId = await findOrCreateGist(); save();
+      return gh(`/gists/${conf.gistId}`);
+    }
+  }
+
   async function run() {
     setStatus('syncing');
+    lastRun = Date.now();
     try {
-      if (!conf.gistId) { conf.gistId = await findOrCreateGist(); save(); }
-      const g = await gh(`/gists/${conf.gistId}`);
+      const g = await getGist();
       const remote = await readFile(g, FILE);
       const local = getLocal();
       const merged = mergeProgress(local, remote);
@@ -102,18 +135,38 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       }
       if (Object.keys(files).length) await gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) });
       conf.last = Date.now();
+      delete conf.pauseUntil; delete conf.tries;
       save();
       setStatus('ok');
     } catch (e) {
-      if (e.status === 404) { conf.gistId = null; save(); } // Gist가 지워졌으면 다음에 새로 만듦
+      if (e.limited) { pause(limitWait(e, conf.tries || 0)); return; }
+      if (e.status === 404) { conf.gistId = null; save(); } // Gist를 못 찾으면 다음에 다시 찾거나 새로 만듦
       setStatus('error', e.status === 401 ? '토큰이 만료됐거나 잘못됐어요. 새 토큰으로 다시 연결해 주세요.'
         : e.status === 403 || e.status === 404 ? '토큰에 gist 권한이 있는지 확인해 주세요.'
           : '인터넷 연결을 확인해 주세요. 연결되면 다시 시도해요.');
     }
   }
 
+  // GitHub가 막았으면 그동안은 아무것도 안 보내고(더 보내면 더 오래 막힘), 시간이 되면 알아서 다시
+  function pause(ms) {
+    conf.pauseUntil = Date.now() + ms;
+    conf.tries = (conf.tries || 0) + 1;
+    save();
+    waitPause();
+  }
+  function waitPause() {
+    const left = (conf.pauseUntil || 0) - Date.now();
+    if (left <= 0) return false;
+    const min = Math.ceil(left / 60000);
+    setStatus('wait', `GitHub가 잠깐 막았어요. ${min}분 뒤에 알아서 다시 할게요. 진도는 이 기기에 그대로 있어요.`);
+    clearTimeout(pauseTimer);
+    pauseTimer = setTimeout(() => { pauseTimer = null; now(); }, left + 1000);
+    return true;
+  }
+
   async function now() {
     if (!conf.token) return;
+    if (waitPause()) return;
     if (running) { again = true; return running; }
     running = run();
     await running;
@@ -130,10 +183,11 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     get token() { return conf.token || ''; },
     now,
     // 답을 고를 때마다 바로 보내지 않고 잠깐 모아서 보냄
+    // 마지막으로 다녀온 지 15초가 안 됐으면 15초가 될 때까지 모아 둠 (GitHub 쓰기 제한 안 넘게)
+    // 이미 기다리는 게 있으면 그대로 둠 (계속 빨리 풀어도 미뤄지기만 하지 않게)
     soon(ms = 4000) {
-      if (!conf.token) return;
-      clearTimeout(timer);
-      timer = setTimeout(now, ms);
+      if (!conf.token || timer) return;
+      timer = setTimeout(() => { timer = null; now(); }, Math.max(ms, lastRun + SOON_GAP - Date.now()));
     },
     async connect(token) {
       token = token.trim();
@@ -144,6 +198,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       return user.login;
     },
     disconnect() {
+      clearTimeout(pauseTimer); clearTimeout(timer); timer = null;
       conf = {};
       save();
       setStatus('off');
