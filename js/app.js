@@ -49,6 +49,9 @@ const ICON = {
   bulb: svgIcon('<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6M10 22h4"/>'),
   help: svgIcon('<circle cx="12" cy="12" r="9.5"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>'),
   edit: svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  grid: svgIcon('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'),
+  lines: svgIcon('<path d="M4 6h4M11 6h9M4 12h4M11 12h6M4 18h4M11 18h8"/>'),
+  heat: svgIcon('<rect x="3.5" y="3.5" width="4" height="4" rx="1"/><rect x="10" y="3.5" width="4" height="4" rx="1" fill="currentColor"/><rect x="16.5" y="3.5" width="4" height="4" rx="1"/><rect x="3.5" y="10" width="4" height="4" rx="1" fill="currentColor"/><rect x="10" y="10" width="4" height="4" rx="1"/><rect x="16.5" y="10" width="4" height="4" rx="1" fill="currentColor"/><rect x="3.5" y="16.5" width="4" height="4" rx="1"/><rect x="10" y="16.5" width="4" height="4" rx="1" fill="currentColor"/><rect x="16.5" y="16.5" width="4" height="4" rx="1"/>'),
   mark: svgIcon('<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>'),
 };
 // 아이콘 + 글자 버튼: 글자만 바꿀 땐 setLabel (아이콘은 그대로)
@@ -56,6 +59,9 @@ const iconBtn = (cls, name, label) => { const b = el('button', cls); b.innerHTML
 const setLabel = (b, t) => { const s = b.querySelector('.lbl'); if (s) s.textContent = t; else b.textContent = t; };
 // index.html의 data-icon 자리에 아이콘을 채움 (모듈이라 첫 화면 그리기 전에 실행됨)
 document.querySelectorAll('[data-icon]').forEach(b => b.insertAdjacentHTML('afterbegin', ICON[b.dataset.icon] || ''));
+
+// 꾸미기 설정 (js/look.js가 <head>에서 먼저 불러 둠: 밝기·색·글자 크기·홈에 보일 것 …)
+const LOOK = window.VocaLook || { get: () => ({ days: 'grid', hide: [], ex: {}, word: {} }), set() {}, reset() {}, CHOICES: { accent: [] }, HIDE: [] };
 
 const load = (k, def) => {
   try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; }
@@ -534,6 +540,13 @@ function renderHome() {
 
   const grid = $('#day-grid');
   grid.innerHTML = '';
+  // 보기 방식: 격자 · 줄 막대 · 잔디 (설정은 js/look.js, 제목 옆 버튼으로 바꿈)
+  const view = LOOK.get().days;
+  grid.className = 'days' + (view === 'grid' ? '' : ' ' + view);
+  setSeg('#seg-days', view);
+  $('#heat-legend').hidden = view !== 'heat';
+  $('#days-hint').textContent = (view === 'heat' ? '진할수록 많이 외운 DAY' : '연한 막대 학습 · 진한 막대 암기 완료')
+    + ' · 누르면 단어장 · ← 밀면 유반의어 · 밀면 학습 →';
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   for (const d of days) {
     const dw = dayWords(d);
@@ -541,7 +554,8 @@ function renderHome() {
     for (const w of dw) { const s = stats[w.id]; if (s) seen++; if (isMastered(s)) m++; if (isWrongNote(s)) wr++; }
     const wrap = el('div', 'day-wrap');
     const b = el('button', 'day' + (d >= from && d <= to ? ' sel' : ''));
-    b.append(el('b', null, `DAY ${d}`), el('span', 'muted', `${seen}/${dw.length}` + (wr ? ` · 다시 ${wr}` : '')));
+    if (view === 'heat') { const p = (seen + m) / (2 * dw.length || 1); b.style.setProperty('--p', p.toFixed(3)); b.classList.toggle('dense', p > .55); }
+    b.append(el('b', null, view === 'heat' ? String(d) : `DAY ${d}`), el('span', 'muted', `${seen}/${dw.length}` + (wr ? ` · 다시 ${wr}` : '')));
     b.title = `학습 ${seen} · 암기 완료 ${m} · 다시 볼 것 ${wr}`;
     // 막대: 학습한 단어는 연하게, 암기 완료(14일 간격까지 올라간 단어)는 진하게
     const bar = el('div', 'bar two');
@@ -1948,6 +1962,7 @@ function showSynFeedback(correct, given, kind, label) {
   const { w, syn: sq } = q;
   Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
   const state = correct ? 'ok' : kind === 'hint' ? 'hint' : 'bad';
+  answerFx(state);
   const head = $('#fb-head');
   head.hidden = false;
   head.className = 'tag fb-head ' + state;
@@ -2649,6 +2664,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
     b.classList.add('down');
     down.set(e.pointerId, b);
     fn();
+    if (LOOK.get().kbSound) tone([[1800, .012]], .025, 'square');
     if (b.textContent === '⌫') {
       clearInterval(kb.repeat);
       kb.hold = setTimeout(() => { kb.repeat = setInterval(fn, 70); }, 400);
@@ -2794,6 +2810,7 @@ function showFeedback(correct, given, kind, label) {
   const w = q.w;
   Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
   const state = correct ? 'ok' : kind === 'partial' ? 'hint' : kind === 'idk' ? 'bad' : kind || 'bad';
+  answerFx(state);
   // 카드 위 상태 표시
   const head = $('#fb-head');
   head.hidden = false;
@@ -3453,7 +3470,71 @@ function renderSrsGraph(iv) {
   $('#srs-graph').innerHTML = svg + '</svg>';
 }
 
+// ---------- 꾸미기 (js/look.js가 <head>에서 먼저 불러 둠) ----------
+const ACCENT_NAME = { navy: '네이비', forest: '숲', grape: '포도', coral: '코랄', ink: '먹색' };
+const ACCENT_SW = { navy: '#1f3a68', forest: '#1e6b4f', grape: '#5b3f9e', coral: '#c2493d', ink: '#1a1a17' };
+const HOME_PART = { coach: '코치 말풍선', plan: '학습 계획 요약', practice: '다시 볼 단어 · 범위 연습', book: '단어장 보기 버튼', days: 'DAY별 진도' };
+// 짧은 소리 (파일 없이 Web Audio로): tone([[주파수, 길이초], …], 크기, 파형)
+let audioCtx = null;
+function tone(notes, vol = .06, type = 'sine') {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    let t = audioCtx.currentTime;
+    for (const [f, d] of notes) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + d + .02);
+      t += d * .8;
+    }
+  } catch { /* 소리를 못 내는 브라우저 */ }
+}
+// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 문제 풀기). test = 스위치를 켤 때 한 번 들려 주기
+function answerFx(state, test = false) {
+  const lk = LOOK.get();
+  if (state === 'ok' && (lk.sound || test)) tone([[880, .09], [1320, .16]], .07);
+  if (state === 'bad' && (lk.buzz || test) && navigator.vibrate) navigator.vibrate([40, 50, 40]);
+}
+// 정답 반응을 고르면 설정 화면에서 바로 한 번 보여 줌 (정답 시트의 '정답!' 표시처럼)
+function previewReact() {
+  const t = $('#react-demo');
+  t.hidden = true; void t.offsetWidth; t.hidden = false;
+}
+function renderLook() {
+  const lk = LOOK.get(), m = WORD ? 'word' : 'ex';
+  setSeg('#seg-theme', lk.theme); setSeg('#seg-size', lk.size); setSeg('#seg-font', lk.font); setSeg('#seg-radius', lk.radius);
+  setSeg('#seg-edge', lk[m].edge); setSeg('#seg-glow', lk[m].glow); setSeg('#seg-react', lk.react); setSeg('#seg-kb', lk.kb);
+  $('#opt-fx-sound').checked = lk.sound; $('#opt-fx-buzz').checked = lk.buzz; $('#opt-kb-sound').checked = lk.kbSound;
+  $('#row-fx-buzz').hidden = !navigator.vibrate; // 아이폰 사파리는 웹 진동이 안 됨
+  const sw = $('#sw-accent');
+  sw.innerHTML = '';
+  for (const a of LOOK.CHOICES.accent) {
+    const b = el('button', 'swatch' + (lk[m].accent === a ? ' on' : ''));
+    b.style.setProperty('--sw', ACCENT_SW[a]);
+    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', lk[m].accent === a); b.setAttribute('aria-label', ACCENT_NAME[a]); b.title = ACCENT_NAME[a];
+    b.addEventListener('click', () => { LOOK.set({ accent: a }); renderLook(); });
+    sw.appendChild(b);
+  }
+  const parts = $('#home-parts');
+  parts.innerHTML = '';
+  for (const k of LOOK.HIDE) {
+    const row = el('label', 'switch-row');
+    const box = el('input', 'switch');
+    Object.assign(box, { type: 'checkbox', checked: !lk.hide.includes(k) });
+    box.setAttribute('role', 'switch');
+    box.addEventListener('change', () => {
+      const hide = LOOK.get().hide.filter(x => x !== k);
+      if (!box.checked) hide.push(k);
+      LOOK.set({ hide });
+    });
+    row.append(el('span', null, HOME_PART[k]), box);
+    parts.appendChild(row);
+  }
+}
+
 function renderSettings() {
+  renderLook();
   renderVersion();
   renderSrs();
   setSeg('#seg-accent', settings.accent);
@@ -3736,6 +3817,22 @@ function bind() {
   $('#opt-meaning').addEventListener('change', e => { settings.showMeaning = e.target.checked; saveSettings(); });
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#opt-simplehome').addEventListener('change', e => { ui.simpleHome = e.target.checked; save(UI_KEY, ui); applyHomeLayout(); });
+  // 꾸미기 (js/look.js): 누르면 바로 앱 전체에 보임
+  for (const [sel, k] of [['#seg-theme', 'theme'], ['#seg-size', 'size'], ['#seg-font', 'font'], ['#seg-radius', 'radius'], ['#seg-edge', 'edge'], ['#seg-glow', 'glow'], ['#seg-react', 'react'], ['#seg-kb', 'kb']]) {
+    onSeg(sel, v => { LOOK.set({ [k]: v }); renderLook(); if (k === 'react') previewReact(); });
+  }
+  for (const [id, k] of [['#opt-fx-sound', 'sound'], ['#opt-fx-buzz', 'buzz'], ['#opt-kb-sound', 'kbSound']]) {
+    $(id).addEventListener('change', e => {
+      LOOK.set({ [k]: e.target.checked });
+      if (!e.target.checked) return;
+      if (k === 'sound') answerFx('ok', true); else if (k === 'buzz') answerFx('bad', true); else tone([[1800, .012]], .025, 'square');
+    });
+  }
+  onSeg('#seg-days', v => { LOOK.set({ days: v }); renderHome(); });
+  $('#btn-look-reset').addEventListener('click', async () => {
+    if (!(await ask({ title: '꾸미기를 처음대로 돌릴까요?', body: '밝기·색·글자 크기·홈에 보일 것 등 화면 꾸미기만 처음 모습으로 돌아가요. 학습 기록과 설정은 그대로예요.', ok: '처음대로' }))) return;
+    LOOK.reset(); renderLook(); toast('꾸미기를 처음대로 돌렸어요');
+  });
   onSeg('#seg-base', v => { settings.baseAccept = v; saveSettings(); });
   $('#btn-test-voice').addEventListener('click', () => {
     speak('I tried to convince him of the danger.');

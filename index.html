@@ -22,6 +22,8 @@
       }
     })();
   </script>
+  <!-- 꾸미기(밝기·색·글자 크기…)를 첫 화면 전에 붙임 -->
+  <script src="js/look.js"></script>
   <script>
     // 확대 막기: iOS Safari는 user-scalable=no를 무시하므로 핀치 제스처를 직접 막음
     (function () {
@@ -134,8 +136,17 @@
 
      </div>
      <div class="home-side">
-      <div class="label mt">DAY별 진도 <span class="muted">(연한 막대 학습 · 진한 막대 암기 완료 · 누르면 단어장 · ← 밀면 유반의어 · 밀면 학습 →)</span></div>
+      <div class="days-head">
+        <div class="label">DAY별 진도</div>
+        <div class="seg mini" id="seg-days" role="group" aria-label="진도 보기 방식">
+          <button data-v="grid" data-icon="grid" aria-label="격자" title="격자"></button>
+          <button data-v="lines" data-icon="lines" aria-label="줄 막대" title="줄 막대"></button>
+          <button data-v="heat" data-icon="heat" aria-label="잔디" title="잔디"></button>
+        </div>
+      </div>
       <div class="days" id="day-grid"></div>
+      <p class="muted days-note" id="days-hint"></p>
+      <div class="heat-legend" id="heat-legend" hidden><span>적게</span><i style="opacity:.15"></i><i style="opacity:.45"></i><i style="opacity:.96"></i><span>많이 외움</span></div>
      </div>
     </div>
   </section>
@@ -342,6 +353,24 @@
       </div>
       <div class="again-grid" id="again-rows" role="group" aria-label="다시 나올 때"></div>
       <p class="muted again-desc" id="again-desc"></p>
+      <div class="label mt">정답 반응</div>
+      <div class="seg" id="seg-react">
+        <button data-v="calm">차분하게</button>
+        <button data-v="mid">보통</button>
+        <button data-v="fun">신나게</button>
+      </div>
+      <div class="react-demo" aria-hidden="true"><span class="tag fb-head ok" id="react-demo">정답! · 내일 복습</span><span class="muted">고르면 한 번 보여 줘요</span></div>
+      <label class="switch-row"><span>맞히면 효과음</span><input type="checkbox" role="switch" class="switch" id="opt-fx-sound"></label>
+      <label class="switch-row" id="row-fx-buzz"><span>틀리면 진동</span><input type="checkbox" role="switch" class="switch" id="opt-fx-buzz"></label>
+      <div class="touch-only" data-only="ex">
+        <div class="label mt">앱 키보드 키 높이</div>
+        <div class="seg" id="seg-kb">
+          <button data-v="s">낮게</button>
+          <button data-v="m">보통</button>
+          <button data-v="l">높게</button>
+        </div>
+        <label class="switch-row"><span>키 누를 때 소리</span><input type="checkbox" role="switch" class="switch" id="opt-kb-sound"></label>
+      </div>
       <p class="muted set-note">문제 방식·하루 개수<span data-only="ex">·예문 해석 가리기</span>는 <button class="link-btn" id="btn-set-plan">학습 계획</button>에서 바꿔요.</p>
     </div>
     <div class="card" id="srs-card">
@@ -426,10 +455,27 @@
       </div>
       </div>
     </div>
+    <!-- 화면 꾸미기: js/look.js (이 기기에만. 강조 색·카드·퀴즈 바탕은 예문·단어 모드마다 따로) -->
     <div class="card" id="set-screen">
       <div class="label">화면</div>
-      <label class="switch-row"><span>홈 간단히 보기</span><input type="checkbox" role="switch" class="switch" id="opt-simplehome"></label>
-      <p class="muted srs-desc">학습 범위·문제 방식은 '학습 계획' 화면에서 바꿔요. 끄면 예전처럼 홈에 모두 보여요.</p>
+      <div class="opt-row"><span>밝기</span>
+        <div class="seg" id="seg-theme"><button data-v="auto">폰 설정</button><button data-v="light">밝게</button><button data-v="dark">어둡게</button></div></div>
+      <div class="opt-row"><span>강조 색</span><div class="swatches" id="sw-accent" role="radiogroup" aria-label="강조 색"></div></div>
+      <div class="opt-row"><span>글자 크기</span>
+        <div class="seg" id="seg-size"><button data-v="s">작게</button><button data-v="m">보통</button><button data-v="l">크게</button><button data-v="xl">더 크게</button></div></div>
+      <div class="opt-row"><span>예문 글꼴</span>
+        <div class="seg" id="seg-font"><button data-v="sans">고딕</button><button data-v="serif">명조</button></div></div>
+      <div class="opt-row"><span>모서리</span>
+        <div class="seg" id="seg-radius"><button data-v="round">둥글게</button><button data-v="soft">조금</button><button data-v="square">각지게</button></div></div>
+      <div class="opt-row"><span>카드</span>
+        <div class="seg" id="seg-edge"><button data-v="shadow">그림자</button><button data-v="line">테두리</button></div></div>
+      <div class="opt-row"><span>퀴즈 바탕</span>
+        <div class="seg" id="seg-glow"><button data-v="warm">기본</button><button data-v="sky">하늘</button><button data-v="mint">민트</button><button data-v="none">단색</button></div></div>
+      <p class="muted look-note">강조 색·카드·퀴즈 바탕은 <span data-only="ex">예문</span><span data-only="word">단어</span> 모드에만 바뀌어요. 꾸미기는 이 기기에만 저장돼요.</p>
+      <div class="label mt">홈에 보일 것 <span class="muted">('오늘' 카드는 늘 보여요)</span></div>
+      <div id="home-parts"></div>
+      <label class="switch-row"><span>홈 간단히 보기 <span class="muted">(학습 범위·문제 방식은 '학습 계획' 화면에서)</span></span><input type="checkbox" role="switch" class="switch" id="opt-simplehome"></label>
+      <button class="btn ghost small" id="btn-look-reset">꾸미기 처음대로</button>
     </div>
     <div class="card" id="set-sync">
       <div class="label">폰·아이패드 진도 자동 동기화</div>
