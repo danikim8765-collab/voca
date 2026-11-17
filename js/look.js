@@ -18,7 +18,7 @@
     glow: ['warm', 'sky', 'mint', 'none'], // 퀴즈 바탕 아래쪽 빛
   };
   var HIDE = ['coach', 'plan', 'practice', 'book', 'days']; // 홈에서 숨길 수 있는 덩어리 ('오늘' 카드는 늘 보임)
-  var DEFAULT = { theme: 'auto', size: 'm', font: 'sans', radius: 'round', react: 'mid', kb: 'm', days: 'grid', sound: false, buzz: false, kbSound: false, hide: [], at: 0, share: true };
+  var DEFAULT = { theme: 'auto', size: 'm', font: 'sans', radius: 'round', react: 'mid', kb: 'm', days: 'grid', sound: false, buzz: false, buzzOk: false, kbSound: false, hide: [], at: 0, share: true };
   var MODE_DEFAULT = { ex: { accent: 'navy', edge: 'shadow', glow: 'warm' }, word: { accent: 'ink', edge: 'line', glow: 'none' } };
   // 상태 표시줄 색 = 바탕색
   var BAR = { ex: { light: '#f3f5f9', dark: '#0e1626' }, word: { light: '#f7f6f1', dark: '#17171a' } };
@@ -29,7 +29,7 @@
     o = o && typeof o === 'object' ? o : {};
     var out = {};
     ['theme', 'size', 'font', 'radius', 'react', 'kb', 'days'].forEach(function (k) { out[k] = pick(o[k], CHOICES[k], DEFAULT[k]); });
-    ['sound', 'buzz', 'kbSound'].forEach(function (k) { out[k] = o[k] === true; });
+    ['sound', 'buzz', 'buzzOk', 'kbSound'].forEach(function (k) { out[k] = o[k] === true; });
     out.at = typeof o.at === 'number' && o.at > 0 ? o.at : 0;
     out.share = o.share !== false;
     out.hide = HIDE.filter(function (k) { return Array.isArray(o.hide) && o.hide.indexOf(k) >= 0; });

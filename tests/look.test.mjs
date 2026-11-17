@@ -25,6 +25,7 @@ test('꾸미기: 고를 수 있는 값만 남김, 모드마다 색·카드·바�
   assert.deepEqual(o.hide, ['coach', 'days']); // '오늘' 카드는 못 숨김, 겹친 건 하나로
   assert.equal(o.sound, false);        // true만 켬
   assert.equal(o.buzz, true);
+  assert.equal(o.buzzOk, false);       // 맞히면 진동은 따로, 처음엔 꺼짐
   assert.deepEqual(o.ex, { accent: 'grape', edge: 'line', glow: 'warm' });
   assert.deepEqual(o.word, MODE_DEFAULT.word);
 });

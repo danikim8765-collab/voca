@@ -3529,11 +3529,14 @@ function tone(notes, vol = .06, type = 'sine') {
   // 잠들어 있었으면 깨어난 다음에 (멈춘 시계에 맞춰 놓으면 깨어날 때 한꺼번에 밀려서 남)
   if (ctx.state === 'running') play(); else ctx.resume().then(play, () => {});
 }
-// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 문제 풀기). test = 스위치를 켤 때 한 번 들려 주기
-function answerFx(state, test = false) {
-  const lk = LOOK.get();
-  if (state === 'ok' && (lk.sound || test)) tone([[880, .09], [1320, .16]], .07);
-  if (state === 'bad' && (lk.buzz || test) && navigator.vibrate) navigator.vibrate([40, 50, 40]);
+// 정답 반응: 맞히면 효과음·진동, 틀리면 진동 (설정 > 문제 풀기). test = 켠 스위치 하나만 한 번 들려 주기
+// 진동은 손으로 구별되게: 맞히면 짧게 '톡' 한 번, 틀리면 길게 '징-징' 두 번
+const BUZZ = { ok: [25], bad: [40, 50, 40] };
+function answerFx(state, test = null) {
+  const lk = LOOK.get(), on = k => (test ? test === k : lk[k]);
+  if (state === 'ok' && on('sound')) tone([[880, .09], [1320, .16]], .07);
+  const buzz = state === 'ok' ? on('buzzOk') : state === 'bad' && on('buzz');
+  if (buzz && navigator.vibrate) navigator.vibrate(BUZZ[state]);
 }
 // 정답 반응을 고르면 설정 화면에서 바로 한 번 보여 줌 (정답 시트의 '정답!' 표시처럼)
 function previewReact() {
@@ -3545,8 +3548,8 @@ function renderLook() {
   setSeg('#seg-theme', lk.theme); setSeg('#seg-size', lk.size); setSeg('#seg-font', lk.font); setSeg('#seg-radius', lk.radius);
   setSeg('#seg-edge', lk[m].edge); setSeg('#seg-glow', lk[m].glow); setSeg('#seg-react', lk.react); setSeg('#seg-kb', lk.kb);
   $('#opt-look-share').checked = lk.share;
-  $('#opt-fx-sound').checked = lk.sound; $('#opt-fx-buzz').checked = lk.buzz; $('#opt-kb-sound').checked = lk.kbSound;
-  $('#row-fx-buzz').hidden = !navigator.vibrate; // 아이폰 사파리는 웹 진동이 안 됨
+  $('#opt-fx-sound').checked = lk.sound; $('#opt-fx-buzz').checked = lk.buzz; $('#opt-fx-buzz-ok').checked = lk.buzzOk; $('#opt-kb-sound').checked = lk.kbSound;
+  $('#row-fx-buzz').hidden = $('#row-fx-buzz-ok').hidden = !navigator.vibrate; // 아이폰 사파리는 웹 진동이 안 됨
   const sw = $('#sw-accent');
   sw.innerHTML = '';
   for (const a of LOOK.CHOICES.accent) {
@@ -3864,11 +3867,11 @@ function bind() {
   for (const [sel, k] of [['#seg-theme', 'theme'], ['#seg-size', 'size'], ['#seg-font', 'font'], ['#seg-radius', 'radius'], ['#seg-edge', 'edge'], ['#seg-glow', 'glow'], ['#seg-react', 'react'], ['#seg-kb', 'kb']]) {
     onSeg(sel, v => { LOOK.set({ [k]: v }); renderLook(); if (k === 'react') previewReact(); });
   }
-  for (const [id, k] of [['#opt-fx-sound', 'sound'], ['#opt-fx-buzz', 'buzz'], ['#opt-kb-sound', 'kbSound']]) {
+  for (const [id, k] of [['#opt-fx-sound', 'sound'], ['#opt-fx-buzz-ok', 'buzzOk'], ['#opt-fx-buzz', 'buzz'], ['#opt-kb-sound', 'kbSound']]) {
     $(id).addEventListener('change', e => {
       LOOK.set({ [k]: e.target.checked });
       if (!e.target.checked) return;
-      if (k === 'sound') answerFx('ok', true); else if (k === 'buzz') answerFx('bad', true); else tone([[1800, .012]], .025, 'square');
+      if (k === 'kbSound') tone([[1800, .012]], .025, 'square'); else answerFx(k === 'buzz' ? 'bad' : 'ok', k);
     });
   }
   onSeg('#seg-days', v => { LOOK.set({ days: v }); renderHome(); });
