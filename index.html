@@ -310,6 +310,7 @@
     <!-- 바로가기: 누르면 그 카드로 스크롤 -->
     <nav class="set-nav" id="set-nav" aria-label="설정 바로가기">
       <button data-go="set-quiz">문제 풀기</button>
+      <button data-go="set-keys" class="desk-only">단축키</button>
       <button data-go="srs-card">복습</button>
       <button data-go="set-voice">발음</button>
       <button data-go="ai-card">AI</button>
@@ -370,6 +371,12 @@
         <label class="switch-row"><span>키 누를 때 소리</span><input type="checkbox" role="switch" class="switch" id="opt-kb-sound"></label>
       </div>
       <button class="btn ghost small set-plan-btn" id="btn-set-plan">문제 방식·하루 개수는 학습 계획에서 ›</button>
+    </div>
+    <!-- 컴퓨터 단축키: js/keys.js (이 기기에만) -->
+    <div class="card desk-only" id="set-keys">
+      <div class="label">단축키</div>
+      <div class="key-rows" id="key-rows"></div>
+      <button class="btn ghost small" id="btn-keys-reset">단축키 처음대로</button>
     </div>
     <div class="card" id="srs-card">
       <div class="label">복습 방식</div>
