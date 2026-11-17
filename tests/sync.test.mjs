@@ -59,3 +59,43 @@ test('코치 캐릭터: 동기화를 켰을 때만 다른 기기와 맞춰짐', 
   await phone.sync.now();
   assert.ok(!calls.some(c => c.opts.method === 'PATCH'));
 });
+
+test('화면 꾸미기: 더 최근에 바꾼 기기 것으로, 끈 기기는 주고받지 않음', async () => {
+  const { createRequire } = await import('node:module');
+  const L = createRequire(import.meta.url)('../js/look.js');
+  store.clear();
+  store.set('voca.sync.v1', JSON.stringify({ token: 't', gistId: 'g1' }));
+  gist = {};
+  const dev = (look, share = true) => {
+    const d = { look: L.clean({ ...look, share }), marks: {} };
+    d.sync = createSync({
+      getLocal: () => ({ v: 2, resetAt: 0, stats: {}, prefs: {} }),
+      applyMerged: () => {},
+      marks: { get: () => d.marks, set: m => { d.marks = m; } },
+      look: { get: () => (d.look.share ? L.shared(d.look) : null), set: o => { d.look = L.clean({ ...o, share: d.look.share }); }, merge: L.mergeLook, same: L.sameLook },
+    });
+    return d;
+  };
+  const phone = dev({ size: 'xl', ex: { accent: 'grape' }, at: 10 });
+  await phone.sync.now();
+  assert.equal(JSON.parse(gist['voca-marks.json']).look.size, 'xl');
+  assert.ok(!('share' in JSON.parse(gist['voca-marks.json']).look)); // 기기마다인 스위치는 안 올림
+  // 아이패드(예전 그대로)는 폰 것으로
+  const pad = dev({});
+  await pad.sync.now();
+  assert.equal(pad.look.size, 'xl');
+  assert.equal(pad.look.ex.accent, 'grape');
+  // 끈 기기: 받지도 않고, 형광펜만 올릴 때 파일의 꾸미기도 지우지 않음
+  const mine = dev({ size: 's', at: 99 }, false);
+  mine.marks = { w9: { on: 1, t: 3 } };
+  await mine.sync.now();
+  assert.equal(mine.look.size, 's');
+  const f = JSON.parse(gist['voca-marks.json']);
+  assert.equal(f.look.size, 'xl');
+  assert.deepEqual(f.marks.w9, { on: 1, t: 3 });
+  // 아이패드에서 나중에 바꾸면 폰도
+  pad.look = L.clean({ ...pad.look, size: 'l', at: 20 });
+  await pad.sync.now();
+  await phone.sync.now();
+  assert.equal(phone.look.size, 'l');
+});

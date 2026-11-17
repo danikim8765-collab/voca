@@ -4,13 +4,14 @@ import { mergeProgress, sameStats, samePrefs, mergeMarks, sameMarks, mergeCoach,
 const API = 'https://api.github.com';
 // 예문 모드 진도는 voca-progress.json, 단어 모드는 같은 Gist의 voca-word-progress.json
 const FILES = ['voca-progress.json', 'voca-word-progress.json'];
-const MARKS = 'voca-marks.json'; // 단어장 '모름' 표시와 고른 코치 캐릭터: 두 모드가 같이 씀
+const MARKS = 'voca-marks.json'; // 단어장 '모름' 표시, 고른 코치 캐릭터, 화면 꾸미기: 두 모드가 같이 씀
 const KEY = 'voca.sync.v1'; // 토큰·Gist는 두 모드가 같이 씀
 
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 
+// look: { get, set, merge, same } 화면 꾸미기 (get이 null이면 이 기기는 꾸미기를 주고받지 않음, js/look.js).
 // marks: { get, set } 모름 표시. coach: { get, set } 고른 코치 캐릭터 { char, at } (토큰을 넣어 동기화할 때만 다른 기기와 맞춰짐). other: { get, set } 다른 모드 진도(단어장에서 두 모드 기록을 합쳐 보여 주려고 받아만 둠)
-export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, other = null }) {
+export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, look = null, other = null }) {
   const FILE = file;
   const OTHER = FILES.find(f => f !== FILE);
   let conf = load(); // { token, gistId, login, last }
@@ -65,10 +66,10 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       const files = {};
       if (differs(local)) applyMerged(merged);
       if (differs(remote)) files[FILE] = { content: JSON.stringify(merged) };
-      if (marks || coach) {
+      if (marks || coach || look) {
         const rf = await readFile(g, MARKS);
-        const rm = rf.marks || {}, rc = rf.coach || null;
-        let mm = rm, mc = rc;
+        const rm = rf.marks || {}, rc = rf.coach || null, rl = rf.look || null;
+        let mm = rm, mc = rc, ml = rl;
         if (marks) {
           const lm = marks.get();
           mm = mergeMarks(lm, rm);
@@ -79,8 +80,17 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
           mc = mergeCoach(lc, rc);
           if (mc && !sameCoach(mc, lc)) coach.set(mc);
         }
-        // 한 파일에 같이 들어 있어서, 하나만 바뀌어도 둘 다 적어 올림
-        if (!sameMarks(mm, rm) || !sameCoach(mc, rc)) files[MARKS] = { content: JSON.stringify({ v: 1, marks: mm, ...(mc ? { coach: mc } : {}) }) };
+        // 꾸미기: 이 기기가 주고받기를 껐으면(get이 null) 받지도 보내지도 않고, 파일에 있던 건 그대로 둠
+        const ll = look && look.get();
+        if (ll) {
+          ml = look.merge(ll, rl);
+          if (ml && !look.same(ml, ll)) look.set(ml);
+        }
+        // 한 파일에 같이 들어 있어서, 하나만 바뀌어도 다 적어 올림 (모르는 칸도 지우지 않게 받은 걸 바탕으로)
+        const lookChanged = !!ll && !!ml && !look.same(ml, rl);
+        if (!sameMarks(mm, rm) || !sameCoach(mc, rc) || lookChanged) {
+          files[MARKS] = { content: JSON.stringify({ ...rf, v: 1, marks: mm, ...(mc ? { coach: mc } : {}), ...(ml ? { look: ml } : {}) }) };
+        }
       }
       if (other && g.files && g.files[OTHER]) {
         const lo = other.get();

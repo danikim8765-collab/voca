@@ -28,3 +28,13 @@ test('꾸미기: 고를 수 있는 값만 남김, 모드마다 색·카드·바�
   assert.deepEqual(o.ex, { accent: 'grape', edge: 'line', glow: 'warm' });
   assert.deepEqual(o.word, MODE_DEFAULT.word);
 });
+
+test('꾸미기 합치기: 바꾼 시각이 더 최근인 쪽, 기기마다인 share는 빼고', () => {
+  const { mergeLook, shared } = require('../js/look.js');
+  assert.equal(mergeLook({ at: 5, size: 'l' }, { at: 9, size: 's' }).size, 's');
+  assert.equal(mergeLook({ at: 9, size: 'l' }, { at: 5, size: 's' }).size, 'l');
+  assert.equal(mergeLook({ at: 5, size: 'l' }, { at: 5, size: 's' }).size, 'l'); // 같으면 이 기기
+  assert.equal(mergeLook({ size: 'l' }, null).size, 'l');
+  assert.equal(mergeLook(null, null), null);
+  assert.ok(!('share' in shared({ share: false })));
+});

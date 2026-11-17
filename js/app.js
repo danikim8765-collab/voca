@@ -250,8 +250,16 @@ const sync = createSync({
       if (current === 'home') renderCoach();
     },
   },
+  // 화면 꾸미기 (js/look.js): '꾸미기도 동기화·백업하기'를 끈 기기는 주고받지 않음
+  look: {
+    get: () => (LOOK.get().share ? LOOK.shared(LOOK.get()) : null),
+    set: o => { LOOK.adopt(o); if (current === 'settings') renderLook(); if (current === 'home') renderHome(); },
+    merge: (l, r) => LOOK.mergeLook(l, r),
+    same: (x, y) => LOOK.sameLook(x, y),
+  },
   other: { get: otherProgress, set: st => save(OTHER_P + 'stats.v1', st) },
 });
+LOOK.onChange = () => sync.soon(); // 꾸미기를 바꾸면 잠깐 뒤 다른 기기로
 const saveSettings = () => save(KEY.settings, settings);
 // 유반의어 테스트(noSave)는 기록에 영향을 주지 않아서 이어하기에도 안 남김 (하던 정규 학습의 이어하기를 지우지 않게)
 // 하던 학습은 기기끼리도 맞춤(동기화를 켰을 때): 바꾼 시각을 같이 적어 두고, 더 최근에 바꾼 기기의 것으로
@@ -3505,6 +3513,7 @@ function renderLook() {
   const lk = LOOK.get(), m = WORD ? 'word' : 'ex';
   setSeg('#seg-theme', lk.theme); setSeg('#seg-size', lk.size); setSeg('#seg-font', lk.font); setSeg('#seg-radius', lk.radius);
   setSeg('#seg-edge', lk[m].edge); setSeg('#seg-glow', lk[m].glow); setSeg('#seg-react', lk.react); setSeg('#seg-kb', lk.kb);
+  $('#opt-look-share').checked = lk.share;
   $('#opt-fx-sound').checked = lk.sound; $('#opt-fx-buzz').checked = lk.buzz; $('#opt-kb-sound').checked = lk.kbSound;
   $('#row-fx-buzz').hidden = !navigator.vibrate; // 아이폰 사파리는 웹 진동이 안 됨
   const sw = $('#sw-accent');
@@ -3611,7 +3620,8 @@ function renderAiStatus() {
 function exportProgress() {
   const mine = { stats: allStats(), settings };
   const other = { stats: load(OTHER_P + 'stats.v1', {}), settings: load(OTHER_P + 'settings.v1', {}) };
-  const data = JSON.stringify({ app: 'voca-all', v: 2, at: new Date().toISOString(), ex: WORD ? other : mine, word: WORD ? mine : other, marks }, null, 0);
+  const lk = LOOK.get().share ? { look: LOOK.shared(LOOK.get()) } : {}; // 화면 꾸미기 ('꾸미기도 동기화·백업하기'를 껐으면 뺌)
+  const data = JSON.stringify({ app: 'voca-all', v: 2, at: new Date().toISOString(), ex: WORD ? other : mine, word: WORD ? mine : other, marks, ...lk }, null, 0);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -3640,10 +3650,12 @@ async function importProgress(file) {
     const name = m => (m === 'word' ? '단어' : '예문');
     const count = m => Object.values(parts[m].stats).filter(v => v && !v.del).length;
     const missing = ['ex', 'word'].filter(m => !parts[m]);
+    const useLook = !!(data.look && typeof data.look === 'object' && LOOK.get().share);
     if (!(await ask({
       title: '백업으로 덮어쓸까요?',
       body: `${modes.map(m => `${name(m)} 모드 ${count(m)}단어`).join(' · ')}의 진도와 학습 설정이 백업 파일의 것으로 바뀌어요.`
         + (missing.length ? `\n이 파일에는 ${name(missing[0])} 모드 진도가 없어서 그쪽은 그대로 둬요.` : '')
+        + (useLook ? '\n화면 꾸미기도 백업의 것으로 바뀌어요.' : '')
         + (sync.enabled ? '\n동기화된 다른 기기의 진도도 백업의 것으로 바뀌어요.' : ''),
       ok: '덮어쓰기', danger: true,
     }))) return;
@@ -3672,6 +3684,7 @@ async function importProgress(file) {
       }
     }
     if (data.marks && typeof data.marks === 'object') { marks = mergeMarks(marks, data.marks); save(KEY.marks, marks); }
+    if (useLook) LOOK.adopt(data.look, true);
     sync.now();
     toast(`${modes.map(name).join('·')} 모드 진도를 불러왔어요`);
     renderSettings();
@@ -3829,6 +3842,11 @@ function bind() {
     });
   }
   onSeg('#seg-days', v => { LOOK.set({ days: v }); renderHome(); });
+  $('#opt-look-share').addEventListener('change', e => {
+    LOOK.set({ share: e.target.checked });
+    if (e.target.checked) { sync.now(); toast(sync.enabled ? '꾸미기를 다른 기기와 맞출게요' : '꾸미기도 백업에 들어가요. 동기화를 켜면 다른 기기와도 맞춰요'); }
+    else toast('꾸미기는 이제 이 기기에만 저장돼요');
+  });
   $('#btn-look-reset').addEventListener('click', async () => {
     if (!(await ask({ title: '꾸미기를 처음대로 돌릴까요?', body: '밝기·색·글자 크기·홈에 보일 것 등 화면 꾸미기만 처음 모습으로 돌아가요. 학습 기록과 설정은 그대로예요.', ok: '처음대로' }))) return;
     LOOK.reset(); renderLook(); toast('꾸미기를 처음대로 돌렸어요');
