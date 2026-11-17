@@ -2670,7 +2670,7 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
     b.classList.add('down');
     down.set(e.pointerId, b);
     fn();
-    if (LOOK.get().kbSound) tone([[1800, .012]], .025, 'square');
+    if (LOOK.get().kbSound) keyTick();
     if (b.textContent === '⌫') {
       clearInterval(kb.repeat);
       kb.hold = setTimeout(() => { kb.repeat = setInterval(fn, 70); }, 400);
@@ -3481,25 +3481,55 @@ const ACCENT_NAME = { navy: '네이비', forest: '숲', grape: '포도', coral: 
 const ACCENT_SW = { navy: '#1f3a68', forest: '#1e6b4f', grape: '#5b3f9e', coral: '#c2493d', ink: '#1a1a17' };
 const HOME_PART = { coach: '코치 말풍선', plan: '학습 계획 요약', practice: '다시 볼 단어 · 범위 연습', book: '단어장 보기 버튼', days: 'DAY별 진도' };
 // 짧은 소리 (파일 없이 Web Audio로): tone([[주파수, 길이초], …], 크기, 파형)
+// 폰 브라우저는 손가락을 뗄 때(pointerup·touchend·click)만 소리를 켜 줌. 앱 키보드는 닿는 순간(pointerdown)에 눌리고
+// 직접 입력의 정답은 0.8초 멈춘 뒤라, 그때 처음 소리를 켜려 하면 막힘 → 손을 뗄 때마다 미리 켜 둠
 let audioCtx = null;
-function tone(notes, vol = .06, type = 'sine') {
+function audioUnlock(force = false) {
+  const lk = LOOK.get();
+  if (!force && !lk.sound && !lk.kbSound) return; // 소리를 안 쓰면 아무것도 안 만듦
   try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    let t = audioCtx.currentTime;
-    for (const [f, d] of notes) {
-      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-      o.type = type; o.frequency.value = f;
-      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
-      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + d + .02);
-      t += d * .8;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!audioCtx) audioCtx = new AC({ latencyHint: 'interactive' });
+    if (audioCtx.state !== 'running') {
+      audioCtx.resume();
+      // 아이폰: 손을 뗀 그때 소리 없는 아주 짧은 소리를 한 번 틀어야 열림
+      const src = audioCtx.createBufferSource();
+      src.buffer = audioCtx.createBuffer(1, 1, 22050);
+      src.connect(audioCtx.destination);
+      src.start(0);
     }
   } catch { /* 소리를 못 내는 브라우저 */ }
 }
+for (const t of ['pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(t, () => audioUnlock(), { capture: true, passive: true });
+// 짧은 소리 (파일 없이 Web Audio로): tone([[주파수, 길이초], …], 크기, 파형)
+// 크기를 0에서 6ms 동안 올렸다가 줄여서 '딱' 하는 잡음이 안 생기게
+function tone(notes, vol = .1, type = 'sine') {
+  audioUnlock(true);
+  if (!audioCtx) return;
+  // 막 켜는 중이면 켜진 뒤에 (스위치를 켤 때 들려 주는 소리)
+  if (audioCtx.state !== 'running') { audioCtx.resume().then(() => { if (audioCtx.state === 'running') playNotes(notes, vol, type); }).catch(() => {}); return; }
+  playNotes(notes, vol, type);
+}
+function playNotes(notes, vol, type) {
+  try {
+    let t = audioCtx.currentTime + .005;
+    for (const [f, d] of notes) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = type; o.frequency.value = f;
+      g.gain.setValueAtTime(.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + .006);
+      g.gain.exponentialRampToValueAtTime(.0001, t + d);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + d + .02);
+      t += d * .75;
+    }
+  } catch { /* 소리를 못 내는 브라우저 */ }
+}
+const keyTick = () => tone([[1100, .04]], .09, 'triangle'); // 키 누를 때: 짧고 부드러운 '톡'
 // 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 문제 풀기). test = 스위치를 켤 때 한 번 들려 주기
 function answerFx(state, test = false) {
   const lk = LOOK.get();
-  if (state === 'ok' && (lk.sound || test)) tone([[880, .09], [1320, .16]], .07);
+  if (state === 'ok' && (lk.sound || test)) tone([[880, .1], [1320, .22]], .14); // '띵동'
   if (state === 'bad' && (lk.buzz || test) && navigator.vibrate) navigator.vibrate([40, 50, 40]);
 }
 // 정답 반응을 고르면 설정 화면에서 바로 한 번 보여 줌 (정답 시트의 '정답!' 표시처럼)
@@ -3834,7 +3864,7 @@ function bind() {
     $(id).addEventListener('change', e => {
       LOOK.set({ [k]: e.target.checked });
       if (!e.target.checked) return;
-      if (k === 'sound') answerFx('ok', true); else if (k === 'buzz') answerFx('bad', true); else tone([[1800, .012]], .025, 'square');
+      if (k === 'sound') answerFx('ok', true); else if (k === 'buzz') answerFx('bad', true); else keyTick();
     });
   }
   onSeg('#seg-days', v => { LOOK.set({ days: v }); renderHome(); });
