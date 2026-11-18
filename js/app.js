@@ -2888,7 +2888,6 @@ function openSheet(w, more = []) {
   if (!WORD && !(q && q.syn) && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
   mean.appendChild(card);
   for (const m of more) mean.appendChild(m);
-  if (aiCoachOnline() && q && q.w === w) mean.appendChild(askBox(q));
   if (w.extras.length) {
     const ex = el('div', 'fb-card extras');
     for (const [k, v] of w.extras) {
@@ -2904,6 +2903,12 @@ function openSheet(w, more = []) {
   [[w.ex1, w.ex1ko, w.ex1src], [w.ex2, w.ex2ko, w.ex2src]].forEach(([en, ko, src], i) => {
     if (en) exPane.appendChild(sentenceCard(makeBlanks(en, w.blank, w.word), ko, i + 1, true, false, w, src));
   });
+  // AI 탭: AI가 켜져 있고 인터넷이 될 때만
+  const aiPane = $('#fb-ai');
+  aiPane.innerHTML = '';
+  const canAsk = aiCoachOnline() && !!q && q.w === w;
+  $('#fb-tab-ai').hidden = !canAsk;
+  if (canAsk) aiPane.appendChild(askBox(q));
   setFbTab('mean');
 
   $('#feedback').hidden = false;
@@ -3033,12 +3038,9 @@ function askProblemOf(cur) {
   return { word: w.word, pos: w.pos, meaning: w.meaning, mode, examples: ex, extras: w.extras, user: cur.fbGiven || '', result: cur.fbLabel || (cur.fbCorrect ? '정답' : '오답') };
 }
 function askBox(cur) {
-  const box = el('div', 'fb-card ask');
+  const box = el('div', 'ask');
   cur.ask = cur.ask || [];
-  const open = el('button', 'btn secondary small ask-open', '🤖 AI에게 묻기');
-  open.type = 'button';
-  const body = el('div', 'ask-body');
-  const log = el('div', 'ask-log');
+  // 위에서부터: 빠른 질문 → 입력칸 → 주고받은 이야기 (보낸 뒤엔 새 답이 보이게 내려 줌)
   const chips = el('div', 'chips ask-chips');
   const form = el('form', 'ask-form');
   const inp = el('input');
@@ -3046,35 +3048,28 @@ function askBox(cur) {
   const send = el('button', 'btn primary small', '보내기');
   send.type = 'submit';
   form.append(inp, send);
-  body.append(log, chips, form);
-  box.append(open, body);
+  const log = el('div', 'ask-log');
+  box.append(chips, form, log);
   let busy = false;
   const draw = () => {
     log.innerHTML = '';
     for (const m of cur.ask) log.appendChild(el('div', 'ask-msg ' + m.who + (m.err ? ' err' : ''), m.text));
     if (busy) log.appendChild(el('div', 'ask-msg ai wait', 'AI가 답 쓰는 중…'));
     log.hidden = !log.children.length;
-    // 빠른 질문은 아직 아무것도 안 물었을 때만
+    const asked = new Set(cur.ask.filter(m => m.who === 'me').map(m => m.text));
     chips.innerHTML = '';
-    if (!cur.ask.some(m => m.who === 'me')) {
-      for (const t of [...(!cur.fbCorrect ? ['왜 틀렸어?'] : []), ...ASK_QUICK]) {
-        const c = el('button', 'chip', t);
-        c.type = 'button';
-        c.disabled = busy;
-        c.addEventListener('click', () => submit(t));
-        chips.appendChild(c);
-      }
+    for (const t of [...(!cur.fbCorrect ? ['왜 틀렸어?'] : []), ...ASK_QUICK]) {
+      if (asked.has(t)) continue; // 이미 물은 건 뺌
+      const c = el('button', 'chip', t);
+      c.type = 'button';
+      c.disabled = busy;
+      c.addEventListener('click', () => submit(t));
+      chips.appendChild(c);
     }
     chips.hidden = !chips.children.length;
     inp.disabled = send.disabled = busy;
   };
-  const fit = () => { if (!wideDesk() && !$('#feedback').hidden) $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; };
-  const expand = (focus = true) => {
-    box.classList.add('on');
-    draw();
-    fit();
-    if (focus && DESK) inp.focus(); // 폰은 키보드가 바로 올라오지 않게
-  };
+  const toEnd = () => { const last = log.lastElementChild; if (last) last.scrollIntoView({ block: 'nearest' }); };
   async function submit(text) {
     text = String(text || '').trim();
     if (!text || busy || q !== cur) return;
@@ -3082,8 +3077,7 @@ function askBox(cur) {
     const history = cur.ask.slice();
     cur.ask.push({ who: 'me', text });
     inp.value = '';
-    busy = true; draw();
-    log.lastChild.scrollIntoView({ block: 'nearest' });
+    busy = true; draw(); toEnd();
     let t = null;
     // 단어 모드 오답의 '왜 틀렸어?'는 예전처럼 설명용으로 (같은 답이면 지난번 설명을 기억해 둔 걸로)
     if (text === '왜 틀렸어?' && cur.fbWhy && !history.length) {
@@ -3094,10 +3088,11 @@ function askBox(cur) {
     if (q !== cur) return; // 그새 다음 문제로 넘어감
     cur.ask.push(t ? { who: 'ai', text: t } : { who: 'ai', text: coachErrorText(), err: true });
     if (!t) { inp.value = text; cur.ask.splice(-2, 1); } // 못 받았으면 물은 말을 칸에 돌려놓아 다시 보내게
-    draw(); fit();
-    if (log.lastChild) log.lastChild.scrollIntoView({ block: 'nearest' });
+    draw();
+    // 새 답의 첫머리가 보이게 (긴 답이면 위부터 읽게)
+    const ans = log.lastElementChild;
+    if (ans) ans.scrollIntoView({ block: ans.offsetHeight > box.parentElement.clientHeight ? 'start' : 'nearest' });
   }
-  open.addEventListener('click', () => expand());
   form.addEventListener('submit', e => { e.preventDefault(); submit(inp.value); });
   // 칸에 쓰는 동안 퀴즈 단축키(Enter 계속하기, Space 형광펜, Shift 등)가 눌리지 않게
   const keep = e => {
@@ -3106,7 +3101,7 @@ function askBox(cur) {
   };
   inp.addEventListener('keydown', keep);
   inp.addEventListener('keyup', keep);
-  if (cur.ask.length) expand(false);
+  draw();
   return box;
 }
 
@@ -3114,6 +3109,7 @@ function setFbTab(t) {
   document.querySelectorAll('#fb-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $('#fb-mean').hidden = t !== 'mean';
   $('#fb-ex').hidden = t !== 'ex';
+  $('#fb-ai').hidden = t !== 'ai';
 }
 
 // 그만하기: 진행 상황은 저장되어 있어 홈에서 이어하기 가능. 단어장에서 시작한 학습이면 단어장으로

@@ -802,15 +802,12 @@ html:not(.desk) .desk-only { display: none; }
 #q-sentences .sent.ready.hinted { box-shadow: 0 0 0 3px rgba(var(--hint-glow), .2), 0 0 18px 2px rgba(var(--hint-glow), .3); }
 #q-sentences .sent.ready.hinted::after { background: conic-gradient(from 0deg, var(--hint-c) var(--sweep), transparent 0); }
 
-/* 정답 시트 'AI에게 묻기' */
-.fb-card.ask .ask-open { width: 100%; margin-bottom: 0; }
-.fb-card.ask .ask-body { display: none; }
-.fb-card.ask.on .ask-open { display: none; }
-.fb-card.ask.on .ask-body { display: flex; flex-direction: column; gap: 10px; }
+/* 정답 시트 AI 탭 ('AI에게 묻기'): 위에서부터 빠른 질문 → 입력칸 → 주고받은 이야기 */
+.ask { display: flex; flex-direction: column; gap: 10px; padding-bottom: 4px; }
 .ask-log { display: flex; flex-direction: column; gap: 8px; }
 .ask-msg { max-width: 92%; padding: 9px 12px; border-radius: var(--r-md); line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; font-size: calc(15px * var(--fz)); }
 .ask-msg.me { align-self: flex-end; background: var(--primary); color: var(--card); }
-.ask-msg.ai { align-self: flex-start; background: var(--card); border: 1px solid var(--line); }
+.ask-msg.ai { align-self: flex-start; background: var(--bg); }
 .ask-msg.wait { color: var(--muted); }
 .ask-msg.err { color: var(--danger); }
 .ask-chips { margin-top: 0; }
