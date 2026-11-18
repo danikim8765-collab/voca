@@ -844,3 +844,18 @@ test('다시 나오기 설정도 두 모드·기기끼리 더 최근에 바꾼 �
   assert.deepEqual(m.prefs.again, b.prefs.again);
   assert.equal(m.prefs.againAt, 200);
 });
+
+test('하루는 새벽 4시에 바뀜', async () => {
+  const { dateStr, addDays } = await import('../js/core.js');
+  const at = (h, m = 0) => new Date(2026, 10, 19, h, m).getTime(); // 11월 19일 현지 시각
+  assert.equal(dateStr(at(0, 30)), '2026-11-18'); // 자정 넘어도 아직 전날
+  assert.equal(dateStr(at(3, 59)), '2026-11-18');
+  assert.equal(dateStr(at(4, 0)), '2026-11-19'); // 4시부터 새 날
+  assert.equal(dateStr(at(23, 59)), '2026-11-19');
+  assert.equal(dateStr(new Date(2026, 0, 1, 2).getTime()), '2025-12-31'); // 해 넘김도
+  // 날짜끼리 더하고 빼는 건 4시 경계와 상관없음
+  assert.equal(addDays('2026-11-19', 1), '2026-11-20');
+  assert.equal(addDays('2026-11-19', -1), '2026-11-18');
+  assert.equal(addDays('2026-03-01', -1), '2026-02-28');
+  assert.equal(addDays('2026-12-31', 1), '2027-01-01');
+});
