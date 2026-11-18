@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { createSync } from './sync.js';
 import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
-import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiAskWord, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js';
 import { reportRepo, reportReasons, reportText, issueUrl, pushError, REPORT_FORM, formReady, formRequest, queueReport } from './report.js';
@@ -1972,7 +1972,7 @@ function synAnswer(correct, given, kind) {
 
 function showSynFeedback(correct, given, kind, label) {
   const { w, syn: sq } = q;
-  Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
+  Object.assign(q, { fbGiven: given, fbLabel: label, fbCorrect: correct }); // 버그 신고·'AI에게 묻기'에 붙임
   const state = correct ? 'ok' : kind === 'hint' ? 'hint' : 'bad';
   answerFx(state);
   const head = $('#fb-head');
@@ -2858,7 +2858,7 @@ function showFeedback(correct, given, kind, label) {
   setFbCoach(state);
   const more = [];
   if (q.choices && !correct) more.push(choiceNotes(q.choices, w, q.picked));
-  if (WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline()) more.push(explainBox(q));
+  Object.assign(q, { fbCorrect: correct, fbWhy: WORD && !correct && kind !== 'hint' && !!q.userAnswer }); // 'AI에게 묻기'에 씀
   openSheet(w, more);
 }
 
@@ -2888,6 +2888,7 @@ function openSheet(w, more = []) {
   if (!WORD && !(q && q.syn) && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
   mean.appendChild(card);
   for (const m of more) mean.appendChild(m);
+  if (aiCoachOnline() && q && q.w === w) mean.appendChild(askBox(q));
   if (w.extras.length) {
     const ex = el('div', 'fb-card extras');
     for (const [k, v] of w.extras) {
@@ -3021,22 +3022,91 @@ function openReport(ctx) {
   };
 }
 
-// 단어 모드 오답: 누르면 AI가 왜 틀렸는지 설명 (AI 사용 스위치가 켜져 있고 인터넷이 될 때만 보임)
-function explainBox(cur) {
-  const box = el('div', 'fb-card explain');
-  const btn = el('button', 'btn secondary small', `🤖 왜 틀렸어?`);
-  box.appendChild(btn);
-  const showText = t => { box.innerHTML = ''; box.append(el('b', null, `AI 설명`), el('div', 'explain-text', t)); };
-  if (cur.explain) { showText(cur.explain); return box; }
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    btn.textContent = `AI가 설명 쓰는 중…`;
-    const t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
-    if (t) { cur.explain = t; showText(t); return; }
-    btn.disabled = false;
-    btn.textContent = '🤖 다시 시도';
-    toast('설명을 받지 못했어요. 인터넷이나 무료 한도를 확인해 주세요', 3000);
-  });
+// 정답 시트 'AI에게 묻기': 모든 문제에서 그 단어를 두고 물어봄. 누르고 보낼 때만 AI를 부름 (AI가 켜져 있고 인터넷이 될 때만 보임)
+// 이야기는 그 문제(q.ask)에만 남고 다음 문제로 넘어가면 사라짐. 코치용 키가 있으면 그 키로
+const ASK_QUICK = ['외우는 요령', '비슷한 단어와 차이', '어원 알려 줘', '다른 예문 보여 줘'];
+function askProblemOf(cur) {
+  const w = cur.w;
+  const ex = [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].filter(([en]) => en).map(([en, ko]) => ({ en, ko }));
+  const pick = settings.kind !== 'type';
+  const mode = cur.syn ? '유의어·반의어 고르기' : WORD ? `영단어 보고 한글 뜻 ${pick ? '고르기(4지선다)' : '쓰기'}` : `예문 빈칸에 들어갈 영단어 ${pick ? '고르기(4지선다)' : '쓰기'}`;
+  return { word: w.word, pos: w.pos, meaning: w.meaning, mode, examples: ex, extras: w.extras, user: cur.fbGiven || '', result: cur.fbLabel || (cur.fbCorrect ? '정답' : '오답') };
+}
+function askBox(cur) {
+  const box = el('div', 'fb-card ask');
+  cur.ask = cur.ask || [];
+  const open = el('button', 'btn secondary small ask-open', '🤖 AI에게 묻기');
+  open.type = 'button';
+  const body = el('div', 'ask-body');
+  const log = el('div', 'ask-log');
+  const chips = el('div', 'chips ask-chips');
+  const form = el('form', 'ask-form');
+  const inp = el('input');
+  Object.assign(inp, { type: 'text', placeholder: `${cur.w.word}에 대해 물어보기`, maxLength: 300, enterKeyHint: 'send', autocomplete: 'off' });
+  const send = el('button', 'btn primary small', '보내기');
+  send.type = 'submit';
+  form.append(inp, send);
+  body.append(log, chips, form);
+  box.append(open, body);
+  let busy = false;
+  const draw = () => {
+    log.innerHTML = '';
+    for (const m of cur.ask) log.appendChild(el('div', 'ask-msg ' + m.who + (m.err ? ' err' : ''), m.text));
+    if (busy) log.appendChild(el('div', 'ask-msg ai wait', 'AI가 답 쓰는 중…'));
+    log.hidden = !log.children.length;
+    // 빠른 질문은 아직 아무것도 안 물었을 때만
+    chips.innerHTML = '';
+    if (!cur.ask.some(m => m.who === 'me')) {
+      for (const t of [...(!cur.fbCorrect ? ['왜 틀렸어?'] : []), ...ASK_QUICK]) {
+        const c = el('button', 'chip', t);
+        c.type = 'button';
+        c.disabled = busy;
+        c.addEventListener('click', () => submit(t));
+        chips.appendChild(c);
+      }
+    }
+    chips.hidden = !chips.children.length;
+    inp.disabled = send.disabled = busy;
+  };
+  const fit = () => { if (!wideDesk() && !$('#feedback').hidden) $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; };
+  const expand = (focus = true) => {
+    box.classList.add('on');
+    draw();
+    fit();
+    if (focus && DESK) inp.focus(); // 폰은 키보드가 바로 올라오지 않게
+  };
+  async function submit(text) {
+    text = String(text || '').trim();
+    if (!text || busy || q !== cur) return;
+    cur.ask = cur.ask.filter(m => !m.err); // 지난번 못 받은 알림은 지움
+    const history = cur.ask.slice();
+    cur.ask.push({ who: 'me', text });
+    inp.value = '';
+    busy = true; draw();
+    log.lastChild.scrollIntoView({ block: 'nearest' });
+    let t = null;
+    // 단어 모드 오답의 '왜 틀렸어?'는 예전처럼 설명용으로 (같은 답이면 지난번 설명을 기억해 둔 걸로)
+    if (text === '왜 틀렸어?' && cur.fbWhy && !history.length) {
+      t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
+    }
+    if (!t) t = await aiAskWord({ problem: askProblemOf(cur), history, message: text });
+    busy = false;
+    if (q !== cur) return; // 그새 다음 문제로 넘어감
+    cur.ask.push(t ? { who: 'ai', text: t } : { who: 'ai', text: coachErrorText(), err: true });
+    if (!t) { inp.value = text; cur.ask.splice(-2, 1); } // 못 받았으면 물은 말을 칸에 돌려놓아 다시 보내게
+    draw(); fit();
+    if (log.lastChild) log.lastChild.scrollIntoView({ block: 'nearest' });
+  }
+  open.addEventListener('click', () => expand());
+  form.addEventListener('submit', e => { e.preventDefault(); submit(inp.value); });
+  // 칸에 쓰는 동안 퀴즈 단축키(Enter 계속하기, Space 형광펜, Shift 등)가 눌리지 않게
+  const keep = e => {
+    e.stopPropagation();
+    if (e.type === 'keydown' && e.key === 'Escape') inp.blur();
+  };
+  inp.addEventListener('keydown', keep);
+  inp.addEventListener('keyup', keep);
+  if (cur.ask.length) expand(false);
   return box;
 }
 
