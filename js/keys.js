@@ -26,6 +26,16 @@ export function normKey(code) {
   return m ? 'Digit' + m[1] : code;
 }
 export const isModKey = c => MOD_RE.test(c);
+// 키 이벤트에서 누른 자리 이름. 어떤 노트북·키보드는 오른쪽 Shift 같은 조합 키의 e.code를 비워서 보내서,
+// 그때는 e.key(없으면 옛 keyCode)와 e.location(1 왼쪽, 2 오른쪽)으로 맞춤
+const MOD_BY_KEYCODE = { 16: 'Shift', 17: 'Control', 18: 'Alt', 91: 'Meta', 92: 'Meta', 93: 'Meta' };
+export function keyOf(e) {
+  const c = normKey(e && e.code);
+  if (c || !e) return c;
+  const base = ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key) ? e.key : e.key === 'OS' ? 'Meta' : MOD_BY_KEYCODE[e.keyCode] || '';
+  if (!base) return '';
+  return base + (e.location === 1 ? 'Left' : e.location === 2 ? 'Right' : '');
+}
 // 조합 키의 쪽을 뗀 이름 (ShiftRight → Shift)
 export const modBase = c => (MOD_RE.exec(c) || [])[1] || '';
 // 같은 키로 치는가: 같거나, 한쪽이 'Shift'(양쪽)이고 다른 쪽이 ShiftLeft·ShiftRight

@@ -73,3 +73,20 @@ test('단축키: 양쪽 Shift와 한쪽 Shift가 겹쳐 저장돼 있으면 뒤�
   assert.equal(m2.hint, 'ShiftLeft');
   assert.equal(m2.mark, 'ShiftRight');
 });
+
+test('단축키: e.code가 빈 조합 키는 e.key와 왼쪽·오른쪽 위치로 알아봄', async () => {
+  const { keyOf } = await import('../js/keys.js');
+  assert.equal(keyOf({ code: 'ShiftRight', key: 'Shift', location: 2 }), 'ShiftRight');
+  assert.equal(keyOf({ code: 'Numpad3', key: '3' }), 'Digit3');
+  assert.equal(keyOf({ code: '', key: 'Shift', location: 2 }), 'ShiftRight'); // 오른쪽 Shift 이름이 비어서 오는 노트북
+  assert.equal(keyOf({ code: '', key: 'Shift', location: 1 }), 'ShiftLeft');
+  assert.equal(keyOf({ code: '', key: 'Unidentified', keyCode: 16, location: 2 }), 'ShiftRight');
+  assert.equal(keyOf({ code: '', key: 'Control', location: 0 }), 'Control');
+  assert.equal(keyOf({ code: '', key: 'OS', location: 1 }), 'MetaLeft');
+  assert.equal(keyOf({ code: '', key: 'a' }), ''); // 조합 키가 아니면 모름
+  // 그렇게 알아본 키로 붙이고 찾기
+  const m = assignKey(cleanKeys({}), 'next', keyOf({ code: '', key: 'Shift', location: 2 })).map;
+  assert.equal(m.next, 'ShiftRight');
+  assert.equal(m.hint, 'ShiftLeft'); // 양쪽 Shift였던 힌트는 왼쪽만
+  assert.equal(actionFor(m, 'ShiftRight'), 'next');
+});
