@@ -802,10 +802,30 @@ html:not(.desk) .desk-only { display: none; }
 #q-sentences .sent.ready.hinted { box-shadow: 0 0 0 3px rgba(var(--hint-glow), .2), 0 0 18px 2px rgba(var(--hint-glow), .3); }
 #q-sentences .sent.ready.hinted::after { background: conic-gradient(from 0deg, var(--hint-c) var(--sweep), transparent 0); }
 
-/* 정답 시트 AI 탭 ('AI에게 묻기'): 위에서부터 빠른 질문 → 입력칸 → 주고받은 이야기 */
-.ask { display: flex; flex-direction: column; gap: 10px; padding-bottom: 4px; }
-.ask-log { display: flex; flex-direction: column; gap: 8px; }
-.ask-msg { max-width: 92%; padding: 9px 12px; border-radius: var(--r-md); line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; font-size: calc(15px * var(--fz)); }
+/* 정답 시트 탭마다 크기: 뜻은 내용만큼(62dvh까지), 예문은 조금 더, AI는 대화창처럼 높게 고정 */
+#feedback[data-tab="ex"] .sheet-inner { max-height: 72dvh; }
+#feedback[data-tab="ai"].chatting .sheet-inner { height: 82dvh; max-height: 82dvh; }
+.desk #feedback[data-tab="ai"].chatting .sheet-inner { height: calc(100dvh - 120px); max-height: calc(100dvh - 120px); }
+/* AI 탭: 빠른 질문·입력칸은 위에 고정, 이야기만 스크롤. 계속하기 줄은 낮게 */
+.sheet-inner > #fb-ai:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
+#feedback[data-tab="ai"] .fb-tabs { margin-bottom: 10px; }
+#feedback[data-tab="ai"] .fb-actions .speak-btn, #feedback[data-tab="ai"] .fb-actions .next-btn { height: 46px; padding-top: 0; padding-bottom: 0; font-size: 16px; }
+#feedback[data-tab="ai"] .fb-actions { margin-top: 10px; }
+/* 폰에서 AI 칸에 쓰는 중: 키보드 위로 시트를 채우고, 단어 머리는 작게, 아래 버튼 줄은 숨김 */
+#feedback.typing .sheet-inner { animation: none; border-radius: var(--r-xl) var(--r-xl) 0 0; }
+#feedback.typing .grab, #feedback.typing .fb-actions, #feedback.typing #fb-pron { display: none; }
+#feedback.typing .fb-word .w { font-size: 22px; }
+#feedback.typing .fb-tabs { margin: 6px 0 8px; }
+/* 'AI에게 묻기': 위에서부터 빠른 질문 → 입력칸 → 주고받은 이야기 */
+.ask { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.ask > .chips, .ask > .ask-form { flex: none; }
+.ask-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
+.ask-log:empty::before { content: '이 단어에 대해 궁금한 걸 물어보면 여기에 답이 와요'; color: var(--muted); font-size: 13px; padding: 2px 4px; }
+/* 이야기가 생기면 빠른 질문은 한 줄로 옆으로 밀어 보게 (이야기 칸을 넓게) */
+.ask.chatting > .ask-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -2px; padding: 0 2px; }
+.ask.chatting > .ask-chips::-webkit-scrollbar { display: none; }
+.ask.chatting > .ask-chips .chip { flex: none; }
+.ask-msg { flex: none; max-width: 92%; padding: 9px 12px; border-radius: var(--r-md); line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; font-size: calc(15px * var(--fz)); }
 .ask-msg.me { align-self: flex-end; background: var(--primary); color: var(--card); }
 .ask-msg.ai { align-self: flex-start; background: var(--bg); }
 .ask-msg.wait { color: var(--muted); }

@@ -2906,6 +2906,7 @@ function openSheet(w, more = []) {
   // AI 탭: AI가 켜져 있고 인터넷이 될 때만
   const aiPane = $('#fb-ai');
   aiPane.innerHTML = '';
+  $('#feedback').classList.remove('chatting');
   const canAsk = aiCoachOnline() && !!q && q.w === w;
   $('#fb-tab-ai').hidden = !canAsk;
   if (canAsk) aiPane.appendChild(askBox(q));
@@ -2914,7 +2915,7 @@ function openSheet(w, more = []) {
   $('#feedback').hidden = false;
   // 시트에 가리지 않게 문장 아래 여백
   // 넓은 컴퓨터 화면에선 정답 시트가 오른쪽 칸이라 여백 필요 없음
-  if (!wideDesk()) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
+  requestAnimationFrame(sheetPad);
   $('#fb-mean').scrollTop = 0;
 }
 
@@ -3051,11 +3052,18 @@ function askBox(cur) {
   const log = el('div', 'ask-log');
   box.append(chips, form, log);
   let busy = false;
+  // 아직 아무것도 안 물었으면 낮게, 이야기가 생기면 대화창처럼 높게 (style.css .ask.chatting)
+  const setChat = () => {
+    const on = cur.ask.length > 0 || busy;
+    if (on === box.classList.contains('chatting')) return;
+    const flip = () => { box.classList.toggle('chatting', on); $('#feedback').classList.toggle('chatting', on); };
+    if (box.isConnected && !$('#fb-ai').hidden) slideSheet(flip); else flip();
+  };
   const draw = () => {
+    setChat();
     log.innerHTML = '';
     for (const m of cur.ask) log.appendChild(el('div', 'ask-msg ' + m.who + (m.err ? ' err' : ''), m.text));
     if (busy) log.appendChild(el('div', 'ask-msg ai wait', 'AI가 답 쓰는 중…'));
-    log.hidden = !log.children.length;
     const asked = new Set(cur.ask.filter(m => m.who === 'me').map(m => m.text));
     chips.innerHTML = '';
     for (const t of [...(!cur.fbCorrect ? ['왜 틀렸어?'] : []), ...ASK_QUICK]) {
@@ -3069,7 +3077,7 @@ function askBox(cur) {
     chips.hidden = !chips.children.length;
     inp.disabled = send.disabled = busy;
   };
-  const toEnd = () => { const last = log.lastElementChild; if (last) last.scrollIntoView({ block: 'nearest' }); };
+  const toEnd = () => { log.scrollTop = log.scrollHeight; };
   async function submit(text) {
     text = String(text || '').trim();
     if (!text || busy || q !== cur) return;
@@ -3091,7 +3099,7 @@ function askBox(cur) {
     draw();
     // 새 답의 첫머리가 보이게 (긴 답이면 위부터 읽게)
     const ans = log.lastElementChild;
-    if (ans) ans.scrollIntoView({ block: ans.offsetHeight > box.parentElement.clientHeight ? 'start' : 'nearest' });
+    if (ans) log.scrollTop = ans.offsetHeight > log.clientHeight ? ans.offsetTop - log.offsetTop : log.scrollHeight;
   }
   form.addEventListener('submit', e => { e.preventDefault(); submit(inp.value); });
   // 칸에 쓰는 동안 퀴즈 단축키(Enter 계속하기, Space 형광펜, Shift 등)가 눌리지 않게
@@ -3101,15 +3109,75 @@ function askBox(cur) {
   };
   inp.addEventListener('keydown', keep);
   inp.addEventListener('keyup', keep);
+  // 폰에서 칸을 누르면 키보드가 올라옴: 시트를 키보드 바로 위로 올리고 보이는 만큼 채움, 아래 버튼 줄은 잠깐 숨김
+  const vv = window.visualViewport;
+  const sheet = $('#feedback'), inner = sheet.querySelector('.sheet-inner');
+  const lift = () => {
+    if (!vv || !sheet.classList.contains('typing')) return;
+    const under = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    sheet.style.bottom = `${under}px`;
+    inner.style.height = inner.style.maxHeight = `${Math.max(240, vv.height - 8)}px`;
+  };
+  const drop = () => {
+    sheet.classList.remove('typing');
+    sheet.style.bottom = inner.style.height = inner.style.maxHeight = '';
+    if (vv) { vv.removeEventListener('resize', lift); vv.removeEventListener('scroll', lift); }
+    sheetPad();
+  };
+  if (!DESK) {
+    inp.addEventListener('focus', () => {
+      sheet.classList.add('typing');
+      if (vv) { vv.addEventListener('resize', lift); vv.addEventListener('scroll', lift); }
+      lift();
+    });
+    inp.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== inp) drop(); }, 120));
+  }
   draw();
   return box;
 }
 
+// 정답 시트 탭: 탭마다 시트 크기·모양이 다름 (style.css #feedback[data-tab]).
+// 뜻 = 내용만큼 낮게, 예문 = 조금 더 높게, AI = 대화창처럼 높게(빠른 질문·입력칸은 위에 고정, 이야기만 스크롤)
+// 바꿀 때 높이가 툭 바뀌지 않게 지금 높이에서 새 높이로 미끄러지듯
+const calmMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+function sheetPad() {
+  if (wideDesk() || $('#feedback').hidden) return;
+  $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`;
+}
+// change()로 시트 안을 바꾸고, 높이가 바뀌었으면 전 높이에서 새 높이로 미끄러지듯
+function slideSheet(change) {
+  const fb = $('#feedback'), inner = fb.querySelector('.sheet-inner');
+  const from = fb.hidden ? 0 : inner.offsetHeight;
+  inner.style.transition = inner.style.height = '';
+  change();
+  const to = inner.offsetHeight;
+  if (!from || Math.abs(to - from) < 3 || calmMotion() || fb.classList.contains('typing')) { sheetPad(); return; }
+  inner.style.height = `${from}px`;
+  void inner.offsetHeight;
+  inner.style.transition = 'height .3s cubic-bezier(.22, 1, .36, 1)';
+  inner.style.height = `${to}px`;
+  const mark = inner.dataset.slide = String(Date.now() + Math.random());
+  const end = () => {
+    inner.removeEventListener('transitionend', end);
+    if (inner.dataset.slide !== mark) return; // 그새 또 바뀜
+    inner.style.transition = inner.style.height = '';
+    sheetPad();
+  };
+  inner.addEventListener('transitionend', end);
+  setTimeout(end, 400); // transitionend가 안 오는 때도 있어서
+}
 function setFbTab(t) {
-  document.querySelectorAll('#fb-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
-  $('#fb-mean').hidden = t !== 'mean';
-  $('#fb-ex').hidden = t !== 'ex';
-  $('#fb-ai').hidden = t !== 'ai';
+  const fb = $('#feedback');
+  if (fb.dataset.tab === t && !fb.hidden) return;
+  slideSheet(() => {
+    document.querySelectorAll('#fb-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+    $('#fb-mean').hidden = t !== 'mean';
+    $('#fb-ex').hidden = t !== 'ex';
+    $('#fb-ai').hidden = t !== 'ai';
+    fb.dataset.tab = t;
+  });
+  if (t === 'ai') { const log = $('#fb-ai .ask-log'); if (log) log.scrollTop = log.scrollHeight; } // 마지막 이야기부터
+  else $(t === 'ex' ? '#fb-ex' : '#fb-mean').scrollTop = 0;
 }
 
 // 그만하기: 진행 상황은 저장되어 있어 홈에서 이어하기 가능. 단어장에서 시작한 학습이면 단어장으로
