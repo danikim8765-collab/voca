@@ -5,7 +5,7 @@ import {
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
-import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, normKey, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
+import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
 import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js';
@@ -4035,15 +4035,17 @@ function bind() {
   // Shift·Ctrl·Alt·⌘에 붙인 동작은 그 키만 눌렀다 뗄 때 (대문자 치려고 Shift+글자를 누른 건 아님)
   let modAlone = null;
   document.addEventListener('keydown', e => {
-    const c = normKey(e.code);
+    const c = keyOf(e);
     const others = { Shift: e.shiftKey, Control: e.ctrlKey, Alt: e.altKey, Meta: e.metaKey };
     modAlone = isModKey(c) && !e.repeat && !Object.keys(others).some(m => m !== modBase(c) && others[m]) ? c : null;
   }, true);
   document.addEventListener('keyup', e => {
-    const c = normKey(e.code);
-    if (!modAlone || c !== modAlone) return;
+    const c = keyOf(e);
+    // 떼는 키 이름이 비거나 쪽이 다르게 오는 키보드도 있어서, 같은 조합 키면 누를 때 이름으로
+    if (!modAlone || (c !== modAlone && c && modBase(c) !== modBase(modAlone))) return;
+    const k = modAlone;
     modAlone = null;
-    const a = current === 'quiz' && !keyCapture ? actionFor(keymap, c) : null;
+    const a = current === 'quiz' && !keyCapture ? actionFor(keymap, k) : null;
     if (a) quizKey(a);
   });
   document.addEventListener('pointerdown', () => { modAlone = null; }, true);
@@ -4062,7 +4064,7 @@ function bind() {
     }
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey;
     const typing = !!(kb && q && !q.answered);
-    const code = normKey(e.code);
+    const code = keyOf(e);
     if (plain && !e.isComposing && !isModKey(code)) {
       // 답하는 중엔 글자 키가 입력으로 먼저 감 (앱 키보드·글 칸)
       const answering = q && !q.answered && !fb;
@@ -4158,17 +4160,19 @@ function startKeyCapture(a, b) {
   };
   const down = e => {
     e.preventDefault(); e.stopPropagation();
-    const c = normKey(e.code);
+    const c = keyOf(e);
     if (isModKey(c)) { if (!e.repeat) mod = c; return; }
     mod = null;
     if (e.ctrlKey || e.metaKey || e.altKey) { toast('Ctrl·Alt·⌘와 같이 누르는 키는 못 써요'); return; }
     if (c === 'Backspace' || c === 'Delete') { finish(''); return; }
-    if (!c || c === 'Enter' || c === 'Tab') { toast('Enter·Tab은 바꿀 수 없어요'); return; }
+    if (!c) { toast('이 키는 알아볼 수 없어요. 다른 키를 눌러 주세요'); return; }
+    if (c === 'Enter' || c === 'Tab') { toast('Enter·Tab은 바꿀 수 없어요'); return; }
     finish(c);
   };
   const up = e => {
     e.preventDefault(); e.stopPropagation();
-    if (mod && normKey(e.code) === mod) finish(mod);
+    const u = keyOf(e);
+    if (mod && (u === mod || !u || modBase(u) === modBase(mod))) finish(mod);
   };
   const away = e => { if (e.target !== b) stopKeyCapture(); };
   // window에서 먼저 받아 다른 화면 단축키(Esc로 뒤로 등)가 먹지 않게
