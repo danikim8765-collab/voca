@@ -397,17 +397,21 @@ export function displayAnswer(word) {
 // ---------- 간격 반복 (단계 0~4) ----------
 // 힌트 없이 맞히면 단계 +1 → 올라간 단계에 따라 1·3·7·14일 뒤 복습.
 // 힌트 쓰고 맞히면 단계 그대로 내일, 틀리면 단계 0으로 내일. 날짜는 기기 현지 날짜 'YYYY-MM-DD'.
+// 하루는 새벽 4시에 바뀜: 0시~3시 59분은 아직 전날이라 그 시간에 공부해도 전날 몫으로 침
 export const STAGE_DAYS = [1, 1, 3, 7, 14]; // 단계 st가 된 뒤 다음 복습까지 일수
 export const MAX_STAGE = 4;
 
+export const DAY_START_HOUR = 4;
 const pad2 = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 export function dateStr(t = Date.now()) {
   const d = new Date(t);
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  d.setHours(d.getHours() - DAY_START_HOUR); // 서머타임이 있어도 현지 시각 기준으로 4시간 당김
+  return ymd(d);
 }
 export function addDays(day, n) {
   const [y, m, d] = day.split('-').map(Number);
-  return dateStr(new Date(y, m - 1, d + n).getTime());
+  return ymd(new Date(y, m - 1, d + n, 12)); // 날짜 계산이라 4시 경계와 상관없게 한낮으로
 }
 export function daysBetween(from, to) {
   const u = s => { const [y, m, d] = s.split('-').map(Number); return Date.UTC(y, m - 1, d); };

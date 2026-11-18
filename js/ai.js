@@ -4,7 +4,7 @@
 // AIza… = Google Gemini(무료 등급), sk-ant-… = Anthropic Claude(유료: 가벼운 일은 Haiku, 코치와 이야기하기만 Sonnet)
 // 서버 없이 브라우저에서 바로 부른다. 키는 이 기기의 localStorage에만 저장 (동기화 안 함)
 
-import { meaningBlocks } from './core.js';
+import { meaningBlocks, dateStr } from './core.js';
 
 const KEY = 'voca.ai.v1'; // { key, provider, model } 두 모드가 같이 씀
 // 코치용 키 (따로 넣었을 때만). 없으면 코치도 위의 키를 씀. 채점은 빠른 AI, 코치 말은 한국어가 자연스러운 AI처럼 나눠 쓰려고
@@ -471,7 +471,7 @@ export async function aiHint({ word, meaning, sentences, answers, user }) {
 // 코치용 키를 따로 넣었으면 채점과 한도를 나눠 쓰지 않으니 더 넉넉하게
 const coachDaily = () => (aiHasKey('coach') ? 100 : 30);
 const USE_KEY = 'voca.ai.coachuse.v1'; // { d: 날짜, n: 오늘 부른 횟수 }
-const today = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
+const today = () => dateStr(); // 하루는 새벽 4시에 바뀜 (core.js)
 function takeCoachTurn() {
   let u = {};
   try { u = JSON.parse(localStorage.getItem(USE_KEY)) || {}; } catch {}
