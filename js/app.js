@@ -6,7 +6,7 @@ import {
 } from './core.js';
 import { createSync } from './sync.js';
 import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
-import { aiGradeMeaning, aiExplainWrong, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
+import { aiGradeMeaning, aiExplainWrong, aiAskWord, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
 import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js';
 import { reportRepo, reportReasons, reportText, issueUrl, pushError, REPORT_FORM, formReady, formRequest, queueReport } from './report.js';
@@ -1972,7 +1972,7 @@ function synAnswer(correct, given, kind) {
 
 function showSynFeedback(correct, given, kind, label) {
   const { w, syn: sq } = q;
-  Object.assign(q, { fbGiven: given, fbLabel: label }); // 버그 신고에 붙임
+  Object.assign(q, { fbGiven: given, fbLabel: label, fbCorrect: correct }); // 버그 신고·'AI에게 묻기'에 붙임
   const state = correct ? 'ok' : kind === 'hint' ? 'hint' : 'bad';
   answerFx(state);
   const head = $('#fb-head');
@@ -2858,7 +2858,7 @@ function showFeedback(correct, given, kind, label) {
   setFbCoach(state);
   const more = [];
   if (q.choices && !correct) more.push(choiceNotes(q.choices, w, q.picked));
-  if (WORD && !correct && kind !== 'hint' && q.userAnswer && aiOnline()) more.push(explainBox(q));
+  Object.assign(q, { fbCorrect: correct, fbWhy: WORD && !correct && kind !== 'hint' && !!q.userAnswer }); // 'AI에게 묻기'에 씀
   openSheet(w, more);
 }
 
@@ -2903,12 +2903,19 @@ function openSheet(w, more = []) {
   [[w.ex1, w.ex1ko, w.ex1src], [w.ex2, w.ex2ko, w.ex2src]].forEach(([en, ko, src], i) => {
     if (en) exPane.appendChild(sentenceCard(makeBlanks(en, w.blank, w.word), ko, i + 1, true, false, w, src));
   });
+  // AI 탭: AI가 켜져 있고 인터넷이 될 때만
+  const aiPane = $('#fb-ai');
+  aiPane.innerHTML = '';
+  $('#feedback').classList.remove('chatting');
+  const canAsk = aiCoachOnline() && !!q && q.w === w;
+  $('#fb-tab-ai').hidden = !canAsk;
+  if (canAsk) aiPane.appendChild(askBox(q));
   setFbTab('mean');
 
   $('#feedback').hidden = false;
   // 시트에 가리지 않게 문장 아래 여백
   // 넓은 컴퓨터 화면에선 정답 시트가 오른쪽 칸이라 여백 필요 없음
-  if (!wideDesk()) requestAnimationFrame(() => { $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`; });
+  requestAnimationFrame(sheetPad);
   $('#fb-mean').scrollTop = 0;
 }
 
@@ -3021,29 +3028,156 @@ function openReport(ctx) {
   };
 }
 
-// 단어 모드 오답: 누르면 AI가 왜 틀렸는지 설명 (AI 사용 스위치가 켜져 있고 인터넷이 될 때만 보임)
-function explainBox(cur) {
-  const box = el('div', 'fb-card explain');
-  const btn = el('button', 'btn secondary small', `🤖 왜 틀렸어?`);
-  box.appendChild(btn);
-  const showText = t => { box.innerHTML = ''; box.append(el('b', null, `AI 설명`), el('div', 'explain-text', t)); };
-  if (cur.explain) { showText(cur.explain); return box; }
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    btn.textContent = `AI가 설명 쓰는 중…`;
-    const t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
-    if (t) { cur.explain = t; showText(t); return; }
-    btn.disabled = false;
-    btn.textContent = '🤖 다시 시도';
-    toast('설명을 받지 못했어요. 인터넷이나 무료 한도를 확인해 주세요', 3000);
-  });
+// 정답 시트 'AI에게 묻기': 모든 문제에서 그 단어를 두고 물어봄. 누르고 보낼 때만 AI를 부름 (AI가 켜져 있고 인터넷이 될 때만 보임)
+// 이야기는 그 문제(q.ask)에만 남고 다음 문제로 넘어가면 사라짐. 코치용 키가 있으면 그 키로
+const ASK_QUICK = ['외우는 요령', '비슷한 단어와 차이', '어원 알려 줘', '다른 예문 보여 줘'];
+function askProblemOf(cur) {
+  const w = cur.w;
+  const ex = [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].filter(([en]) => en).map(([en, ko]) => ({ en, ko }));
+  const pick = settings.kind !== 'type';
+  const mode = cur.syn ? '유의어·반의어 고르기' : WORD ? `영단어 보고 한글 뜻 ${pick ? '고르기(4지선다)' : '쓰기'}` : `예문 빈칸에 들어갈 영단어 ${pick ? '고르기(4지선다)' : '쓰기'}`;
+  return { word: w.word, pos: w.pos, meaning: w.meaning, mode, examples: ex, extras: w.extras, user: cur.fbGiven || '', result: cur.fbLabel || (cur.fbCorrect ? '정답' : '오답') };
+}
+function askBox(cur) {
+  const box = el('div', 'ask');
+  cur.ask = cur.ask || [];
+  // 위에서부터: 빠른 질문 → 입력칸 → 주고받은 이야기 (보낸 뒤엔 새 답이 보이게 내려 줌)
+  const chips = el('div', 'chips ask-chips');
+  const form = el('form', 'ask-form');
+  const inp = el('input');
+  Object.assign(inp, { type: 'text', placeholder: `${cur.w.word}에 대해 물어보기`, maxLength: 300, enterKeyHint: 'send', autocomplete: 'off' });
+  const send = el('button', 'btn primary small', '보내기');
+  send.type = 'submit';
+  form.append(inp, send);
+  const log = el('div', 'ask-log');
+  box.append(chips, form, log);
+  let busy = false;
+  // 아직 아무것도 안 물었으면 낮게, 이야기가 생기면 대화창처럼 높게 (style.css .ask.chatting)
+  const setChat = () => {
+    const on = cur.ask.length > 0 || busy;
+    if (on === box.classList.contains('chatting')) return;
+    const flip = () => { box.classList.toggle('chatting', on); $('#feedback').classList.toggle('chatting', on); };
+    if (box.isConnected && !$('#fb-ai').hidden) slideSheet(flip); else flip();
+  };
+  const draw = () => {
+    setChat();
+    log.innerHTML = '';
+    for (const m of cur.ask) log.appendChild(el('div', 'ask-msg ' + m.who + (m.err ? ' err' : ''), m.text));
+    if (busy) log.appendChild(el('div', 'ask-msg ai wait', 'AI가 답 쓰는 중…'));
+    const asked = new Set(cur.ask.filter(m => m.who === 'me').map(m => m.text));
+    chips.innerHTML = '';
+    for (const t of [...(!cur.fbCorrect ? ['왜 틀렸어?'] : []), ...ASK_QUICK]) {
+      if (asked.has(t)) continue; // 이미 물은 건 뺌
+      const c = el('button', 'chip', t);
+      c.type = 'button';
+      c.disabled = busy;
+      c.addEventListener('click', () => submit(t));
+      chips.appendChild(c);
+    }
+    chips.hidden = !chips.children.length;
+    inp.disabled = send.disabled = busy;
+  };
+  const toEnd = () => { log.scrollTop = log.scrollHeight; };
+  async function submit(text) {
+    text = String(text || '').trim();
+    if (!text || busy || q !== cur) return;
+    cur.ask = cur.ask.filter(m => !m.err); // 지난번 못 받은 알림은 지움
+    const history = cur.ask.slice();
+    cur.ask.push({ who: 'me', text });
+    inp.value = '';
+    busy = true; draw(); toEnd();
+    let t = null;
+    // 단어 모드 오답의 '왜 틀렸어?'는 예전처럼 설명용으로 (같은 답이면 지난번 설명을 기억해 둔 걸로)
+    if (text === '왜 틀렸어?' && cur.fbWhy && !history.length) {
+      t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
+    }
+    if (!t) t = await aiAskWord({ problem: askProblemOf(cur), history, message: text });
+    busy = false;
+    if (q !== cur) return; // 그새 다음 문제로 넘어감
+    cur.ask.push(t ? { who: 'ai', text: t } : { who: 'ai', text: coachErrorText(), err: true });
+    if (!t) { inp.value = text; cur.ask.splice(-2, 1); } // 못 받았으면 물은 말을 칸에 돌려놓아 다시 보내게
+    draw();
+    // 새 답의 첫머리가 보이게 (긴 답이면 위부터 읽게)
+    const ans = log.lastElementChild;
+    if (ans) log.scrollTop = ans.offsetHeight > log.clientHeight ? ans.offsetTop - log.offsetTop : log.scrollHeight;
+  }
+  form.addEventListener('submit', e => { e.preventDefault(); submit(inp.value); });
+  // 칸에 쓰는 동안 퀴즈 단축키(Enter 계속하기, Space 형광펜, Shift 등)가 눌리지 않게
+  const keep = e => {
+    e.stopPropagation();
+    if (e.type === 'keydown' && e.key === 'Escape') inp.blur();
+  };
+  inp.addEventListener('keydown', keep);
+  inp.addEventListener('keyup', keep);
+  // 폰에서 칸을 누르면 키보드가 올라옴: 시트를 키보드 바로 위로 올리고 보이는 만큼 채움, 아래 버튼 줄은 잠깐 숨김
+  const vv = window.visualViewport;
+  const sheet = $('#feedback'), inner = sheet.querySelector('.sheet-inner');
+  const lift = () => {
+    if (!vv || !sheet.classList.contains('typing')) return;
+    const under = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    sheet.style.bottom = `${under}px`;
+    inner.style.height = inner.style.maxHeight = `${Math.max(240, vv.height - 8)}px`;
+  };
+  const drop = () => {
+    sheet.classList.remove('typing');
+    sheet.style.bottom = inner.style.height = inner.style.maxHeight = '';
+    if (vv) { vv.removeEventListener('resize', lift); vv.removeEventListener('scroll', lift); }
+    sheetPad();
+  };
+  if (!DESK) {
+    inp.addEventListener('focus', () => {
+      sheet.classList.add('typing');
+      if (vv) { vv.addEventListener('resize', lift); vv.addEventListener('scroll', lift); }
+      lift();
+    });
+    inp.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== inp) drop(); }, 120));
+  }
+  draw();
   return box;
 }
 
+// 정답 시트 탭: 탭마다 시트 크기·모양이 다름 (style.css #feedback[data-tab]).
+// 뜻 = 내용만큼 낮게, 예문 = 조금 더 높게, AI = 대화창처럼 높게(빠른 질문·입력칸은 위에 고정, 이야기만 스크롤)
+// 바꿀 때 높이가 툭 바뀌지 않게 지금 높이에서 새 높이로 미끄러지듯
+const calmMotion = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+function sheetPad() {
+  if (wideDesk() || $('#feedback').hidden) return;
+  $('.quiz-body').style.paddingBottom = `${$('#feedback .sheet-inner').offsetHeight + 16}px`;
+}
+// change()로 시트 안을 바꾸고, 높이가 바뀌었으면 전 높이에서 새 높이로 미끄러지듯
+function slideSheet(change) {
+  const fb = $('#feedback'), inner = fb.querySelector('.sheet-inner');
+  const from = fb.hidden ? 0 : inner.offsetHeight;
+  inner.style.transition = inner.style.height = '';
+  change();
+  const to = inner.offsetHeight;
+  if (!from || Math.abs(to - from) < 3 || calmMotion() || fb.classList.contains('typing')) { sheetPad(); return; }
+  inner.style.height = `${from}px`;
+  void inner.offsetHeight;
+  inner.style.transition = 'height .3s cubic-bezier(.22, 1, .36, 1)';
+  inner.style.height = `${to}px`;
+  const mark = inner.dataset.slide = String(Date.now() + Math.random());
+  const end = () => {
+    inner.removeEventListener('transitionend', end);
+    if (inner.dataset.slide !== mark) return; // 그새 또 바뀜
+    inner.style.transition = inner.style.height = '';
+    sheetPad();
+  };
+  inner.addEventListener('transitionend', end);
+  setTimeout(end, 400); // transitionend가 안 오는 때도 있어서
+}
 function setFbTab(t) {
-  document.querySelectorAll('#fb-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
-  $('#fb-mean').hidden = t !== 'mean';
-  $('#fb-ex').hidden = t !== 'ex';
+  const fb = $('#feedback');
+  if (fb.dataset.tab === t && !fb.hidden) return;
+  slideSheet(() => {
+    document.querySelectorAll('#fb-tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+    $('#fb-mean').hidden = t !== 'mean';
+    $('#fb-ex').hidden = t !== 'ex';
+    $('#fb-ai').hidden = t !== 'ai';
+    fb.dataset.tab = t;
+  });
+  if (t === 'ai') { const log = $('#fb-ai .ask-log'); if (log) log.scrollTop = log.scrollHeight; } // 마지막 이야기부터
+  else $(t === 'ex' ? '#fb-ex' : '#fb-mean').scrollTop = 0;
 }
 
 // 그만하기: 진행 상황은 저장되어 있어 홈에서 이어하기 가능. 단어장에서 시작한 학습이면 단어장으로

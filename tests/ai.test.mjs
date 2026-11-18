@@ -605,3 +605,38 @@ test('토큰 아끼기: 창 밖으로 밀려난 이야기는 요약해서 같이
   reply = () => json({ error: { message: 'rate' } }, 429);
   assert.equal(await aiCoachSummary({ history: history.slice(0, 3) }), null);
 });
+
+test("'AI에게 묻기': 문제 정보·앞선 이야기를 같이 보내고, 코치 키가 있으면 그 키로", async () => {
+  const { aiAskWord, askProblem } = await import('../js/ai.js');
+  const problem = {
+    word: 'fatal', pos: 'a.', meaning: '1. 치명적인 2. 결정적인', mode: '예문 빈칸에 들어갈 영단어 쓰기',
+    examples: [{ en: 'a fatal mistake', ko: '치명적인 실수' }, { en: '' }], extras: [['유의어', 'deadly']], user: '<b>vital</b>', result: '오답',
+  };
+  const txt = askProblem(problem);
+  assert.match(txt, /단어: fatal \(a\.\)/);
+  assert.match(txt, /예문 1: a fatal mistake\n {2}해석: 치명적인 실수/);
+  assert.doesNotMatch(txt, /예문 2/);
+  assert.match(txt, /유의어: deadly/);
+  assert.match(txt, /학생 답: b vital \/b/); // < > 는 지움
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k-main' }));
+  store.set('voca.ai.coach.v1', JSON.stringify({ key: 'k-coach' }));
+  reply = () => json({ stop_reason: 'end_turn', content: [{ type: 'text', text: '**라틴어** fatum(운명)에서 왔어요.' }] });
+  const out = await aiAskWord({ problem, history: [{ who: 'me', text: '뜻 차이?' }, { who: 'ai', text: '비슷해요.' }], message: '어원은?' });
+  assert.equal(out, '라틴어 fatum(운명)에서 왔어요.');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].opts.headers['x-api-key'], 'k-coach');
+  const body = JSON.parse(calls[0].opts.body);
+  const sent = JSON.stringify(body.messages[0].content);
+  assert.match(sent, /<problem>/);
+  assert.match(sent, /학생: 뜻 차이\?/);
+  assert.match(sent, /선생님: 비슷해요\./);
+  assert.match(sent, /<question>어원은\?<\/question>/);
+  // 실패면 null, 까닭은 aiCoachError()
+  reply = () => json({}, 401);
+  assert.equal(await aiAskWord({ problem, message: '또?' }), null);
+  assert.equal(aiCoachError(), '401');
+  online = false;
+  calls = [];
+  assert.equal(await aiAskWord({ problem, message: '또?' }), null);
+  assert.equal(calls.length, 0);
+});
