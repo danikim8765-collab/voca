@@ -53,6 +53,7 @@ const ICON = {
   grid: svgIcon('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'),
   lines: svgIcon('<path d="M4 6h4M11 6h9M4 12h4M11 12h6M4 18h4M11 18h8"/>'),
   heat: svgIcon('<rect x="3.5" y="3.5" width="4" height="4" rx="1"/><rect x="10" y="3.5" width="4" height="4" rx="1" fill="currentColor"/><rect x="16.5" y="3.5" width="4" height="4" rx="1"/><rect x="3.5" y="10" width="4" height="4" rx="1" fill="currentColor"/><rect x="10" y="10" width="4" height="4" rx="1"/><rect x="16.5" y="10" width="4" height="4" rx="1" fill="currentColor"/><rect x="3.5" y="16.5" width="4" height="4" rx="1"/><rect x="10" y="16.5" width="4" height="4" rx="1" fill="currentColor"/><rect x="16.5" y="16.5" width="4" height="4" rx="1"/>'),
+  down: svgIcon('<path d="m6 9 6 6 6-6"/>'),
   mark: svgIcon('<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>'),
 };
 // 아이콘 + 글자 버튼: 글자만 바꿀 땐 setLabel (아이콘은 그대로)
@@ -593,7 +594,10 @@ function renderHome() {
   const rc = $('#resume-card');
   if (saved && saved.queue && saved.pos < saved.queue.length && saved.date === dateStr()) {
     rc.hidden = false;
-    $('#resume-info').textContent = `${saved.label} · ${saved.done.length}/${saved.total} 완료`;
+    // 좁으면 '학습 이름'과 '몇 개 완료' 사이에서만 줄이 바뀌게 (낱말 중간 '완/료'에서 갈리지 않게)
+    const info = $('#resume-info');
+    info.innerHTML = '';
+    info.append(saved.label, ' · ', el('span', 'nobr', `${saved.done.length}/${saved.total} 완료`));
   } else rc.hidden = true;
 }
 
@@ -1919,9 +1923,10 @@ function renderSynQuestion(w) {
   setLabel($('#btn-hint'), '힌트');
   $('#btn-idk').hidden = false;
   const actions = $('#q-actions');
+  unpinChoices();
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode', 'pin-choices');
+  $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
   sq.options.forEach((o, i) => {
     const b = el('button', 'choice');
@@ -2049,21 +2054,32 @@ function renderQuestion() {
   setLabel($('#btn-hint'), '힌트');
 
   const actions = $('#q-actions');
+  unpinChoices();
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode', 'pin-choices');
+  $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderTyping(actions);
   else {
     renderChoices(actions);
     if (q.usedHint) { strikeChoices(); setHintButtons(null); }
     actions.dataset.layout = ui.choiceLayout;
-    // 폰: 예문이 길면 선지가 화면 밖으로 밀려나서, 선지를 2×2로 화면 아래에 고정하고 문장 아래 여백 확보
+    // 폰·태블릿: 선지를 2×2로. 예문 바로 아래에 두되, 한 화면에 다 안 들어가면 화면 아래에 고정 (placeChoices)
     if (!DESK) {
-      $('#quiz').classList.add('pin-choices');
-      if (ui.choiceLayout === 'grid') actions.prepend(leanBar(actions)); // 쏠림은 격자에서만
-      else delete actions.dataset.lean;
-      pinSpace();
+      $('#quiz').classList.add('phone-choices');
+      const row = el('div', 'pin-row');
+      const grid = ui.choiceLayout === 'grid';
+      if (!grid) delete actions.dataset.lean;
+      const more = iconBtn('more-btn', 'down', '더 보기');
+      more.type = 'button';
+      more.hidden = true;
+      more.setAttribute('aria-label', '아래 예문 더 보기');
+      more.addEventListener('click', () => window.scrollBy({ top: Math.round(window.innerHeight * 0.5), behavior: calmMotion() ? 'auto' : 'smooth' }));
+      row.append(el('div', 'pin-slot'), grid ? leanBar(actions) : el('div'), more); // 쏠림은 격자에서만
+      row.dataset.lean = grid ? '1' : '';
+      actions.prepend(row);
+      placeChoices();
+      requestAnimationFrame(placeChoices); // 글꼴이 늦게 그려져 높이가 바뀌는 때를 위해 한 번 더
     }
     fitChoices();
   }
@@ -2093,15 +2109,58 @@ function choiceNotes(choices, right, picked) {
   return card;
 }
 
-// 폰 4지선다: 아래 고정된 보기 높이만큼 문장 아래 여백. 힌트 버튼은 보기 바로 위에 떠 있으니(style.css .pin-choices .q-tools) 그만큼 더.
+// 폰 4지선다: 아래 고정된 보기 높이만큼 문장 아래 여백 (힌트 버튼은 고정된 칸 위쪽 줄 안에 있음)
 // 쏠림을 바꾸거나 화면을 돌려 보기 높이가 바뀌어도 다시 맞춤
 function pinSpace() {
   if (!$('#quiz').classList.contains('pin-choices')) return;
   const h = $('#q-actions').offsetHeight;
   $('#quiz').style.setProperty('--pin-h', `${h}px`);
-  $('.quiz-body').style.paddingBottom = `${h + 12 + ($('#btn-hint').hidden ? 0 : 44)}px`;
+  $('.quiz-body').style.paddingBottom = `${h + 12}px`;
+  moreBelow();
 }
 if (typeof ResizeObserver !== 'undefined') new ResizeObserver(pinSpace).observe($('#q-actions'));
+
+// 폰·태블릿 4지선다 자리: 예문 바로 아래에 둬서 한 화면에 다 보이면 그대로(아이패드 세로처럼 큰 화면은 보통 이쪽),
+// 넘치면 화면 아래에 고정. 고정할 땐 힌트 버튼도 고정된 칸 위쪽 줄로 옮겨서 예문 글자를 가리지 않게
+const qTools = $('.q-tools'), qToolsHome = qTools.parentNode, qToolsNext = qTools.nextSibling;
+function unpinChoices() {
+  if (qTools.parentNode !== qToolsHome) qToolsHome.insertBefore(qTools, qToolsNext);
+  $('#quiz').classList.remove('pin-choices');
+  $('.quiz-body').style.paddingBottom = '';
+}
+function placeChoices() {
+  const quiz = $('#quiz'), actions = $('#q-actions'), row = actions.querySelector('.pin-row');
+  if (!quiz.classList.contains('phone-choices') || !row || !$('#feedback').hidden || (q && q.answered)) return;
+  unpinChoices();
+  row.hidden = !row.dataset.lean;
+  const bottom = actions.getBoundingClientRect().bottom + window.scrollY;
+  if (bottom > window.innerHeight - 4) {
+    quiz.classList.add('pin-choices');
+    row.hidden = false;
+    row.firstChild.appendChild(qTools);
+    pinSpace();
+  }
+  moreBelow();
+}
+// 고정된 선지 아래에 가려진 예문이 남았으면 '더 보기' (끝까지 내리면 숨김)
+function moreBelow() {
+  const btn = $('#q-actions .more-btn');
+  if (!btn) return;
+  // 마지막 예문의 글자가 고정된 선지 칸 뒤에 가려졌을 때만 (카드 아래 여백만 가린 건 괜찮음)
+  const texts = $('#q-sentences').querySelectorAll('.en, .ko');
+  const last = texts[texts.length - 1];
+  const hidden = last && last.getBoundingClientRect().bottom > $('#q-actions').getBoundingClientRect().top + 4;
+  btn.hidden = !$('#quiz').classList.contains('pin-choices') || !hidden;
+}
+window.addEventListener('scroll', () => { if (current === 'quiz') moreBelow(); }, { passive: true });
+// 화면을 돌리거나 창 크기가 바뀌면 다시 정함 (폰 주소창이 들어가고 나오는 작은 높이 변화는 무시)
+let placeSize = [window.innerWidth, window.innerHeight];
+window.addEventListener('resize', () => {
+  const [w, h] = placeSize;
+  if (w === window.innerWidth && Math.abs(h - window.innerHeight) < 90) { moreBelow(); return; }
+  placeSize = [window.innerWidth, window.innerHeight];
+  if (current === 'quiz') placeChoices();
+});
 
 // 컴퓨터: 선지가 창 아래로 넘치면(낮은 창, 긴 예문) 2×2로 줄여서 한 화면에
 function fitChoices() {
@@ -2149,9 +2208,10 @@ function renderWordQuestion(w) {
   setLabel($('#btn-hint'), '힌트');
   $('#btn-idk').hidden = false;
   const actions = $('#q-actions');
+  unpinChoices();
   actions.innerHTML = '';
   kb = null;
-  $('#quiz').classList.remove('kb-mode', 'pin-choices');
+  $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
   if (settings.kind === 'type') renderMeaningTyping(actions);
   else { renderMeaningChoices(actions); fitChoices(); }
@@ -2848,11 +2908,13 @@ function showFeedback(correct, given, kind, label) {
   $('#btn-hint').hidden = true;
   $('#btn-idk').hidden = true;
   if (settings.kind === 'type') {
+    unpinChoices();
     $('#q-actions').innerHTML = '';
-    $('#quiz').classList.remove('kb-mode', 'pin-choices');
+    $('#quiz').classList.remove('kb-mode', 'phone-choices');
   } else if ($('#quiz').classList.contains('pin-choices')) {
-    $('#quiz').classList.remove('pin-choices'); // 정답 시트가 아래를 덮으니 고정은 풂
-    $('.quiz-body').style.paddingBottom = '';
+    unpinChoices(); // 정답 시트가 아래를 덮으니 고정은 풂 (선지는 2×2 그대로 예문 아래에)
+    const more = $('#q-actions .more-btn');
+    if (more) more.hidden = true;
   }
 
   setFbCoach(state);
