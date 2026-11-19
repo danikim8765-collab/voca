@@ -555,14 +555,58 @@ export function examDue(today, i, exam, opt = {}) {
 export const isDue = (s, today) => !!(s && s.due && s.due <= today);
 
 /**
+ * 밀린 복습의 위험도: 지난번에 본 뒤 지난 날 ÷ 원래 잡혀 있던 간격. 클수록 까먹었을 가능성이 큼
+ * (간격 1일짜리가 사흘 밀린 것(3) > 14일짜리가 사흘 밀린 것(17/14)). 밀린 게 많아 다 못 할 때 이 순서로 먼저
+ */
+export function dueRisk(s, today) {
+  if (!s || !s.due) return 0;
+  const last = s.s ? dateStr(s.s) : '';
+  if (!last || last >= s.due) return daysBetween(s.due, today) + 1; // 지난번에 본 날을 모르면 밀린 날 수로
+  return daysBetween(last, today) / Math.max(1, daysBetween(last, s.due));
+}
+// 복습일 된 단어 순서: 위험한 것부터, 같으면 오래 밀린 것·단계 낮은 것부터
+export const byRisk = (today, st) => (a, b) => {
+  const x = st(a.id), y = st(b.id);
+  return dueRisk(y, today) - dueRisk(x, today) || x.due.localeCompare(y.due) || x.st - y.st;
+};
+
+// 새 단어 하나가 하루 복습 몇 개쯤으로 돌아오는지 (1·3·7·14일 + 틀린 것 다시 + 암기 완료 뒤 늘어나는 간격으로 모의 실험해 보면 4.8쯤)
+export const REVIEW_PER_NEW = 5;
+
+/**
+ * 복습 페이스: 밀린 복습(backlog), 앞으로 7일 동안 하루 평균 돌아올 복습(inflow), 새 단어를 하루 newPerDay개씩 이어 가면 닿을 하루 복습(steady)
+ * capacity(하루에 하는 복습 수, 모르면 0)를 주면 맞는 하루 새 단어 수(fitNew)와 밀린 것을 털기까지 걸리는 날(clearDays, 못 털면 Infinity)
+ * heavy: 밀린 게 평소보다 많이 쌓였는지 (안내를 띄울지)
+ */
+export function reviewPace(words, stats, { today = dateStr(), newPerDay = 0, capacity = 0 } = {}) {
+  const st = id => normalizeStat(stats[id]);
+  let backlog = 0, ahead = 0;
+  const end = addDays(today, 7);
+  for (const w of words) {
+    const s = st(w.id);
+    if (!s || !s.due || s.f === today) continue;
+    if (s.due <= today) backlog++;
+    else if (s.due <= end) ahead++;
+  }
+  const inflow = Math.round(ahead / 7);
+  const steady = Math.round(REVIEW_PER_NEW * newPerDay);
+  const out = { backlog, inflow, steady, heavy: backlog >= 30 && backlog > 2 * Math.max(10, inflow) };
+  if (capacity > 0) {
+    out.fitNew = Math.max(0, Math.floor(capacity / REVIEW_PER_NEW));
+    const spare = capacity - Math.max(inflow, steady);
+    out.clearDays = !backlog ? 0 : spare > 0 ? Math.ceil(backlog / spare) : Infinity;
+  }
+  return out;
+}
+
+/**
  * 오늘의 학습: (시험 3일 전부터) 범위 단어 3등분 중 오늘 몫 → 새 단어(하루 개수만큼)
  * review(복습일이 된 단어)는 개수 표시용으로만 같이 돌려줌. 복습은 pickReview로 따로 '오늘의 복습'에서
  * allWords: 전체 단어(복습은 범위와 상관없이), rangeWords: 학습 범위(새 단어·시험 범위)
  */
 export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newPerDay = 20, exam = '', srs = null } = {}) {
   const st = id => normalizeStat(stats[id]);
-  const review = allWords.filter(w => isDue(st(w.id), today))
-    .sort((a, b) => st(a.id).due.localeCompare(st(b.id).due) || st(a.id).st - st(b.id).st);
+  const review = allWords.filter(w => isDue(st(w.id), today)).sort(byRisk(today, st));
   const taken = new Set();
 
   let final = [];
@@ -673,7 +717,7 @@ export const REVIEW_SIZE = 20; // 오늘의 복습 단어 수
 
 /**
  * 주기 복습의 오늘의 복습 (설정에서 켰을 때). goal: 목표일, exam: 시험일 (goal < exam)
- *  목표일 전: 복습일이 된 단어(오래 밀린 것부터). limit > 0이면 그 개수까지 (0 = 제한 없음)
+ *  목표일 전: 복습일이 된 단어(까먹었을 가능성이 큰 것부터, dueRisk). limit > 0이면 그 개수까지 (0 = 제한 없음)
  *  목표일 ~ 시험 전날: 학습 범위 전부를 남은 날에 나눠 하루 몫씩(빠진 날 몫은 다음 날 같이, 날이 남으면 두 바퀴째) + 복습일이 된 단어
  *  시험일부터: 복습일이 된 단어
  * 반환 { words, phase: 'before'|'final'|'after', days?, size? }
@@ -683,7 +727,7 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
   const st = id => normalizeStat(stats[id]);
   const seenToday = s => s && s.s && dateStr(s.s) === today;
   const due = allWords.filter(w => { const s = st(w.id); return isDue(s, today) && s.f !== today && !seenToday(s); })
-    .sort((a, b) => st(a.id).due.localeCompare(st(b.id).due) || st(a.id).st - st(b.id).st);
+    .sort(byRisk(today, st)); // 다 못 할 만큼 밀렸으면 까먹었을 가능성이 큰 것부터
   if (!goal || !exam || today < goal || goal >= exam) {
     return { words: limit > 0 ? due.slice(0, limit) : due, phase: 'before' };
   }
@@ -732,7 +776,7 @@ export function retentionCurve(intervals, span = 30, step = 0.25) {
 
 /**
  * 복습할 단어 n개: 전에 배운 단어 중 오늘 배우거나 오늘 이미 본 단어는 빼고
- * 복습일이 된 단어(오래 밀린 것부터) → 나머지는 약한 단어부터(단계 낮은, 많이 틀린, 오래 안 본 순)
+ * 복습일이 된 단어(까먹었을 가능성이 큰 것부터) → 나머지는 약한 단어부터(단계 낮은, 많이 틀린, 오래 안 본 순)
  */
 export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE, again = false } = {}) {
   // again(추가 복습): 오늘 배우거나 이미 본 단어도 뒤에 붙여서 다시 (복습할 게 다 떨어져도 더 할 수 있게)
@@ -747,7 +791,7 @@ export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE
   const miss = s => (s.w || 0) / Math.max(1, (s.c || 0) + (s.w || 0));
   pool.sort((a, b) => (a.todays - b.todays)
     || (b.due - a.due)
-    || (a.due ? a.s.due.localeCompare(b.s.due) : 0)
+    || (a.due ? dueRisk(b.s, today) - dueRisk(a.s, today) || a.s.due.localeCompare(b.s.due) : 0)
     || a.s.st - b.s.st
     || miss(b.s) - miss(a.s)
     || (a.s.s || 0) - (b.s.s || 0));

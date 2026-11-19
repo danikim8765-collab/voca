@@ -936,3 +936,25 @@ test('하루는 새벽 4시에 바뀜', async () => {
   assert.equal(addDays('2026-03-01', -1), '2026-02-28');
   assert.equal(addDays('2026-12-31', 1), '2027-01-01');
 });
+
+test('밀린 복습: 까먹었을 가능성이 큰 것부터, 페이스 안내', async () => {
+  const { dueRisk, reviewPace, pickSrsReview } = await import('../js/core.js');
+  const T = '2026-11-10';
+  const a = { st: 1, due: '2026-11-07', s: noon('2026-11-06'), f: '2026-11-01' }; // 1일 간격을 사흘 밀림 → 4
+  const b = { st: 4, due: '2026-11-07', s: noon('2026-10-24'), f: '2026-10-01' }; // 14일 간격을 사흘 밀림 → 17/14
+  const c = { st: 3, due: '2026-11-09', s: noon('2026-11-02'), f: '2026-10-01' }; // 7일 간격을 하루 밀림 → 8/7
+  assert.equal(dueRisk(a, T), 4);
+  assert.ok(dueRisk(b, T) > dueRisk(c, T));
+  const words = [{ id: 'b' }, { id: 'c' }, { id: 'a' }];
+  assert.deepEqual(pickSrsReview(words, words, { a, b, c }, { today: T }).words.map(w => w.id), ['a', 'b', 'c']);
+  assert.deepEqual(pickSrsReview(words, words, { a, b, c }, { today: T, limit: 1 }).words.map(w => w.id), ['a']);
+  // 페이스: 밀린 40개, 앞으로 7일에 14개(하루 2개) → 많이 밀림. 하루 복습 60개면 새 단어 12개가 맞고, 새 20개면 하루 100개까지 늚
+  const ws = [], st = {};
+  for (let i = 0; i < 40; i++) { ws.push({ id: 'd' + i }); st['d' + i] = { st: 1, due: '2026-11-05', s: noon('2026-11-04'), f: '2026-11-01' }; }
+  for (let i = 0; i < 14; i++) { ws.push({ id: 'u' + i }); st['u' + i] = { st: 2, due: addDays(T, 1 + (i % 7)), s: noon(T), f: '2026-11-01' }; }
+  const p = reviewPace(ws, st, { today: T, newPerDay: 20, capacity: 60 });
+  assert.deepEqual([p.backlog, p.inflow, p.steady, p.heavy, p.fitNew], [40, 2, 100, true, 12]);
+  assert.equal(p.clearDays, Infinity); // 새 20개면 복습이 60개를 넘어서 못 텀
+  assert.equal(reviewPace(ws, st, { today: T, newPerDay: 10, capacity: 60 }).clearDays, 4); // 60 - 50 = 하루 10개씩 더
+  assert.equal(reviewPace(ws.slice(40), st, { today: T, newPerDay: 10 }).heavy, false);
+});

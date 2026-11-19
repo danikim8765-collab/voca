@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
+  applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
@@ -1631,6 +1631,8 @@ function renderPlan() {
         : cap && due > cap ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${cap}개만 해요. 설정에서 '제한 없음'으로 바꿀 수 있어요.`
           : '주기 복습: 오늘 복습일이 된 단어예요.';
     } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 오늘은 밀린 것부터 ${shown}개 해요. 나머지는 추가 복습에서 나와요.` : '';
+    const pace = paceNote();
+    if (pace) note = pace;
   } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
@@ -1652,6 +1654,19 @@ function renderPlan() {
   if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
   $('#opt-coach-plan').checked = !!settings.coach;
   renderCoach(stage);
+}
+
+// 복습이 평소보다 많이 밀렸을 때 왜 쌓이는지와 맞는 페이스를 숫자로 (새 단어 하나는 하루 복습 5개쯤으로 돌아옴)
+function paceNote() {
+  const N = todayNewTarget();
+  const cap = srsOn() ? (settings.reviewLimit ? settings.reviewSize : 0) : settings.reviewSize;
+  const p = reviewPace(rangeWords(), stats, { today: dateStr(), newPerDay: N, capacity: cap });
+  if (!p.heavy) return '';
+  const head = `밀린 복습 ${p.backlog}개 · 까먹었을 가능성이 큰 것부터 나오니 할 수 있는 만큼만 해도 돼요.`;
+  if (!N) return head;
+  if (!cap) return `${head} 새 단어 1개는 하루 복습 5개쯤으로 돌아와서, 하루 ${N}개씩이면 복습은 하루 ${p.steady}개쯤까지 늘어요.`;
+  if (p.fitNew >= N) return Number.isFinite(p.clearDays) ? `${head} 지금 페이스면 ${p.clearDays}일쯤에 다 털어요.` : head;
+  return `${head} 새 단어 하루 ${N}개면 복습이 하루 ${p.steady}개쯤까지 늘어서, 하루 복습 ${cap}개에 맞는 새 단어는 ${p.fitNew}개쯤이에요.`;
 }
 
 // 숫자 키패드 (앱 안): await askNumber({ title, value, extra }) → 숫자, 또는 extra를 고르면 extra.value, 취소면 null
@@ -1779,7 +1794,10 @@ async function startSession(mode, list) {
     // 처음 시작할 때 오늘의 복습 목록을 고정 → 중간에 그만둬도 남은 단어만 이어서
     const day = loadDay();
     if (!Array.isArray(day.review)) { day.review = pickToday().map(w => w.id); save(KEY.day, day); }
-    ids = shuffle(day.review.filter(id => byId.has(id) && !seenToday(id)));
+    // 목록은 까먹었을 가능성이 큰 것부터라, 20개씩 묶어 그 안에서만 섞음 (밀린 게 많아 중간에 그만둬도 급한 것부터 한 셈)
+    const left = day.review.filter(id => byId.has(id) && !seenToday(id));
+    ids = [];
+    for (let i = 0; i < left.length; i += 20) ids.push(...shuffle(left.slice(i, i + 20)));
     if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
     label = '오늘의 복습';
   } else if (mode === 'extraNew') {
