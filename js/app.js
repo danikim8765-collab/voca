@@ -1953,6 +1953,16 @@ function againLater(id, kind) {
   if (slots.length) session.again[id] = (session.again[id] || 0) + 1;
   return slots.length ? `${slots.map(s => (s === 'end' ? '맨 끝에' : AGAIN_NAME[s])).join('·')} 다시` : '내일 다시';
 }
+// 맞혔는데 이번 학습 안에 그 단어가 아직 또 잡혀 있으면(전에 틀려서 '조금 뒤·맨 끝'처럼 여러 번 잡아 둔 것) 언제 또 나오는지.
+// 없으면 ''. 예: '3문제 뒤 한 번 더', '맨 끝에 한 번 더', '2문제 뒤부터 2번 더'
+function comingAgain(id) {
+  const rest = session.queue.slice(session.pos + 1);
+  const k = rest.filter(x => x === id).length;
+  if (!k) return '';
+  const gap = rest.indexOf(id); // 그 사이에 나오는 문제 수
+  const when = gap === 0 ? '바로 다음에' : k === 1 && rest.lastIndexOf(id) === rest.length - 1 ? '맨 끝에' : `${gap}문제 뒤${k > 1 ? '부터' : ''}`;
+  return `${when} ${k === 1 ? '한 번' : `${k}번`} 더`;
+}
 // 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (다시 나오기는 설정의 '틀렸을 때'·'힌트 한 번'대로)
 function synAnswer(correct, given, kind) {
   q.answered = true;
@@ -1968,7 +1978,7 @@ function synAnswer(correct, given, kind) {
       const when = againLater(id, 'hint1');
       label = `힌트 사용${when === '내일 다시' ? '' : ` · ${when}`}`;
       if (!session.hinted.includes(id)) session.hinted.push(id);
-    } else label = '정답!';
+    } else { const more = comingAgain(id); label = more ? `정답! · ${more}` : '정답!'; }
   }
   session.pos++;
   showProgress();
@@ -2859,7 +2869,7 @@ function answer(correct, given, kind) {
     const n = stats[id].due ? daysBetween(today, stats[id].due) : 0;
     label = kind === 'partial' ? `부분 정답 · ${when}`
       : outcome === 'hint' ? `힌트 사용 · ${when}`
-      : retry ? '정답! · 내일 다시'
+      : retry ? `정답! · ${comingAgain(id) || '내일 다시'}`
         : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습`
           : cleared ? '정답! · 다시 볼 단어에서 뺐어요' : '정답!';
   }
