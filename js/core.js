@@ -383,8 +383,8 @@ export function isTypedCorrect(input, word, blanks1, blanks2) {
   const candidates = [
     word.word,
     answerParts(word.blank).join(' '),
-    blankUnit(blanks1).join(' '),
-    blankUnit(blanks2).join(' '),
+    blankUnit(blanks1, answerWordCount(word.blank)).join(' '),
+    blankUnit(blanks2, answerWordCount(word.blank)).join(' '),
   ].map(normalizeAnswer).filter(Boolean);
   return candidates.includes(got);
 }
@@ -451,19 +451,12 @@ export function normalizeStat(s) {
   return { ...rest, st: Math.min(b, MAX_STAGE), due: d ? dateStr(d) : '', f: rest.f || dateStr(rest.s || 0) };
 }
 
-// 시험일이 있으면 다음 복습일이 시험 전날을 넘지 않게
-function capDue(due, today, exam) {
-  if (!exam) return due;
-  const eve = addDays(exam, -1);
-  return eve > today && due > eve ? eve : due;
-}
-
 /**
  * outcome: 'ok'(힌트 없이 맞힘) | 'hint'(힌트 쓰고 맞힘) | 'wrong'
  * scheduled: 오늘 복습할 단어(새 단어·복습일·시험 대비)인지. 아닌 단어를 연습으로 맞힌 건 일정에 반영하지 않음
  */
 // 주기 복습(설정에서 켤 때)의 복습 간격 다섯 가지. 단계 k(1부터)가 되면 intervals[k-1]일 뒤 복습.
-// 보통(m)은 기본 방식과 같은 1·3·7·14일. 마지막 단계에 닿으면 암기 완료, 그 뒤로는 마지막 간격으로 계속
+// 보통(m)은 기본 방식과 같은 1·3·7·14일. 마지막 단계에 닿으면 암기 완료, 그 뒤로는 맞힐 때마다 간격이 두 배씩(MAX_INTERVAL까지)
 export const PRESETS = {
   xs: [1, 1, 2, 3, 5, 8],
   s: [1, 2, 4, 7, 12],
@@ -472,31 +465,139 @@ export const PRESETS = {
   xl: [3, 8, 18, 40],
 };
 
+// 틀리면 몇 단계를 잃는지. 0단계(다시 볼 단어)로 두되, 다시 맞히면 (틀리기 전 단계 - 이만큼)에서 이어 감
+export const LAPSE_DROP = 2;
+export const MASTER_GROW = 2;
+export const MAX_INTERVAL = 120; // 일
+
 /**
- * intervals: 단계별 복습 간격(기본 1·3·7·14일). exam: 이 날짜의 전날을 넘지 않게 맞춤(시험일, 주기 복습에선 목표일 전까진 목표일)
+ * 다음 복습일 고르기: 간격 i일 뒤를 기준으로 앞뒤 15%쯤(4일 이상 간격만, 7일 → ±1, 14일 → ±2) 안에서
+ * 쉬는 요일이 아니고 복습이 덜 잡힌 날로. 같으면 i일에 가까운 날, 그것도 같으면 앞날
+ * load(날짜) = 그날 이미 잡힌 복습 수 (없으면 0으로 봄 → 언제나 i일 뒤)
  */
-export function applyResult(stat, outcome, { today = dateStr(), exam = '', scheduled = true, now = Date.now(), intervals = PRESETS.m } = {}) {
-  const s = { st: 0, due: '', c: 0, w: 0, ...(normalizeStat(stat) || {}) };
+export function spreadDue(today, i, { load = null, rest = [] } = {}) {
+  const f = i >= 4 ? Math.max(1, Math.round(i * 0.15)) : 0;
+  let best = addDays(today, i), cost = Infinity;
+  for (let k = 0; k <= 2 * f; k++) {
+    const d = i + (k % 2 ? -(k + 1) / 2 : k / 2); // i, i-1, i+1, i-2, i+2 …
+    const day = addDays(today, d);
+    const c = (isRestDay(day, rest) ? 1e9 : 0) + ((load && load(day)) || 0);
+    if (c < cost) { cost = c; best = day; }
+  }
+  return best;
+}
+
+/**
+ * intervals: 단계별 복습 간격(기본 1·3·7·14일)
+ *  - 틀리면 0단계로 내일 다시. 다시 맞히면 처음부터가 아니라 틀리기 전 단계보다 LAPSE_DROP 아래에서 이어 감(k에 적어 둠)
+ *  - 복습일이 지나서(밀려서) 맞히면 그만큼 오래 기억한 것이라, 버틴 날 수보다 짧은 간격의 단계는 건너뜀
+ *  - 시험일·목표일로 복습일을 당기지 않음: 간격 안에서는 기억이 남는다고 보므로 시험이 그 안에 있으면 시험 전에 또 볼 까닭이 없고,
+ *    목표일부터는 범위 전체를 한 번씩 훑으니 그 앞날에 몰아 둘 까닭도 없음 (예전엔 목표일·시험 전날에 한꺼번에 몰렸음)
+ * load, rest: 날짜 고르기(spreadDue)에 씀
+ */
+export function applyResult(stat, outcome, { today = dateStr(), exam = '', scheduled = true, now = Date.now(), intervals = PRESETS.m, load = null, rest = [] } = {}) {
+  const prev = normalizeStat(stat) || {};
+  const s = { st: 0, due: '', c: 0, w: 0, ...prev };
+  const last = prev.s ? dateStr(prev.s) : ''; // 지난번에 본 날
   s.s = now;
   if (!s.f) s.f = today; // 처음 배운 날 (하루 새 단어 수 계산용)
   if (outcome === 'wrong') {
     s.w++;
+    const k = Math.max(0, (s.st || s.k || 0) - LAPSE_DROP); // 0단계에서 또 틀리면 더 내려감
+    if (k) s.k = k; else delete s.k;
     s.st = 0;
-    s.due = capDue(addDays(today, 1), today, exam);
+    delete s.iv;
+    s.due = addDays(today, 1);
     return s;
   }
   s.c++;
   if (outcome === 'hint') s.h = (s.h || 0) + 1;
   if (!scheduled) return s;
   if (outcome === 'ok') {
-    s.st = Math.min(s.st + 1, intervals.length);
-    s.due = addDays(today, intervals[s.st - 1]);
+    const n = intervals.length;
+    let st = Math.min((s.st || s.k || 0) + 1, n);
+    // 복습일이 지나서 맞혔을 때만: 지난번에 본 날부터 버틴 날 수만큼은 이미 기억이 감
+    const gap = last && last < today && prev.due && prev.due < today ? daysBetween(last, today) : 0;
+    while (st < n && intervals[st - 1] <= gap) st++;
+    // 암기 완료(마지막 단계)한 단어를 또 맞히면 간격을 MASTER_GROW배씩 늘림(14 → 28 → 56일 …, MAX_INTERVAL까지).
+    // 마지막 간격으로 끝없이 돌면 배운 단어가 늘수록 복습이 계속 쌓여서
+    let iv = intervals[st - 1];
+    if (st === n && (s.st || 0) === n) iv = Math.min(MAX_INTERVAL, Math.max(iv, Math.round(Math.max(s.iv || iv, gap) * MASTER_GROW)));
+    if (iv > intervals[n - 1]) s.iv = iv; else delete s.iv;
+    s.st = st;
+    delete s.k;
+    s.due = examDue(today, iv, exam, { load, rest });
   } else s.due = addDays(today, 1);
-  s.due = capDue(s.due, today, exam);
   return s;
 }
 
+// 시험날 기억: 간격 i일은 기억이 '복습할 때'까지 떨어지는 날이라, 시험날엔 그보다 또렷해야 함.
+// 다음 복습일이 시험 뒤인데 시험날까지 간격의 EXAM_FRAC보다 많이 남으면 시험 전에 한 번 더 — 시험까지 그만큼 남는 날로
+// (그때 맞히면 다음 간격은 더 길어서 시험까지 또 잡히지 않음). 간격마다 날이 달라서 한날에 몰리지 않고, 약한 단어일수록 시험에 가깝게 봄
+export const EXAM_FRAC = 0.5;
+export function examDue(today, i, exam, opt = {}) {
+  const due = spreadDue(today, i, opt);
+  if (!exam || today >= exam || due < exam) return due;
+  const left = daysBetween(today, exam);
+  const keep = Math.floor(i * EXAM_FRAC); // 시험까지 남겨도 되는 날 수
+  if (left <= keep) return due;
+  const at = left - keep;                  // 오늘부터 며칠 뒤 (1 이상, 시험 전날까지)
+  const f = Math.min(at - 1, Math.max(0, Math.round(keep * 0.3)));  // 앞으로만 조금 옮길 수 있음 (뒤로 가면 시험까지 덜 남음)
+  let best = addDays(today, at), cost = Infinity;
+  for (let d = at; d >= at - f; d--) {
+    const day = addDays(today, d);
+    const c = (isRestDay(day, opt.rest) ? 1e9 : 0) + ((opt.load && opt.load(day)) || 0);
+    if (c < cost) { cost = c; best = day; }
+  }
+  return best;
+}
+
 export const isDue = (s, today) => !!(s && s.due && s.due <= today);
+
+/**
+ * 밀린 복습의 위험도: 지난번에 본 뒤 지난 날 ÷ 원래 잡혀 있던 간격. 클수록 까먹었을 가능성이 큼
+ * (간격 1일짜리가 사흘 밀린 것(3) > 14일짜리가 사흘 밀린 것(17/14)). 밀린 게 많아 다 못 할 때 이 순서로 먼저
+ */
+export function dueRisk(s, today) {
+  if (!s || !s.due) return 0;
+  const last = s.s ? dateStr(s.s) : '';
+  if (!last || last >= s.due) return daysBetween(s.due, today) + 1; // 지난번에 본 날을 모르면 밀린 날 수로
+  return daysBetween(last, today) / Math.max(1, daysBetween(last, s.due));
+}
+// 복습일 된 단어 순서: 위험한 것부터, 같으면 오래 밀린 것·단계 낮은 것부터
+export const byRisk = (today, st) => (a, b) => {
+  const x = st(a.id), y = st(b.id);
+  return dueRisk(y, today) - dueRisk(x, today) || x.due.localeCompare(y.due) || x.st - y.st;
+};
+
+// 새 단어 하나가 하루 복습 몇 개쯤으로 돌아오는지 (1·3·7·14일 + 틀린 것 다시 + 암기 완료 뒤 늘어나는 간격으로 모의 실험해 보면 4.8쯤)
+export const REVIEW_PER_NEW = 5;
+
+/**
+ * 복습 페이스: 밀린 복습(backlog), 앞으로 7일 동안 하루 평균 돌아올 복습(inflow), 새 단어를 하루 newPerDay개씩 이어 가면 닿을 하루 복습(steady)
+ * capacity(하루에 하는 복습 수, 모르면 0)를 주면 맞는 하루 새 단어 수(fitNew)와 밀린 것을 털기까지 걸리는 날(clearDays, 못 털면 Infinity)
+ * heavy: 밀린 게 평소보다 많이 쌓였는지 (안내를 띄울지)
+ */
+export function reviewPace(words, stats, { today = dateStr(), newPerDay = 0, capacity = 0 } = {}) {
+  const st = id => normalizeStat(stats[id]);
+  let backlog = 0, ahead = 0;
+  const end = addDays(today, 7);
+  for (const w of words) {
+    const s = st(w.id);
+    if (!s || !s.due || s.f === today) continue;
+    if (s.due <= today) backlog++;
+    else if (s.due <= end) ahead++;
+  }
+  const inflow = Math.round(ahead / 7);
+  const steady = Math.round(REVIEW_PER_NEW * newPerDay);
+  const out = { backlog, inflow, steady, heavy: backlog >= 30 && backlog > 2 * Math.max(10, inflow) };
+  if (capacity > 0) {
+    out.fitNew = Math.max(0, Math.floor(capacity / REVIEW_PER_NEW));
+    const spare = capacity - Math.max(inflow, steady);
+    out.clearDays = !backlog ? 0 : spare > 0 ? Math.ceil(backlog / spare) : Infinity;
+  }
+  return out;
+}
 
 /**
  * 오늘의 학습: (시험 3일 전부터) 범위 단어 3등분 중 오늘 몫 → 새 단어(하루 개수만큼)
@@ -505,8 +606,7 @@ export const isDue = (s, today) => !!(s && s.due && s.due <= today);
  */
 export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newPerDay = 20, exam = '', srs = null } = {}) {
   const st = id => normalizeStat(stats[id]);
-  const review = allWords.filter(w => isDue(st(w.id), today))
-    .sort((a, b) => st(a.id).due.localeCompare(st(b.id).due) || st(a.id).st - st(b.id).st);
+  const review = allWords.filter(w => isDue(st(w.id), today)).sort(byRisk(today, st));
   const taken = new Set();
 
   let final = [];
@@ -617,7 +717,7 @@ export const REVIEW_SIZE = 20; // 오늘의 복습 단어 수
 
 /**
  * 주기 복습의 오늘의 복습 (설정에서 켰을 때). goal: 목표일, exam: 시험일 (goal < exam)
- *  목표일 전: 복습일이 된 단어(오래 밀린 것부터). limit > 0이면 그 개수까지 (0 = 제한 없음)
+ *  목표일 전: 복습일이 된 단어(까먹었을 가능성이 큰 것부터, dueRisk). limit > 0이면 그 개수까지 (0 = 제한 없음)
  *  목표일 ~ 시험 전날: 학습 범위 전부를 남은 날에 나눠 하루 몫씩(빠진 날 몫은 다음 날 같이, 날이 남으면 두 바퀴째) + 복습일이 된 단어
  *  시험일부터: 복습일이 된 단어
  * 반환 { words, phase: 'before'|'final'|'after', days?, size? }
@@ -627,7 +727,7 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
   const st = id => normalizeStat(stats[id]);
   const seenToday = s => s && s.s && dateStr(s.s) === today;
   const due = allWords.filter(w => { const s = st(w.id); return isDue(s, today) && s.f !== today && !seenToday(s); })
-    .sort((a, b) => st(a.id).due.localeCompare(st(b.id).due) || st(a.id).st - st(b.id).st);
+    .sort(byRisk(today, st)); // 다 못 할 만큼 밀렸으면 까먹었을 가능성이 큰 것부터
   if (!goal || !exam || today < goal || goal >= exam) {
     return { words: limit > 0 ? due.slice(0, limit) : due, phase: 'before' };
   }
@@ -640,7 +740,15 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
   const k = studyDays(goal, today, rest);            // 오늘 전까지 공부한 날 수
   const start = nthStudyDay(goal, Math.floor(k / round) * round, rest); // 이번 바퀴 시작일
   const idx = k % round;
-  const chunk = rangeWords.slice(0, size * (idx + 1)).filter(w => { const s = st(w.id); return !(s && s.s && dateStr(s.s) >= start); });
+  // 이번 바퀴에서 아직 안 본 단어를, 잘 아는 것부터(단계 높은, 덜 틀린 순 · 안 배운 단어는 맨 뒤) 오늘 몫만큼.
+  // 약한 단어일수록 시험에 가까운 날 보게 되고, 복습일이 돼서 이미 본 단어도 이번 바퀴 몫으로 셈
+  const seen = s => !!(s && s.s && dateStr(s.s) >= start && dateStr(s.s) < today);
+  const left = [], miss = s => (s.w || 0) / Math.max(1, (s.c || 0) + (s.w || 0));
+  rangeWords.forEach((w, i) => { const s = st(w.id); if (!seen(s)) left.push({ w, s, i }); });
+  const rank = x => (x.s ? x.s.st || 0 : -1);
+  left.sort((a, b) => rank(b) - rank(a) || (a.s && b.s ? miss(a.s) - miss(b.s) : 0) || a.i - b.i);
+  const quota = Math.max(0, Math.min(n, size * (idx + 1)) - (n - left.length));
+  const chunk = left.slice(0, quota).map(x => x.w);
   const ids = new Set(chunk.map(w => w.id));
   return { words: [...chunk, ...due.filter(w => !ids.has(w.id))], phase: 'final', days, size };
 }
@@ -650,7 +758,9 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
 export function retentionCurve(intervals, span = 30, step = 0.25) {
   const reviews = [];
   let t = 0, i = 0;
-  while (true) { t += intervals[Math.min(i, intervals.length - 1)]; if (t > span) break; reviews.push(t); i++; }
+  const n = intervals.length;
+  // 암기 완료 뒤엔 applyResult처럼 간격이 두 배씩 (MAX_INTERVAL까지)
+  while (true) { t += i < n ? intervals[i] : Math.min(MAX_INTERVAL, intervals[n - 1] * MASTER_GROW ** (i - n + 1)); if (t > span) break; reviews.push(t); i++; }
   const pts = [], none = [];
   for (let x = 0; x <= span + 1e-9; x += step) {
     const done = reviews.filter(r => r <= x + 1e-9);
@@ -666,7 +776,7 @@ export function retentionCurve(intervals, span = 30, step = 0.25) {
 
 /**
  * 복습할 단어 n개: 전에 배운 단어 중 오늘 배우거나 오늘 이미 본 단어는 빼고
- * 복습일이 된 단어(오래 밀린 것부터) → 나머지는 약한 단어부터(단계 낮은, 많이 틀린, 오래 안 본 순)
+ * 복습일이 된 단어(까먹었을 가능성이 큰 것부터) → 나머지는 약한 단어부터(단계 낮은, 많이 틀린, 오래 안 본 순)
  */
 export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE, again = false } = {}) {
   // again(추가 복습): 오늘 배우거나 이미 본 단어도 뒤에 붙여서 다시 (복습할 게 다 떨어져도 더 할 수 있게)
@@ -681,7 +791,7 @@ export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE
   const miss = s => (s.w || 0) / Math.max(1, (s.c || 0) + (s.w || 0));
   pool.sort((a, b) => (a.todays - b.todays)
     || (b.due - a.due)
-    || (a.due ? a.s.due.localeCompare(b.s.due) : 0)
+    || (a.due ? dueRisk(b.s, today) - dueRisk(a.s, today) || a.s.due.localeCompare(b.s.due) : 0)
     || a.s.st - b.s.st
     || miss(b.s) - miss(a.s)
     || (a.s.s || 0) - (b.s.s || 0));
@@ -936,18 +1046,23 @@ export function sameStats(x, y) {
 // 마지막 글자는 알려주지 않는다. 더 줄 힌트가 없으면 null.
 export function typingHintTarget(word, blanks1, blanks2) {
   const pick = [blanks1, blanks2].find(b => b && b.length) || answerParts(word.blank);
-  return blankUnit(pick).join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+  return blankUnit(pick, answerWordCount(word.blank)).join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
 }
 
 // 같은 말이 문장에 여러 번 가려졌으면(cues … cues, give up … give up) 한 번 분량만: 정답은 그 한 번
-export function blankUnit(blanks) {
+// n = 정답 낱말 수(answerWordCount). 예문 한 칸에 문장이 여럿이라 꼴이 다르게 여러 번 가려졌으면
+// (Breaking off … broke off) 같은 말이 아니어도 낱말 수의 배수면 첫 번 분량만 (빈칸을 두 번 쓰게 하지 않게)
+export function blankUnit(blanks, n = 0) {
   const b = blanks || [];
   const low = b.map(x => String(x).toLowerCase());
   for (let p = 1; p < b.length; p++) {
     if (b.length % p === 0 && low.every((x, i) => x === low[i % p])) return b.slice(0, p);
   }
+  if (n > 0 && b.length > n && b.length % n === 0) return b.slice(0, n);
   return b;
 }
+// 정답 낱말 수 (break off → 2, convince A of B → 2, fatal → 1)
+export const answerWordCount = blankForm => answerParts(blankForm).join(' ').split(/\s+/).filter(Boolean).length;
 
 export function nextLetterHint(input, target) {
   const cur = String(input || '').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').replace(/^ /, '');

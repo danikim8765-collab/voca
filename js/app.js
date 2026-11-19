@@ -1,7 +1,7 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
-  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
+  applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
+  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
@@ -444,8 +444,14 @@ const goalDate = () => (coachActive() ? settings.coachGoal || '' : settings.goal
 const srsOn = () => (coachActive() ? !!settings.coachGoal : !!(settings.srs && settings.goal && settings.exam && settings.goal < settings.exam));
 const intervals = () => (srsOn() && PRESETS[settings.srsPreset]) || PRESETS.m;
 const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
-// 다음 복습일이 넘지 않을 날: 주기 복습이면 목표일 전까진 목표일, 그 뒤엔 시험일
-const deadline = (today = dateStr()) => (srsOn() && today < goalDate() ? goalDate() : settings.exam);
+// 주기 복습의 마지막 기간(목표일 ~ 시험 전날): 오늘의 복습이 범위 전체를 나눠 훑는 때
+const inSweep = (today = dateStr()) => srsOn() && !!goalDate() && today >= goalDate() && !!settings.exam && today < settings.exam;
+// 날짜별로 이미 잡힌 복습 수 (학습 범위 안 단어만). 다음 복습일을 덜 붐비는 날로 고르려고
+function dueLoad() {
+  const m = new Map();
+  for (const w of rangeWords()) { const s = stats[w.id]; if (s && s.due && !s.del) m.set(s.due, (m.get(s.due) || 0) + 1); }
+  return d => m.get(d) || 0;
+}
 const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
 const isWrongRaw = s => !!(s && s.st === 0);        // 마지막에 틀린 단어 (0단계)
 // 다시 볼 단어: 0단계인데, '다시 볼 단어'에서 오늘 다시 맞힌 것(r = 오늘)은 뺌. 복습 일정은 그대로라 내일 복습에 다시 나옴
@@ -1625,6 +1631,8 @@ function renderPlan() {
         : cap && due > cap ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${cap}개만 해요. 설정에서 '제한 없음'으로 바꿀 수 있어요.`
           : '주기 복습: 오늘 복습일이 된 단어예요.';
     } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 오늘은 밀린 것부터 ${shown}개 해요. 나머지는 추가 복습에서 나와요.` : '';
+    const pace = paceNote();
+    if (pace) note = pace;
   } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
@@ -1646,6 +1654,19 @@ function renderPlan() {
   if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
   $('#opt-coach-plan').checked = !!settings.coach;
   renderCoach(stage);
+}
+
+// 복습이 평소보다 많이 밀렸을 때 왜 쌓이는지와 맞는 페이스를 숫자로 (새 단어 하나는 하루 복습 5개쯤으로 돌아옴)
+function paceNote() {
+  const N = todayNewTarget();
+  const cap = srsOn() ? (settings.reviewLimit ? settings.reviewSize : 0) : settings.reviewSize;
+  const p = reviewPace(rangeWords(), stats, { today: dateStr(), newPerDay: N, capacity: cap });
+  if (!p.heavy) return '';
+  const head = `밀린 복습 ${p.backlog}개 · 까먹었을 가능성이 큰 것부터 나오니 할 수 있는 만큼만 해도 돼요.`;
+  if (!N) return head;
+  if (!cap) return `${head} 새 단어 1개는 하루 복습 5개쯤으로 돌아와서, 하루 ${N}개씩이면 복습은 하루 ${p.steady}개쯤까지 늘어요.`;
+  if (p.fitNew >= N) return Number.isFinite(p.clearDays) ? `${head} 지금 페이스면 ${p.clearDays}일쯤에 다 털어요.` : head;
+  return `${head} 새 단어 하루 ${N}개면 복습이 하루 ${p.steady}개쯤까지 늘어서, 하루 복습 ${cap}개에 맞는 새 단어는 ${p.fitNew}개쯤이에요.`;
 }
 
 // 숫자 키패드 (앱 안): await askNumber({ title, value, extra }) → 숫자, 또는 extra를 고르면 extra.value, 취소면 null
@@ -1773,7 +1794,10 @@ async function startSession(mode, list) {
     // 처음 시작할 때 오늘의 복습 목록을 고정 → 중간에 그만둬도 남은 단어만 이어서
     const day = loadDay();
     if (!Array.isArray(day.review)) { day.review = pickToday().map(w => w.id); save(KEY.day, day); }
-    ids = shuffle(day.review.filter(id => byId.has(id) && !seenToday(id)));
+    // 목록은 까먹었을 가능성이 큰 것부터라, 20개씩 묶어 그 안에서만 섞음 (밀린 게 많아 중간에 그만둬도 급한 것부터 한 셈)
+    const left = day.review.filter(id => byId.has(id) && !seenToday(id));
+    ids = [];
+    for (let i = 0; i < left.length; i += 20) ids.push(...shuffle(left.slice(i, i + 20)));
     if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
     label = '오늘의 복습';
   } else if (mode === 'extraNew') {
@@ -2063,7 +2087,7 @@ function renderQuestion() {
   });
   document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요'
     : { same: '빈칸에 공통으로 들어갈 말은?', single: '빈칸에 들어갈 말은?',
-      diff: settings.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2)];
+      diff: settings.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2, answerWordCount(w.blank))];
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
 
   const mEl = $('#q-meaning');
@@ -2106,10 +2130,10 @@ function renderQuestion() {
 
 // 빈칸에 들어갈 말이 모든 문장에서 같은 꼴인지 (deteriorated / deteriorate처럼 다르면 '공통으로'라고 묻지 않음)
 // 'same' 여러 번 나오는데 다 같은 꼴 · 'diff' 꼴이 다름 · 'single' 한 번만 나옴
-function blankForms(b1, b2) {
+function blankForms(b1, b2, n = 0) {
   const bs = [b1, b2].filter(b => b && b.ok && b.blanks.length);
   if (!bs.length) return 'single';
-  const unit = blankUnit(bs[0].blanks).map(x => x.toLowerCase());
+  const unit = blankUnit(bs[0].blanks, n).map(x => x.toLowerCase());
   if (!bs.every(b => b.blanks.every((x, i) => x.toLowerCase() === unit[i % unit.length]))) return 'diff';
   return bs.length > 1 || bs[0].blanks.length > unit.length ? 'same' : 'single';
 }
@@ -2179,6 +2203,7 @@ window.addEventListener('resize', () => {
   if (w === window.innerWidth && Math.abs(h - window.innerHeight) < 90) { moreBelow(); return; }
   placeSize = [window.innerWidth, window.innerHeight];
   if (current === 'quiz') placeChoices();
+  if (!$('#feedback').hidden) fitFbWord();
 });
 
 // 컴퓨터: 선지가 창 아래로 넘치면(낮은 창, 긴 예문) 2×2로 줄여서 한 화면에
@@ -2496,7 +2521,7 @@ const COACH_IDLE_MS = 1200; // 정답에서 벗어난 채로 이만큼 멈추면
 
 function renderTyping(actions) {
   // 빈칸 수: 숙어는 단어마다 한 칸 (반복된 숙어는 한 번 분량)
-  const parts = blankUnit((q.b1 && q.b1.blanks.length ? q.b1 : q.b2 || { blanks: [] }).blanks).length || answerParts(q.w.blank).length;
+  const parts = blankUnit((q.b1 && q.b1.blanks.length ? q.b1 : q.b2 || { blanks: [] }).blanks, answerWordCount(q.w.blank)).length || answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
   const helpText = parts > 1 ? '칸을 다 채우면 다음 칸으로 넘어가요 (띄어쓰기로도 넘어가요)' : '';
   // 정답: 단어 원형(abound)도, 예문 속 형태(abounds)도 인정 — 단어를 외우는 게 우선
@@ -2632,7 +2657,7 @@ function renderTyping(actions) {
 // 입력값을 문장의 빈칸들에 나눠 넣기. 같은 단어가 반복된 빈칸(cues … cues)은 모두 같은 값
 function fillBlanks(value, targets) {
   // 같은 말이 반복된 빈칸(give up … give up)은 한 번 분량에 나눠 넣고 반복되는 칸에도 똑같이
-  const unit = blankUnit(targets);
+  const unit = blankUnit(targets, q && q.w ? answerWordCount(q.w.blank) : 0);
   const words = value.split(' ');
   const uf = [];
   let wi = 0, active = 0;
@@ -2857,9 +2882,10 @@ function answer(correct, given, kind) {
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
   // 힌트를 썼던 단어가 다시 나와서 맞힌 것도 연습으로 (복습 단계는 첫 결과대로)
   const retry = session.wrong.includes(id) || session.hinted.includes(id);
-  const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
+  // 목표일부터 범위 전체를 훑는 오늘의 복습도 일정에 반영: 훑으며 맞힌 단어가 며칠 뒤 복습일에 또 나오지 않게
+  const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today) || (session.mode === 'review' && inSweep(today)));
   delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
-  stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
+  stats[id] = applyResult(before, outcome, { today, exam: settings.exam, scheduled, intervals: intervals(), load: dueLoad(), rest: restNow() });
   // 다시 볼 단어(또는 틀린 단어 다시 풀기)에서 힌트 없이 맞히면 오늘은 목록에서 뺌
   const cleared = outcome === 'ok' && !retry && !scheduled && isWrongRaw(before) && (session.mode === 'wrong' || session.mode === 'retry');
   if (cleared) stats[id].r = today; else delete stats[id].r;
@@ -2994,6 +3020,7 @@ function openSheet(w, more = []) {
   setFbTab('mean');
 
   $('#feedback').hidden = false;
+  fitFbWord();
   // 시트에 가리지 않게 문장 아래 여백
   // 넓은 컴퓨터 화면에선 정답 시트가 오른쪽 칸이라 여백 필요 없음
   requestAnimationFrame(sheetPad);
@@ -3217,6 +3244,25 @@ function askBox(cur) {
   return box;
 }
 
+// 정답 시트 머리의 단어: 길면 한 줄에 들어갈 때까지 글자를 줄임(30px → 18px). 그래도 넘치면 머리의 코치 캐릭터를 빼고
+// 다시 맞춤. 그래도 넘치면(아주 긴 숙어) 줄바꿈
+function fitFbWord() {
+  const w = $('#fb-word'), head = w.closest('.fb-word');
+  head.classList.remove('tight');
+  w.style.whiteSpace = 'nowrap';
+  // 글자 폭은 소수점까지 재서 비교 (반올림한 scrollWidth로 재면 1px 모자란 것도 맞는 걸로 보고 줄이 바뀜)
+  const range = document.createRange();
+  range.selectNodeContents(w);
+  const over = () => range.getBoundingClientRect().width > w.getBoundingClientRect().width - 1;
+  const shrink = () => {
+    let size = 30;
+    w.style.removeProperty('--w-fit');
+    while (over() && size > 18) { size -= 2; w.style.setProperty('--w-fit', `${size}px`); }
+    return !over();
+  };
+  if (!shrink() && !$('#fb-coach').hidden) { head.classList.add('tight'); shrink(); }
+  w.style.whiteSpace = '';
+}
 // 정답 시트 탭: 탭마다 시트 크기·모양이 다름 (style.css #feedback[data-tab]).
 // 뜻 = 내용만큼 낮게, 예문 = 조금 더 높게, AI = 대화창처럼 높게(빠른 질문·입력칸은 위에 고정, 이야기만 스크롤)
 // 바꿀 때 높이가 툭 바뀌지 않게 지금 높이에서 새 높이로 미끄러지듯
