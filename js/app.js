@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
+  applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
@@ -12,7 +12,7 @@ import { COACH_ART, COACH_COLORS, COACH_NAMES, COACH_BIO } from './coach-art.js'
 import { reportRepo, reportReasons, reportText, issueUrl, pushError, REPORT_FORM, formReady, formRequest, queueReport } from './report.js';
 
 // 앱 버전: PR에선 바꾸지 않음. 정해진 시간 머지(GitHub Actions)가 version.txt와 같이 올림. 다르면 홈 화면 앱이 스스로 새로고침
-const APP_VERSION = '202611190749';
+const APP_VERSION = '202611191248';
 
 // 단어 CSV 파일 목록은 js/files.js (예문·단어 모드가 같이 씀)
 
@@ -444,8 +444,14 @@ const goalDate = () => (coachActive() ? settings.coachGoal || '' : settings.goal
 const srsOn = () => (coachActive() ? !!settings.coachGoal : !!(settings.srs && settings.goal && settings.exam && settings.goal < settings.exam));
 const intervals = () => (srsOn() && PRESETS[settings.srsPreset]) || PRESETS.m;
 const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
-// 다음 복습일이 넘지 않을 날: 주기 복습이면 목표일 전까진 목표일, 그 뒤엔 시험일
-const deadline = (today = dateStr()) => (srsOn() && today < goalDate() ? goalDate() : settings.exam);
+// 주기 복습의 마지막 기간(목표일 ~ 시험 전날): 오늘의 복습이 범위 전체를 나눠 훑는 때
+const inSweep = (today = dateStr()) => srsOn() && !!goalDate() && today >= goalDate() && !!settings.exam && today < settings.exam;
+// 날짜별로 이미 잡힌 복습 수 (학습 범위 안 단어만). 다음 복습일을 덜 붐비는 날로 고르려고
+function dueLoad() {
+  const m = new Map();
+  for (const w of rangeWords()) { const s = stats[w.id]; if (s && s.due && !s.del) m.set(s.due, (m.get(s.due) || 0) + 1); }
+  return d => m.get(d) || 0;
+}
 const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
 const isWrongRaw = s => !!(s && s.st === 0);        // 마지막에 틀린 단어 (0단계)
 // 다시 볼 단어: 0단계인데, '다시 볼 단어'에서 오늘 다시 맞힌 것(r = 오늘)은 뺌. 복습 일정은 그대로라 내일 복습에 다시 나옴
@@ -1625,6 +1631,8 @@ function renderPlan() {
         : cap && due > cap ? `복습일이 된 단어가 ${due}개라 밀린 것부터 ${cap}개만 해요. 설정에서 '제한 없음'으로 바꿀 수 있어요.`
           : '주기 복습: 오늘 복습일이 된 단어예요.';
     } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 오늘은 밀린 것부터 ${shown}개 해요. 나머지는 추가 복습에서 나와요.` : '';
+    const pace = paceNote();
+    if (pace) note = pace;
   } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
@@ -1646,6 +1654,19 @@ function renderPlan() {
   if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
   $('#opt-coach-plan').checked = !!settings.coach;
   renderCoach(stage);
+}
+
+// 복습이 평소보다 많이 밀렸을 때 왜 쌓이는지와 맞는 페이스를 숫자로 (새 단어 하나는 하루 복습 5개쯤으로 돌아옴)
+function paceNote() {
+  const N = todayNewTarget();
+  const cap = srsOn() ? (settings.reviewLimit ? settings.reviewSize : 0) : settings.reviewSize;
+  const p = reviewPace(rangeWords(), stats, { today: dateStr(), newPerDay: N, capacity: cap });
+  if (!p.heavy) return '';
+  const head = `밀린 복습 ${p.backlog}개 · 까먹었을 가능성이 큰 것부터 나오니 할 수 있는 만큼만 해도 돼요.`;
+  if (!N) return head;
+  if (!cap) return `${head} 새 단어 1개는 하루 복습 5개쯤으로 돌아와서, 하루 ${N}개씩이면 복습은 하루 ${p.steady}개쯤까지 늘어요.`;
+  if (p.fitNew >= N) return Number.isFinite(p.clearDays) ? `${head} 지금 페이스면 ${p.clearDays}일쯤에 다 털어요.` : head;
+  return `${head} 새 단어 하루 ${N}개면 복습이 하루 ${p.steady}개쯤까지 늘어서, 하루 복습 ${cap}개에 맞는 새 단어는 ${p.fitNew}개쯤이에요.`;
 }
 
 // 숫자 키패드 (앱 안): await askNumber({ title, value, extra }) → 숫자, 또는 extra를 고르면 extra.value, 취소면 null
@@ -1773,7 +1794,10 @@ async function startSession(mode, list) {
     // 처음 시작할 때 오늘의 복습 목록을 고정 → 중간에 그만둬도 남은 단어만 이어서
     const day = loadDay();
     if (!Array.isArray(day.review)) { day.review = pickToday().map(w => w.id); save(KEY.day, day); }
-    ids = shuffle(day.review.filter(id => byId.has(id) && !seenToday(id)));
+    // 목록은 까먹었을 가능성이 큰 것부터라, 20개씩 묶어 그 안에서만 섞음 (밀린 게 많아 중간에 그만둬도 급한 것부터 한 셈)
+    const left = day.review.filter(id => byId.has(id) && !seenToday(id));
+    ids = [];
+    for (let i = 0; i < left.length; i += 20) ids.push(...shuffle(left.slice(i, i + 20)));
     if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
     label = '오늘의 복습';
   } else if (mode === 'extraNew') {
@@ -2858,9 +2882,10 @@ function answer(correct, given, kind) {
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
   // 힌트를 썼던 단어가 다시 나와서 맞힌 것도 연습으로 (복습 단계는 첫 결과대로)
   const retry = session.wrong.includes(id) || session.hinted.includes(id);
-  const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
+  // 목표일부터 범위 전체를 훑는 오늘의 복습도 일정에 반영: 훑으며 맞힌 단어가 며칠 뒤 복습일에 또 나오지 않게
+  const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today) || (session.mode === 'review' && inSweep(today)));
   delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
-  stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
+  stats[id] = applyResult(before, outcome, { today, exam: settings.exam, scheduled, intervals: intervals(), load: dueLoad(), rest: restNow() });
   // 다시 볼 단어(또는 틀린 단어 다시 풀기)에서 힌트 없이 맞히면 오늘은 목록에서 뺌
   const cleared = outcome === 'ok' && !retry && !scheduled && isWrongRaw(before) && (session.mode === 'wrong' || session.mode === 'retry');
   if (cleared) stats[id].r = today; else delete stats[id].r;
