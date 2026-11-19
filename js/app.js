@@ -444,8 +444,14 @@ const goalDate = () => (coachActive() ? settings.coachGoal || '' : settings.goal
 const srsOn = () => (coachActive() ? !!settings.coachGoal : !!(settings.srs && settings.goal && settings.exam && settings.goal < settings.exam));
 const intervals = () => (srsOn() && PRESETS[settings.srsPreset]) || PRESETS.m;
 const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
-// 다음 복습일이 넘지 않을 날: 주기 복습이면 목표일 전까진 목표일, 그 뒤엔 시험일
-const deadline = (today = dateStr()) => (srsOn() && today < goalDate() ? goalDate() : settings.exam);
+// 주기 복습의 마지막 기간(목표일 ~ 시험 전날): 오늘의 복습이 범위 전체를 나눠 훑는 때
+const inSweep = (today = dateStr()) => srsOn() && !!goalDate() && today >= goalDate() && !!settings.exam && today < settings.exam;
+// 날짜별로 이미 잡힌 복습 수 (학습 범위 안 단어만). 다음 복습일을 덜 붐비는 날로 고르려고
+function dueLoad() {
+  const m = new Map();
+  for (const w of rangeWords()) { const s = stats[w.id]; if (s && s.due && !s.del) m.set(s.due, (m.get(s.due) || 0) + 1); }
+  return d => m.get(d) || 0;
+}
 const isMastered = s => s && s.st >= maxStage(); // 마지막 단계(기본 14일 간격)까지 올라간 단어
 const isWrongRaw = s => !!(s && s.st === 0);        // 마지막에 틀린 단어 (0단계)
 // 다시 볼 단어: 0단계인데, '다시 볼 단어'에서 오늘 다시 맞힌 것(r = 오늘)은 뺌. 복습 일정은 그대로라 내일 복습에 다시 나옴
@@ -2857,9 +2863,10 @@ function answer(correct, given, kind) {
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
   // 힌트를 썼던 단어가 다시 나와서 맞힌 것도 연습으로 (복습 단계는 첫 결과대로)
   const retry = session.wrong.includes(id) || session.hinted.includes(id);
-  const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today));
+  // 목표일부터 범위 전체를 훑는 오늘의 복습도 일정에 반영: 훑으며 맞힌 단어가 며칠 뒤 복습일에 또 나오지 않게
+  const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today) || (session.mode === 'review' && inSweep(today)));
   delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
-  stats[id] = applyResult(before, outcome, { today, exam: deadline(today), scheduled, intervals: intervals() });
+  stats[id] = applyResult(before, outcome, { today, exam: settings.exam, scheduled, intervals: intervals(), load: dueLoad(), rest: restNow() });
   // 다시 볼 단어(또는 틀린 단어 다시 풀기)에서 힌트 없이 맞히면 오늘은 목록에서 뺌
   const cleared = outcome === 'ok' && !retry && !scheduled && isWrongRaw(before) && (session.mode === 'wrong' || session.mode === 'retry');
   if (cleared) stats[id].r = today; else delete stats[id].r;

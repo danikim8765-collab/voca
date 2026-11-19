@@ -70,30 +70,91 @@ test('rowsToWords: 빈 DAY 이어받기, 중복 제거', () => {
   assert.equal(ws[1].day, 26);
 });
 
+// 그날 낮 12시 (applyResult의 now: 지난번에 본 날을 알려고)
+const noon = d => { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd, 12).getTime(); };
+const at = (d, o = {}) => ({ today: d, now: noon(d), ...o });
+
 test('간격 반복: 단계와 다음 복습일', () => {
   const T = '2026-11-02';
-  let s = applyResult(undefined, 'ok', { today: T });
+  let s = applyResult(undefined, 'ok', at(T));
   assert.deepEqual([s.st, s.due, s.f], [1, '2026-11-03', T]);           // 1단계 → 1일
-  s = applyResult(s, 'ok', { today: '2026-11-03' });
+  s = applyResult(s, 'ok', at('2026-11-03'));
   assert.deepEqual([s.st, s.due], [2, '2026-11-06']);                   // 2단계 → 3일
-  s = applyResult(s, 'ok', { today: '2026-11-06' });
+  s = applyResult(s, 'ok', at('2026-11-06'));
   assert.deepEqual([s.st, s.due], [3, '2026-11-13']);                   // 3단계 → 7일
-  s = applyResult(s, 'ok', { today: '2026-11-13' });
+  s = applyResult(s, 'ok', at('2026-11-13'));
   assert.deepEqual([s.st, s.due], [4, '2026-11-27']);                   // 4단계 → 14일
-  s = applyResult(s, 'ok', { today: '2026-11-27' });
+  s = applyResult(s, 'ok', at('2026-11-27'));
   assert.deepEqual([s.st, s.due], [4, '2026-12-11']);                   // 최대 4단계
-  s = applyResult(s, 'hint', { today: '2026-12-11' });
+  s = applyResult(s, 'hint', at('2026-12-11'));
   assert.deepEqual([s.st, s.due], [4, '2026-12-12']);                   // 힌트: 단계 그대로, 내일
-  s = applyResult(s, 'wrong', { today: '2026-12-12' });
-  assert.deepEqual([s.st, s.due, s.w], [0, '2026-12-13', 1]);           // 틀림: 0단계, 내일
+  s = applyResult(s, 'wrong', at('2026-12-12'));
+  assert.deepEqual([s.st, s.due, s.w, s.k], [0, '2026-12-13', 1, 2]);   // 틀림: 0단계(다시 볼 단어), 내일. 이어 갈 단계 2
   const before = { ...s };
-  s = applyResult(s, 'ok', { today: '2026-12-12', scheduled: false });  // 복습일 아닌 연습: 일정 그대로
-  assert.deepEqual([s.st, s.due, s.c], [before.st, before.due, before.c + 1]);
+  s = applyResult(s, 'ok', at('2026-12-12', { scheduled: false }));     // 복습일 아닌 연습: 일정 그대로
+  assert.deepEqual([s.st, s.due, s.c, s.k], [before.st, before.due, before.c + 1, 2]);
+  s = applyResult(s, 'ok', at('2026-12-13'));
+  assert.deepEqual([s.st, s.due, s.k], [3, '2026-12-20', undefined]);   // 다시 맞히면 처음부터가 아니라 3단계(7일)부터
 });
 
-test('시험일: 다음 복습일이 시험 전날을 넘지 않음', () => {
-  const s = applyResult({ st: 3, due: '2026-11-10', c: 3, w: 0 }, 'ok', { today: '2026-11-10', exam: '2026-11-15' });
+test('틀림: 단계를 처음부터가 아니라 둘씩 내리고, 거푸 틀리면 더 내려감', () => {
+  let s = applyResult({ st: 3, due: '2026-11-10', c: 3, w: 0, s: noon('2026-11-03'), f: '2026-10-01' }, 'wrong', at('2026-11-10'));
+  assert.deepEqual([s.st, s.k], [0, 1]);
+  s = applyResult(s, 'wrong', at('2026-11-11'));
+  assert.deepEqual([s.st, s.k], [0, undefined]);                        // 또 틀리면 처음부터
+  s = applyResult(s, 'ok', at('2026-11-12'));
+  assert.deepEqual([s.st, s.due], [1, '2026-11-13']);
+  // 1단계에서 틀리면 처음부터
+  assert.equal(applyResult({ st: 1, due: '2026-11-10', s: noon('2026-11-09') }, 'wrong', at('2026-11-10')).k, undefined);
+});
+
+test('밀려서 맞히면 버틴 날 수보다 짧은 간격은 건너뜀', () => {
+  // 1단계(내일 볼 단어)를 열흘 만에 맞힘 → 3일·7일은 이미 버텼으니 14일 단계로
+  let s = applyResult({ st: 1, due: '2026-11-02', c: 1, w: 0, s: noon('2026-11-01'), f: '2026-11-01' }, 'ok', at('2026-11-11'));
+  assert.deepEqual([s.st, s.due], [4, '2026-11-25']);
+  // 이틀 늦은 정도면 한 단계만
+  s = applyResult({ st: 2, due: '2026-11-04', c: 2, w: 0, s: noon('2026-11-01'), f: '2026-10-30' }, 'ok', at('2026-11-06'));
+  assert.deepEqual([s.st, s.due], [3, '2026-11-13']);
+  // 다른 프리셋도 같게: 짧게(1·2·4·7·12) 2단계를 6일 만에 → 4일은 버텼으니 7일 단계로
+  s = applyResult({ st: 2, due: '2026-11-03', s: noon('2026-11-01') }, 'ok', at('2026-11-07', { intervals: [1, 2, 4, 7, 12] }));
   assert.deepEqual([s.st, s.due], [4, '2026-11-14']);
+});
+
+test('다음 복습일: 덜 붐비는 날로, 쉬는 요일은 피해서', async () => {
+  const { spreadDue } = await import('../js/core.js');
+  const T = '2026-11-02'; // 월요일
+  assert.equal(spreadDue(T, 7), '2026-11-09');                          // 정보 없으면 딱 7일 뒤
+  assert.equal(spreadDue(T, 3, { load: () => 99 }), '2026-11-05');      // 3일 이하 간격은 그대로
+  const busy = { '2026-11-09': 30, '2026-11-08': 10, '2026-11-10': 5 };
+  assert.equal(spreadDue(T, 7, { load: d => busy[d] || 0 }), '2026-11-10'); // 7일 → ±1일 중 가장 한가한 날
+  assert.equal(spreadDue(T, 7, { load: d => (d === '2026-11-09' ? 3 : 1) }), '2026-11-08'); // 같으면 앞날
+  assert.equal(spreadDue(T, 14, { load: d => (d === '2026-11-16' ? 5 : d === '2026-11-14' ? 0 : 2) }), '2026-11-14'); // 14일 → ±2일
+  assert.equal(spreadDue(T, 7, { rest: [1] }), '2026-11-08');           // 11-09는 월요일(쉬는 날) → 앞날
+  // 같은 날 배운 단어들이 복습일을 나눠 가짐
+  const load = new Map(), dues = [];
+  for (let i = 0; i < 9; i++) {
+    const s = applyResult({ st: 2, due: T, s: noon('2026-10-30') }, 'ok', at(T, { load: d => load.get(d) || 0 }));
+    load.set(s.due, (load.get(s.due) || 0) + 1); dues.push(s.due);
+  }
+  assert.deepEqual([...load.values()], [3, 3, 3]);
+  assert.deepEqual([...new Set(dues)].sort(), ['2026-11-08', '2026-11-09', '2026-11-10']);
+});
+
+test('시험 전: 시험날까지 간격의 절반이 넘게 남을 때만 한 번 더, 시험 전날에 몰지 않음', async () => {
+  const { examDue } = await import('../js/core.js');
+  const T = '2026-11-10';
+  // 14일 간격인데 시험이 10일 뒤 → 시험 7일 전(11-13)에 한 번 더
+  let s = applyResult({ st: 3, due: T, c: 3, w: 0, s: noon('2026-11-03') }, 'ok', at(T, { exam: '2026-11-20' }));
+  assert.deepEqual([s.st, s.due], [4, '2026-11-13']);
+  // 시험이 6일 뒤면 7일 안이라 그대로 (시험 뒤 복습일)
+  assert.equal(applyResult({ st: 3, due: T, s: noon('2026-11-03') }, 'ok', at(T, { exam: '2026-11-16' })).due, '2026-11-24');
+  // 다음 복습일이 시험 전이면 그대로
+  assert.equal(examDue(T, 3, '2026-11-20'), '2026-11-13');
+  // 7일 간격, 시험 5일 뒤 → 시험 3일 전. 그날이 붐비면 앞으로만 옮김(시험까지 덜 남지 않게)
+  assert.equal(examDue(T, 7, '2026-11-15'), '2026-11-12');
+  assert.equal(examDue(T, 14, '2026-11-24', { load: d => (d === '2026-11-17' ? 9 : 0) }), '2026-11-16');
+  // 시험 날·지난 뒤엔 그냥 간격대로
+  assert.equal(examDue('2026-11-20', 7, '2026-11-20'), '2026-11-27');
 });
 
 test('예전 기록 변환: 진도 유지', () => {
@@ -392,19 +453,16 @@ test('앱 키보드: 키 사이 틈을 눌러도 가장 가까운 키', async ()
 test('주기 복습: 간격 프리셋, 목표일까지 맞춤, 목표일부터 범위 전부를 나눠서', async () => {
   const { PRESETS, pickSrsReview, retentionCurve } = await import('../js/core.js');
   // 보통은 기본 방식과 같은 간격
-  let s = applyResult(null, 'ok', { today: '2026-11-01' });
+  let s = applyResult(null, 'ok', at('2026-11-01'));
   assert.deepEqual([s.st, s.due], [1, '2026-11-02']);
-  s = applyResult(s, 'ok', { today: '2026-11-02' });
+  s = applyResult(s, 'ok', at('2026-11-02'));
   assert.deepEqual([s.st, s.due], [2, '2026-11-05']);
   // 매우 짧게: 6단계, 1·1·2·3·5·8일
   let x = null; const days = [];
   let d = '2026-11-01';
-  for (let i = 0; i < 7; i++) { x = applyResult(x, 'ok', { today: d, intervals: PRESETS.xs }); days.push(daysBetween(d, x.due)); d = x.due; }
+  for (let i = 0; i < 7; i++) { x = applyResult(x, 'ok', at(d, { intervals: PRESETS.xs })); days.push(daysBetween(d, x.due)); d = x.due; }
   assert.deepEqual(days, [1, 1, 2, 3, 5, 8, 8]);
   assert.equal(x.st, 6);
-  // 목표일 전날을 넘지 않게
-  const capped = applyResult({ st: 3, due: '2026-11-01', c: 3, w: 0, s: 1, f: '2026-10-01' }, 'ok', { today: '2026-11-01', exam: '2026-11-05', intervals: PRESETS.m });
-  assert.equal(capped.due, '2026-11-04');
 
   const words = Array.from({ length: 10 }, (_, i) => ({ id: 'w' + i, day: 1 }));
   const old = new Date(2026, 9, 1).getTime();
@@ -416,9 +474,13 @@ test('주기 복습: 간격 프리셋, 목표일까지 맞춤, 목표일부터 �
   // 목표일부터: 10단어를 5일에 나눠 하루 2개 (+ 복습일 된 단어)
   const f0 = pickSrsReview(words, words, stats, { ...opt, today: '2026-11-10' });
   assert.equal(f0.phase, 'final');
-  assert.deepEqual(f0.words.map(w => w.id), ['w0', 'w1']);
-  // 첫날 몫을 안 했으면 둘째 날에 같이
-  assert.deepEqual(pickSrsReview(words, words, stats, { ...opt, today: '2026-11-11' }).words.map(w => w.id), ['w0', 'w1', 'w2', 'w3']);
+  // 하루 몫 2개는 잘 아는 단어부터(2단계 w1·w2), 복습일 된 w0도 같이
+  assert.deepEqual(f0.words.map(w => w.id), ['w1', 'w2', 'w0']);
+  // 첫날 몫을 안 했으면 둘째 날에 같이 (안 배운 단어는 맨 뒤)
+  assert.deepEqual(pickSrsReview(words, words, stats, { ...opt, today: '2026-11-11' }).words.map(w => w.id), ['w1', 'w2', 'w0', 'w3']);
+  // 이번 바퀴에서 이미 본 단어(복습일이 돼서 본 것 포함)는 몫으로 셈: 첫날 w0·w5를 봤으면 둘째 날은 두 개만 더
+  const seen = { ...stats, w0: { ...stats.w0, due: '2026-11-13', s: new Date(2026, 10, 10, 12).getTime() }, w5: { st: 1, due: '2026-11-20', c: 1, w: 0, s: new Date(2026, 10, 10, 12).getTime(), f: '2026-11-01' } };
+  assert.deepEqual(pickSrsReview(words, words, seen, { ...opt, today: '2026-11-11' }).words.map(w => w.id), ['w1', 'w2']);
   // 시험일부터는 복습일 된 단어만
   assert.equal(pickSrsReview(words, words, stats, { ...opt, today: '2026-11-15' }).phase, 'after');
   // 목표일부터 시험 전날까진 새 단어 없음
