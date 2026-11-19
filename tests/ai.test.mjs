@@ -255,7 +255,8 @@ test('코치와 이야기: 숫자·길이·형식으로 말을 버리지 않고,
   reply = claudeText('{"mood":"happy","text":"여기까지는 왔는데');
   assert.equal((await aiCoachChat(args)).text, '여기까지는 왔는데');
   // 홈 말풍선의 하루 한도(30번)를 다 써도 대화는 됨
-  store.set('voca.ai.coachuse.v1', JSON.stringify({ d: new Date().toLocaleDateString('sv'), n: 999 }));
+  const { dateStr } = await import('../js/core.js'); // 앱의 '오늘' (새벽 4시에 바뀜)
+  store.set('voca.ai.coachuse.v1', JSON.stringify({ d: dateStr(), n: 999 }));
   reply = claudeText('{"mood":"normal","text":"좋아요."}');
   assert.equal(await aiCoachSay({ char: 'cat', facts: '' }), null);
   assert.equal(aiCoachError(), 'limit');

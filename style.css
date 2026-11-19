@@ -197,6 +197,12 @@ button { cursor: pointer; }
 
 .resume { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 2px solid var(--primary-soft); }
 .resume .btn { margin: 0; }
+/* 설명이 길어도(예: 범위 순서대로 연습) 버튼 글자는 한 줄로, 설명은 낱말 중간('완/료')에서 줄이 갈리지 않게 */
+.resume > div:first-child { flex: 1 1 auto; min-width: 0; }
+.resume > .row { flex: none; }
+.resume #btn-resume { white-space: nowrap; }
+#resume-info, .resume b { word-break: keep-all; overflow-wrap: anywhere; }
+#resume-info .nobr { white-space: nowrap; }
 /* 이어하기 카드의 지우기(휴지통) — 누르면 빨갛게 */
 .trash-btn { flex: none; width: 40px; height: 40px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; padding: 0; }
 .trash-btn svg { width: 21px; height: 21px; }
@@ -208,6 +214,11 @@ button { cursor: pointer; }
 .count { font-size: 13px; color: var(--muted); min-width: 44px; text-align: right; }
 .quiz-body { padding-bottom: 8px; }
 .q-meta { display: flex; gap: 6px; margin-bottom: 10px; }
+/* 폰: 화면이 좁아 표시가 한 줄에 다 안 들어가면 낱말 중간에서 줄이 갈렸음('DAY / 44').
+   짧은 표시는 통째로, 모자라면 다음 줄로. 채점 결과(길 수 있음)만 너무 길면 띄어쓰기 자리에서 줄을 바꿈 */
+:root:not(.desk) .q-meta { flex-wrap: wrap; align-items: flex-start; }
+:root:not(.desk) .q-meta .tag { flex: none; white-space: nowrap; }
+:root:not(.desk) .q-meta .tag.fb-head { flex: 0 1 auto; min-width: 0; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; }
 .tag { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: var(--r-sm); padding: 2px 8px; }
 .tag.warn { color: var(--warn); background: var(--warn-soft); }
 .q-prompt { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
@@ -247,24 +258,45 @@ button { cursor: pointer; }
 .choice:disabled { opacity: 1; }
 .choice.picked:not(:disabled) { border-color: var(--primary); background: var(--primary-soft); } /* 컴퓨터 키보드로 숫자를 눌러 고른 보기 (Enter로 채점) */
 .choice.gone { opacity: .32; text-decoration: line-through; } /* 힌트로 지운 보기 */
-/* 폰 4지선다: 선지를 화면 아래에 2×2로 고정. 띠 없이 배경과 같은 그라데이션을 깔고 위쪽만 살짝 흐려서 배경에 붙어 보이게 */
+/* 폰·태블릿 4지선다: 선지를 2×2로 예문 바로 아래에 (app.js placeChoices) */
+.phone-choices .quiz-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; transition: grid-template-columns .2s ease; }
+.phone-choices .quiz-actions[data-lean="left"] { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
+.phone-choices .quiz-actions[data-lean="right"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); }
+.phone-choices .choice { margin: 0; padding: 12px; word-break: keep-all; overflow-wrap: break-word; }
+/* 좁아진 칸은 번호를 빼서 단어 자리를 확보 (첫 자식은 위쪽 줄이라 왼쪽 칸 선지가 짝수 번째) */
+.phone-choices .quiz-actions[data-layout="grid"][data-lean="left"] .choice:nth-child(odd) .n,
+.phone-choices .quiz-actions[data-layout="grid"][data-lean="right"] .choice:nth-child(even) .n { display: none; }
+/* 한 줄씩 (쏠림 없음) */
+.phone-choices .quiz-actions[data-layout="list"] { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.phone-choices .quiz-actions[data-layout="list"] .choice { padding: 11px 14px; }
+/* 선지 위 한 줄: 왼쪽 힌트(고정될 때만 여기로), 가운데 쏠림 ‹ ›, 오른쪽 '더 보기' */
+.pin-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; min-height: 28px; }
+.pin-row .pin-slot { justify-self: start; }
+.pin-row .more-btn { justify-self: end; }
+.pin-row .q-tools { flex-wrap: nowrap; }
+.pin-row .q-tools .btn, .more-btn { min-height: 32px; height: 32px; padding: 0 11px; font-size: 13px; background: var(--card); box-shadow: var(--shadow); border-radius: var(--r-pill); }
+.more-btn { display: inline-flex; align-items: center; gap: 2px; border: 0; color: var(--primary); font-weight: 700; white-space: nowrap; }
+.more-btn svg { width: 16px; height: 16px; }
+.pin-row .lean-bar { margin: 0; }
+/* 한 화면에 다 안 들어가면 화면 아래에 고정. 띠 없이 배경과 같은 그라데이션을 깔고 위쪽만 살짝 흐려서 배경에 붙어 보이게 */
 .pin-choices .quiz-actions {
   position: fixed; left: 0; right: 0; bottom: 0; max-width: none; z-index: 5;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
-  padding: 22px max(16px, calc((100% - var(--bar-w)) / 2 + 16px)) calc(env(safe-area-inset-bottom) + 12px);
+  padding: 16px max(16px, calc((100% - var(--bar-w)) / 2 + 16px)) calc(env(safe-area-inset-bottom) + 12px);
   background: var(--page-grad);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px); mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
-  transition: grid-template-columns .2s ease;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12px); mask-image: linear-gradient(to bottom, transparent 0, #000 12px);
 }
-.pin-choices .quiz-actions[data-lean="left"] { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); }
-.pin-choices .quiz-actions[data-lean="right"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); }
-.pin-choices .choice { margin: 0; padding: 12px; word-break: keep-all; overflow-wrap: break-word; }
-/* 좁아진 칸은 번호를 빼서 단어 자리를 확보 (첫 자식은 lean-bar라 왼쪽 칸 선지가 짝수 번째) */
-.pin-choices .quiz-actions[data-layout="grid"][data-lean="left"] .choice:nth-child(odd) .n,
-.pin-choices .quiz-actions[data-layout="grid"][data-lean="right"] .choice:nth-child(even) .n { display: none; }
-/* 한 줄씩 (쏠림 없음) */
-.pin-choices .quiz-actions[data-layout="list"] { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.pin-choices .quiz-actions[data-layout="list"] .choice { padding: 11px 14px; }
+/* 아주 작은 폰(낮은 화면): 예문 칸을 촘촘하게 해서 예문 2가 너무 아래로 밀리지 않게 */
+@media (max-width: 699px) and (max-height: 640px) {
+  .quiz-top { margin-bottom: 6px; }
+  .q-meta { margin-bottom: 6px; }
+  .q-prompt { font-size: 13px; margin-bottom: 8px; }
+  .sent { padding: 12px 14px; margin-bottom: 8px; border-radius: var(--r-lg); }
+  .sent .en { font-size: calc(17px * var(--fz)); line-height: 1.6; }
+  .sent .ko { font-size: calc(13.5px * var(--fz)); margin-top: 6px; }
+  .phone-choices .quiz-actions { gap: 6px; }
+  .phone-choices .choice { padding: 9px 10px; font-size: 15px; }
+  .pin-choices .quiz-actions { padding-top: 12px; padding-bottom: calc(env(safe-area-inset-bottom) + 8px); }
+}
 /* 컴퓨터에서 격자를 고르면 아래 고정 없이 2×2로 */
 .desk .quiz-actions[data-layout="grid"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .desk .quiz-actions[data-layout="grid"] .choice { margin: 0; }
@@ -285,13 +317,13 @@ button { cursor: pointer; }
 #settings .card .seg + .label, #settings .card .switch-row + div > .label:first-child { margin-top: 16px; }
 .set-plan-btn { margin: 12px 0 0; padding-left: 0; padding-right: 0; color: var(--primary); }
 .link-btn { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
-.lean-bar { grid-column: 1 / -1; display: flex; justify-content: center; gap: 4px; margin: -12px 0 -2px; }
+.lean-bar { display: flex; justify-content: center; gap: 4px; }
 .lean-btn {
   width: 44px; height: 28px; border: 0; border-radius: var(--r-md); background: transparent; color: var(--muted);
   font-size: 22px; font-weight: 700; line-height: 1; padding: 0 0 2px;
 }
 .lean-btn.on { color: var(--primary); background: var(--primary-soft); }
-@media (prefers-reduced-motion: reduce) { .pin-choices .quiz-actions { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .phone-choices .quiz-actions { transition: none; } }
 .type-input {
   width: 100%; padding: 15px 16px; font-size: 19px; border-radius: var(--r-lg); border: 2px solid var(--line);
   background: var(--card); margin-bottom: 8px; outline: none;
@@ -481,6 +513,9 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 /* 단어·탭·계속하기는 고정, 뜻/예문 내용만 스크롤 */
 .sheet-inner > * { flex: none; }
 .sheet-inner > .fb-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 폰: 스크롤 막대가 카드 오른쪽 위에 겹쳐 그려져서 숨김 (컴퓨터는 막대가 따로 자리를 차지해서 그대로) */
+:root:not(.desk) .sheet-inner > .fb-pane, :root:not(.desk) .ask-log { scrollbar-width: none; }
+:root:not(.desk) .sheet-inner > .fb-pane::-webkit-scrollbar, :root:not(.desk) .ask-log::-webkit-scrollbar { display: none; }
 .grab { width: 44px; height: 5px; border-radius: 9px; background: var(--line); margin: 0 auto 12px; }
 .fb-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 12px 0 14px; }
 .fb-tabs button { border: 0; background: none; padding: 8px 2px; font-size: 16px; font-weight: 700; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
@@ -836,12 +871,6 @@ html:not(.desk) .desk-only { display: none; }
 .ask-form .btn { width: auto; flex: none; margin-bottom: 0; }
 .q-tools { display: flex; gap: 6px; flex-wrap: wrap; }
 .q-tools .btn { width: auto; margin-bottom: 0; }
-/* 폰 4지선다: 힌트 버튼을 아래 고정된 보기 바로 위 오른쪽에 띄움 (예문이 길어도 보기 뒤에 숨지 않게) */
-.pin-choices .q-tools {
-  position: fixed; z-index: 6; bottom: calc(var(--pin-h, 0px) - 6px);
-  right: max(16px, calc((100% - var(--bar-w)) / 2 + 16px));
-}
-.pin-choices .q-tools .btn { background: var(--card); box-shadow: var(--shadow); }
 #btn-idk { color: var(--muted); }
 
 /* ---------- 유반의어 테스트 ---------- */
