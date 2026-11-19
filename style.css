@@ -207,11 +207,12 @@ button { cursor: pointer; }
 .quiz-top { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .count { font-size: 13px; color: var(--muted); min-width: 44px; text-align: right; }
 .quiz-body { padding-bottom: 8px; }
-.q-meta { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin-bottom: 10px; }
-/* 표시는 낱말 중간에서 줄이 갈리지 않게: 짧은 건 통째로, 한 줄에 다 안 들어가면 다음 줄로.
-   채점 결과(길 수 있음)만 너무 길면 띄어쓰기 자리에서 줄을 바꿈 */
-.q-meta .tag { flex: none; white-space: nowrap; }
-.q-meta .tag.fb-head { flex: 0 1 auto; min-width: 0; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; }
+.q-meta { display: flex; gap: 6px; margin-bottom: 10px; }
+/* 폰: 화면이 좁아 표시가 한 줄에 다 안 들어가면 낱말 중간에서 줄이 갈렸음('DAY / 44').
+   짧은 표시는 통째로, 모자라면 다음 줄로. 채점 결과(길 수 있음)만 너무 길면 띄어쓰기 자리에서 줄을 바꿈 */
+:root:not(.desk) .q-meta { flex-wrap: wrap; align-items: flex-start; }
+:root:not(.desk) .q-meta .tag { flex: none; white-space: nowrap; }
+:root:not(.desk) .q-meta .tag.fb-head { flex: 0 1 auto; min-width: 0; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; }
 .tag { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: var(--r-sm); padding: 2px 8px; }
 .tag.warn { color: var(--warn); background: var(--warn-soft); }
 .q-prompt { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
@@ -484,8 +485,10 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .q-prompt.my-answer { color: var(--bad); font-weight: 700; }
 /* 단어·탭·계속하기는 고정, 뜻/예문 내용만 스크롤 */
 .sheet-inner > * { flex: none; }
-.sheet-inner > .fb-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-.sheet-inner > .fb-pane::-webkit-scrollbar, .ask-log::-webkit-scrollbar { display: none; } /* 스크롤 막대가 카드 오른쪽을 가리지 않게 */
+.sheet-inner > .fb-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* 폰: 스크롤 막대가 카드 오른쪽 위에 겹쳐 그려져서 숨김 (컴퓨터는 막대가 따로 자리를 차지해서 그대로) */
+:root:not(.desk) .sheet-inner > .fb-pane, :root:not(.desk) .ask-log { scrollbar-width: none; }
+:root:not(.desk) .sheet-inner > .fb-pane::-webkit-scrollbar, :root:not(.desk) .ask-log::-webkit-scrollbar { display: none; }
 .grab { width: 44px; height: 5px; border-radius: 9px; background: var(--line); margin: 0 auto 12px; }
 .fb-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 12px 0 14px; }
 .fb-tabs button { border: 0; background: none; padding: 8px 2px; font-size: 16px; font-weight: 700; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
@@ -824,7 +827,7 @@ html:not(.desk) .desk-only { display: none; }
 /* 'AI에게 묻기': 위에서부터 빠른 질문 → 입력칸 → 주고받은 이야기 */
 .ask { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .ask > .chips, .ask > .ask-form { flex: none; }
-.ask-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; display: flex; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
+.ask-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
 .ask-log:empty::before { content: '이 단어에 대해 궁금한 걸 물어보면 여기에 답이 와요'; color: var(--muted); font-size: 13px; padding: 2px 4px; }
 /* 이야기가 생기면 빠른 질문은 한 줄로 옆으로 밀어 보게 (이야기 칸을 넓게) */
 .ask.chatting > .ask-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -2px; padding: 0 2px; }
