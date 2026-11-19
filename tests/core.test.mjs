@@ -859,3 +859,22 @@ test('하루는 새벽 4시에 바뀜', async () => {
   assert.equal(addDays('2026-03-01', -1), '2026-02-28');
   assert.equal(addDays('2026-12-31', 1), '2027-01-01');
 });
+
+test('예문 한 칸에 문장이 여럿이라 꼴이 다르게 두 번 가려져도(break off) 정답은 한 번 분량', async () => {
+  const { blankUnit, answerWordCount, typingHintTarget, isTypedCorrect, makeBlanks } = await import('../js/core.js');
+  assert.equal(answerWordCount('break off'), 2);
+  assert.equal(answerWordCount('convince A of B'), 2);
+  assert.equal(answerWordCount('fatal'), 1);
+  const w = { word: 'break off', blank: 'break off' };
+  const b = makeBlanks('Breaking off diplomatic relations is a last resort. / The interviewee broke off in the middle of a sentence.', w.blank, w.word);
+  assert.deepEqual(b.blanks.map(x => x.toLowerCase()), ['breaking', 'off', 'broke', 'off']);
+  assert.deepEqual(blankUnit(b.blanks, 2), ['Breaking', 'off']);
+  assert.equal(typingHintTarget(w, b.blanks, null), 'breaking off'); // '정답 보고 쓰기'도 한 번만
+  assert.ok(isTypedCorrect('breaking off', w, b.blanks, null));
+  assert.ok(isTypedCorrect('break off', w, b.blanks, null));
+  // 같은 말 반복·낱말 수가 안 맞는 건 예전 그대로
+  assert.deepEqual(blankUnit(['cues', 'cues'], 1), ['cues']);
+  assert.deepEqual(blankUnit(['face', 'to', 'face'], 3), ['face', 'to', 'face']);
+  assert.deepEqual(blankUnit(['abounds', 'abounded'], 1), ['abounds']);
+  assert.deepEqual(blankUnit(['took', 'over'], 0), ['took', 'over']);
+});

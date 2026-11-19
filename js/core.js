@@ -383,8 +383,8 @@ export function isTypedCorrect(input, word, blanks1, blanks2) {
   const candidates = [
     word.word,
     answerParts(word.blank).join(' '),
-    blankUnit(blanks1).join(' '),
-    blankUnit(blanks2).join(' '),
+    blankUnit(blanks1, answerWordCount(word.blank)).join(' '),
+    blankUnit(blanks2, answerWordCount(word.blank)).join(' '),
   ].map(normalizeAnswer).filter(Boolean);
   return candidates.includes(got);
 }
@@ -936,18 +936,23 @@ export function sameStats(x, y) {
 // 마지막 글자는 알려주지 않는다. 더 줄 힌트가 없으면 null.
 export function typingHintTarget(word, blanks1, blanks2) {
   const pick = [blanks1, blanks2].find(b => b && b.length) || answerParts(word.blank);
-  return blankUnit(pick).join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+  return blankUnit(pick, answerWordCount(word.blank)).join(' ').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
 }
 
 // 같은 말이 문장에 여러 번 가려졌으면(cues … cues, give up … give up) 한 번 분량만: 정답은 그 한 번
-export function blankUnit(blanks) {
+// n = 정답 낱말 수(answerWordCount). 예문 한 칸에 문장이 여럿이라 꼴이 다르게 여러 번 가려졌으면
+// (Breaking off … broke off) 같은 말이 아니어도 낱말 수의 배수면 첫 번 분량만 (빈칸을 두 번 쓰게 하지 않게)
+export function blankUnit(blanks, n = 0) {
   const b = blanks || [];
   const low = b.map(x => String(x).toLowerCase());
   for (let p = 1; p < b.length; p++) {
     if (b.length % p === 0 && low.every((x, i) => x === low[i % p])) return b.slice(0, p);
   }
+  if (n > 0 && b.length > n && b.length % n === 0) return b.slice(0, n);
   return b;
 }
+// 정답 낱말 수 (break off → 2, convince A of B → 2, fatal → 1)
+export const answerWordCount = blankForm => answerParts(blankForm).join(' ').split(/\s+/).filter(Boolean).length;
 
 export function nextLetterHint(input, target) {
   const cur = String(input || '').toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').replace(/^ /, '');

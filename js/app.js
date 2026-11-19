@@ -1,7 +1,7 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
-  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
+  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
 } from './core.js';
 import { createSync } from './sync.js';
@@ -2063,7 +2063,7 @@ function renderQuestion() {
   });
   document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요'
     : { same: '빈칸에 공통으로 들어갈 말은?', single: '빈칸에 들어갈 말은?',
-      diff: settings.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2)];
+      diff: settings.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2, answerWordCount(w.blank))];
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
 
   const mEl = $('#q-meaning');
@@ -2106,10 +2106,10 @@ function renderQuestion() {
 
 // 빈칸에 들어갈 말이 모든 문장에서 같은 꼴인지 (deteriorated / deteriorate처럼 다르면 '공통으로'라고 묻지 않음)
 // 'same' 여러 번 나오는데 다 같은 꼴 · 'diff' 꼴이 다름 · 'single' 한 번만 나옴
-function blankForms(b1, b2) {
+function blankForms(b1, b2, n = 0) {
   const bs = [b1, b2].filter(b => b && b.ok && b.blanks.length);
   if (!bs.length) return 'single';
-  const unit = blankUnit(bs[0].blanks).map(x => x.toLowerCase());
+  const unit = blankUnit(bs[0].blanks, n).map(x => x.toLowerCase());
   if (!bs.every(b => b.blanks.every((x, i) => x.toLowerCase() === unit[i % unit.length]))) return 'diff';
   return bs.length > 1 || bs[0].blanks.length > unit.length ? 'same' : 'single';
 }
@@ -2497,7 +2497,7 @@ const COACH_IDLE_MS = 1200; // 정답에서 벗어난 채로 이만큼 멈추면
 
 function renderTyping(actions) {
   // 빈칸 수: 숙어는 단어마다 한 칸 (반복된 숙어는 한 번 분량)
-  const parts = blankUnit((q.b1 && q.b1.blanks.length ? q.b1 : q.b2 || { blanks: [] }).blanks).length || answerParts(q.w.blank).length;
+  const parts = blankUnit((q.b1 && q.b1.blanks.length ? q.b1 : q.b2 || { blanks: [] }).blanks, answerWordCount(q.w.blank)).length || answerParts(q.w.blank).length;
   const placeholder = parts > 1 ? `빈칸 ${parts}곳을 순서대로 입력` : '빈칸에 들어갈 말';
   const helpText = parts > 1 ? '칸을 다 채우면 다음 칸으로 넘어가요 (띄어쓰기로도 넘어가요)' : '';
   // 정답: 단어 원형(abound)도, 예문 속 형태(abounds)도 인정 — 단어를 외우는 게 우선
@@ -2633,7 +2633,7 @@ function renderTyping(actions) {
 // 입력값을 문장의 빈칸들에 나눠 넣기. 같은 단어가 반복된 빈칸(cues … cues)은 모두 같은 값
 function fillBlanks(value, targets) {
   // 같은 말이 반복된 빈칸(give up … give up)은 한 번 분량에 나눠 넣고 반복되는 칸에도 똑같이
-  const unit = blankUnit(targets);
+  const unit = blankUnit(targets, q && q.w ? answerWordCount(q.w.blank) : 0);
   const words = value.split(' ');
   const uf = [];
   let wi = 0, active = 0;
