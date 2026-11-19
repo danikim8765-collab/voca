@@ -367,7 +367,12 @@ button { cursor: pointer; }
 }
 @keyframes up { from { transform: translateY(100%); } }
 .fb-word { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.fb-word .w { font-size: 30px; font-weight: 800; }
+/* 긴 단어(accommodation 등)가 신고·형광펜 버튼을 화면 밖으로 밀지 않게: 단어 칸이 줄어들고,
+   글자는 한 줄에 들어가게 작아짐(app.js fitFbWord, 18px까지, 그래도 길면 코치 캐릭터를 뺌). 그래도 길면 줄을 바꿈 */
+.fb-word > div:first-child { flex: 1 1 auto; min-width: 0; }
+.fb-word .w { font-size: var(--w-fit, 30px); font-weight: 800; line-height: 1.15; overflow-wrap: anywhere; }
+.fb-word.tight .fb-coach { display: none; } /* 단어가 너무 길면 머리의 코치 캐릭터는 뺌 */
+.fb-word.tight .report-btn { margin-left: auto; }
 .speak { border: 0; background: var(--primary-soft); color: var(--primary); border-radius: var(--r-pill); width: 36px; height: 36px; flex: none; display: grid; place-items: center; padding: 0; }
 .speak .ic { width: 18px; height: 18px; }
 .speak.big { width: 48px; height: 48px; }
@@ -849,7 +854,7 @@ html:not(.desk) .desk-only { display: none; }
 /* 폰에서 AI 칸에 쓰는 중: 키보드 위로 시트를 채우고, 단어 머리는 작게, 아래 버튼 줄은 숨김 */
 #feedback.typing .sheet-inner { animation: none; border-radius: var(--r-xl) var(--r-xl) 0 0; }
 #feedback.typing .grab, #feedback.typing .fb-actions, #feedback.typing #fb-pron { display: none; }
-#feedback.typing .fb-word .w { font-size: 22px; }
+#feedback.typing .fb-word .w { font-size: min(22px, var(--w-fit, 30px)); }
 #feedback.typing .fb-tabs { margin: 6px 0 8px; }
 /* 'AI에게 묻기': 위에서부터 빠른 질문 → 입력칸 → 주고받은 이야기 */
 .ask { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }

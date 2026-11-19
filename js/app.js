@@ -2179,6 +2179,7 @@ window.addEventListener('resize', () => {
   if (w === window.innerWidth && Math.abs(h - window.innerHeight) < 90) { moreBelow(); return; }
   placeSize = [window.innerWidth, window.innerHeight];
   if (current === 'quiz') placeChoices();
+  if (!$('#feedback').hidden) fitFbWord();
 });
 
 // 컴퓨터: 선지가 창 아래로 넘치면(낮은 창, 긴 예문) 2×2로 줄여서 한 화면에
@@ -2994,6 +2995,7 @@ function openSheet(w, more = []) {
   setFbTab('mean');
 
   $('#feedback').hidden = false;
+  fitFbWord();
   // 시트에 가리지 않게 문장 아래 여백
   // 넓은 컴퓨터 화면에선 정답 시트가 오른쪽 칸이라 여백 필요 없음
   requestAnimationFrame(sheetPad);
@@ -3217,6 +3219,25 @@ function askBox(cur) {
   return box;
 }
 
+// 정답 시트 머리의 단어: 길면 한 줄에 들어갈 때까지 글자를 줄임(30px → 18px). 그래도 넘치면 머리의 코치 캐릭터를 빼고
+// 다시 맞춤. 그래도 넘치면(아주 긴 숙어) 줄바꿈
+function fitFbWord() {
+  const w = $('#fb-word'), head = w.closest('.fb-word');
+  head.classList.remove('tight');
+  w.style.whiteSpace = 'nowrap';
+  // 글자 폭은 소수점까지 재서 비교 (반올림한 scrollWidth로 재면 1px 모자란 것도 맞는 걸로 보고 줄이 바뀜)
+  const range = document.createRange();
+  range.selectNodeContents(w);
+  const over = () => range.getBoundingClientRect().width > w.getBoundingClientRect().width - 1;
+  const shrink = () => {
+    let size = 30;
+    w.style.removeProperty('--w-fit');
+    while (over() && size > 18) { size -= 2; w.style.setProperty('--w-fit', `${size}px`); }
+    return !over();
+  };
+  if (!shrink() && !$('#fb-coach').hidden) { head.classList.add('tight'); shrink(); }
+  w.style.whiteSpace = '';
+}
 // 정답 시트 탭: 탭마다 시트 크기·모양이 다름 (style.css #feedback[data-tab]).
 // 뜻 = 내용만큼 낮게, 예문 = 조금 더 높게, AI = 대화창처럼 높게(빠른 질문·입력칸은 위에 고정, 이야기만 스크롤)
 // 바꿀 때 높이가 툭 바뀌지 않게 지금 높이에서 새 높이로 미끄러지듯
