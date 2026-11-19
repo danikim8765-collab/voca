@@ -1953,15 +1953,24 @@ function againLater(id, kind) {
   if (slots.length) session.again[id] = (session.again[id] || 0) + 1;
   return slots.length ? `${slots.map(s => (s === 'end' ? '맨 끝에' : AGAIN_NAME[s])).join('·')} 다시` : '내일 다시';
 }
-// 맞혔는데 이번 학습 안에 그 단어가 아직 또 잡혀 있으면(전에 틀려서 '조금 뒤·맨 끝'처럼 여러 번 잡아 둔 것) 언제 또 나오는지.
-// 없으면 ''. 예: '3문제 뒤 한 번 더', '맨 끝에 한 번 더', '2문제 뒤부터 2번 더'
+// 맞혔는데 이번 학습 안에 그 단어가 아직 또 잡혀 있으면(전에 틀려서 '조금 뒤·맨 끝'처럼 여러 번 잡아 둔 것) 언제쯤 또 나오는지.
+// 몇 문제 뒤인지 숫자로 말하지 않고 느낌으로만: 얼마나 뒤인지에 따라 고른 말 중 하나를 그때그때 섞어 씀. 없으면 ''
+const AGAIN_WHEN = {
+  next: ['바로 다음에', '곧바로', '바로 이어서'],
+  soon: ['곧', '금방', '머지않아', '조금만 있으면'],
+  mid: ['잠시 후', '조금 이따', '좀 있다가', '이따가'],
+  late: ['한참 뒤에', '나중에', '좀 더 뒤에', '꽤 있다가'],
+  end: ['마지막에', '끝날 때쯤', '맨 끝에', '끝나기 전에'],
+};
 function comingAgain(id) {
   const rest = session.queue.slice(session.pos + 1);
   const k = rest.filter(x => x === id).length;
   if (!k) return '';
   const gap = rest.indexOf(id); // 그 사이에 나오는 문제 수
-  const when = gap === 0 ? '바로 다음에' : k === 1 && rest.lastIndexOf(id) === rest.length - 1 ? '맨 끝에' : `${gap}문제 뒤${k > 1 ? '부터' : ''}`;
-  return `${when} ${k === 1 ? '한 번' : `${k}번`} 더`;
+  const last = k === 1 && rest.lastIndexOf(id) === rest.length - 1;
+  const kind = gap === 0 ? 'next' : gap <= 2 ? 'soon' : last ? 'end' : gap <= 6 ? 'mid' : 'late';
+  const words = AGAIN_WHEN[kind];
+  return `${words[Math.floor(Math.random() * words.length)]} ${k === 1 ? '한 번 더' : '몇 번 더'}`;
 }
 // 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (다시 나오기는 설정의 '틀렸을 때'·'힌트 한 번'대로)
 function synAnswer(correct, given, kind) {
