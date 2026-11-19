@@ -456,7 +456,7 @@ export function normalizeStat(s) {
  * scheduled: 오늘 복습할 단어(새 단어·복습일·시험 대비)인지. 아닌 단어를 연습으로 맞힌 건 일정에 반영하지 않음
  */
 // 주기 복습(설정에서 켤 때)의 복습 간격 다섯 가지. 단계 k(1부터)가 되면 intervals[k-1]일 뒤 복습.
-// 보통(m)은 기본 방식과 같은 1·3·7·14일. 마지막 단계에 닿으면 암기 완료, 그 뒤로는 마지막 간격으로 계속
+// 보통(m)은 기본 방식과 같은 1·3·7·14일. 마지막 단계에 닿으면 암기 완료, 그 뒤로는 맞힐 때마다 간격이 두 배씩(MAX_INTERVAL까지)
 export const PRESETS = {
   xs: [1, 1, 2, 3, 5, 8],
   s: [1, 2, 4, 7, 12],
@@ -467,6 +467,8 @@ export const PRESETS = {
 
 // 틀리면 몇 단계를 잃는지. 0단계(다시 볼 단어)로 두되, 다시 맞히면 (틀리기 전 단계 - 이만큼)에서 이어 감
 export const LAPSE_DROP = 2;
+export const MASTER_GROW = 2;
+export const MAX_INTERVAL = 120; // 일
 
 /**
  * 다음 복습일 고르기: 간격 i일 뒤를 기준으로 앞뒤 15%쯤(4일 이상 간격만, 7일 → ±1, 14일 → ±2) 안에서
@@ -504,6 +506,7 @@ export function applyResult(stat, outcome, { today = dateStr(), exam = '', sched
     const k = Math.max(0, (s.st || s.k || 0) - LAPSE_DROP); // 0단계에서 또 틀리면 더 내려감
     if (k) s.k = k; else delete s.k;
     s.st = 0;
+    delete s.iv;
     s.due = addDays(today, 1);
     return s;
   }
@@ -516,9 +519,14 @@ export function applyResult(stat, outcome, { today = dateStr(), exam = '', sched
     // 복습일이 지나서 맞혔을 때만: 지난번에 본 날부터 버틴 날 수만큼은 이미 기억이 감
     const gap = last && last < today && prev.due && prev.due < today ? daysBetween(last, today) : 0;
     while (st < n && intervals[st - 1] <= gap) st++;
+    // 암기 완료(마지막 단계)한 단어를 또 맞히면 간격을 MASTER_GROW배씩 늘림(14 → 28 → 56일 …, MAX_INTERVAL까지).
+    // 마지막 간격으로 끝없이 돌면 배운 단어가 늘수록 복습이 계속 쌓여서
+    let iv = intervals[st - 1];
+    if (st === n && (s.st || 0) === n) iv = Math.min(MAX_INTERVAL, Math.max(iv, Math.round(Math.max(s.iv || iv, gap) * MASTER_GROW)));
+    if (iv > intervals[n - 1]) s.iv = iv; else delete s.iv;
     s.st = st;
     delete s.k;
-    s.due = examDue(today, intervals[st - 1], exam, { load, rest });
+    s.due = examDue(today, iv, exam, { load, rest });
   } else s.due = addDays(today, 1);
   return s;
 }
@@ -706,7 +714,9 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
 export function retentionCurve(intervals, span = 30, step = 0.25) {
   const reviews = [];
   let t = 0, i = 0;
-  while (true) { t += intervals[Math.min(i, intervals.length - 1)]; if (t > span) break; reviews.push(t); i++; }
+  const n = intervals.length;
+  // 암기 완료 뒤엔 applyResult처럼 간격이 두 배씩 (MAX_INTERVAL까지)
+  while (true) { t += i < n ? intervals[i] : Math.min(MAX_INTERVAL, intervals[n - 1] * MASTER_GROW ** (i - n + 1)); if (t > span) break; reviews.push(t); i++; }
   const pts = [], none = [];
   for (let x = 0; x <= span + 1e-9; x += step) {
     const done = reviews.filter(r => r <= x + 1e-9);

@@ -85,7 +85,7 @@ test('간격 반복: 단계와 다음 복습일', () => {
   s = applyResult(s, 'ok', at('2026-11-13'));
   assert.deepEqual([s.st, s.due], [4, '2026-11-27']);                   // 4단계 → 14일
   s = applyResult(s, 'ok', at('2026-11-27'));
-  assert.deepEqual([s.st, s.due], [4, '2026-12-11']);                   // 최대 4단계
+  assert.deepEqual([s.st, s.due, s.iv], [4, '2026-12-25', 28]);        // 최대 4단계, 암기 완료 뒤엔 간격이 두 배씩
   s = applyResult(s, 'hint', at('2026-12-11'));
   assert.deepEqual([s.st, s.due], [4, '2026-12-12']);                   // 힌트: 단계 그대로, 내일
   s = applyResult(s, 'wrong', at('2026-12-12'));
@@ -95,6 +95,21 @@ test('간격 반복: 단계와 다음 복습일', () => {
   assert.deepEqual([s.st, s.due, s.c, s.k], [before.st, before.due, before.c + 1, 2]);
   s = applyResult(s, 'ok', at('2026-12-13'));
   assert.deepEqual([s.st, s.due, s.k], [3, '2026-12-20', undefined]);   // 다시 맞히면 처음부터가 아니라 3단계(7일)부터
+});
+
+test('암기 완료 뒤: 맞힐 때마다 간격 두 배(120일까지), 틀리면 원래 간격으로', () => {
+  let s = { st: 4, due: '2026-11-01', c: 4, w: 0, s: noon('2026-10-18') };
+  const gaps = [];
+  let d = '2026-11-01';
+  for (let i = 0; i < 5; i++) { s = applyResult(s, 'ok', at(d)); gaps.push(daysBetween(d, s.due)); d = s.due; }
+  assert.deepEqual(gaps, [28, 56, 112, 120, 120]);
+  s = applyResult(s, 'wrong', at(d));
+  assert.deepEqual([s.st, s.k, s.iv], [0, 2, undefined]);
+  s = applyResult(s, 'ok', at(addDays(d, 1)));
+  assert.deepEqual([s.st, daysBetween(addDays(d, 1), s.due)], [3, 7]);
+  // 시험이 있으면 그 전에 한 번 더는 그대로 (56일 간격인데 시험이 30일 뒤 → 시험 28일 전 = 2일 뒤)
+  s = applyResult({ st: 4, due: '2026-11-01', iv: 28, s: noon('2026-10-04') }, 'ok', at('2026-11-01', { exam: '2026-12-01' }));
+  assert.equal(s.due, '2026-11-03');
 });
 
 test('틀림: 단계를 처음부터가 아니라 둘씩 내리고, 거푸 틀리면 더 내려감', () => {
@@ -461,7 +476,7 @@ test('주기 복습: 간격 프리셋, 목표일까지 맞춤, 목표일부터 �
   let x = null; const days = [];
   let d = '2026-11-01';
   for (let i = 0; i < 7; i++) { x = applyResult(x, 'ok', at(d, { intervals: PRESETS.xs })); days.push(daysBetween(d, x.due)); d = x.due; }
-  assert.deepEqual(days, [1, 1, 2, 3, 5, 8, 8]);
+  assert.deepEqual(days, [1, 1, 2, 3, 5, 8, 16]);
   assert.equal(x.st, 6);
 
   const words = Array.from({ length: 10 }, (_, i) => ({ id: 'w' + i, day: 1 }));
