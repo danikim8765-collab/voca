@@ -177,9 +177,9 @@
       <div class="seg" id="seg-kind">
         <button data-v="choice">4지선다</button>
         <button data-v="type">직접 입력</button>
-        <button data-v="mix">섞어서</button>
       </div>
-      <div class="muted kind-note" id="kind-note" hidden>복습에서 두 번 넘게 맞힌 단어는 4지선다로 떠올리기만, 새 단어·덜 외운 단어·이번에 틀린 단어는 직접 입력으로 써 봐요.</div>
+      <label class="switch-row"><span>복습은 외운 단어만 4지선다</span><input type="checkbox" role="switch" class="switch" id="opt-review-mix"></label>
+      <div class="muted kind-note">복습할 때 두 번 넘게 맞힌 단어는 4지선다로 빨리 떠올리고, 덜 외운 단어·틀린 단어는 직접 입력으로 써 봐요. 새 단어는 위 방식대로.</div>
       <div data-only="ex">
         <div class="label">예문 해석</div>
         <div class="seg" id="seg-ko">

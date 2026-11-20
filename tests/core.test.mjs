@@ -978,30 +978,31 @@ test('밀린 복습: 까먹었을 가능성이 큰 것부터, 페이스 안내',
   assert.equal(reviewPace(ws.slice(40), st, { today: T, newPerDay: 10 }).heavy, false);
 });
 
-test('문제 방식 섞어서: 복습에서 두 번 맞힌 단어부터 4지선다', () => {
+test('복습은 외운 단어만 4지선다: 복습에서 두 번 맞힌 단어부터 4지선다', () => {
   assert.equal(MIX_CHOICE_STAGE, 3);
-  // 설정이 4지선다·직접 입력이면 단어와 상관없이 그대로
+  // 스위치가 꺼졌거나 복습이 아니면(mix 없음) 설정의 문제 방식 그대로
   assert.equal(questionKind('choice', undefined), 'choice');
   assert.equal(questionKind('type', { st: 4 }), 'type');
   assert.equal(questionKind(undefined, { st: 4 }), 'choice');
-  // 섞어서: 새 단어 · 배울 때 맞힘(1단계) · 복습 한 번 맞힘(2단계)은 직접 입력, 두 번(3단계)부터 4지선다
-  assert.equal(questionKind('mix', undefined), 'type');
-  assert.equal(questionKind('mix', { st: 1 }), 'type');
-  assert.equal(questionKind('mix', { st: 2 }), 'type');
-  assert.equal(questionKind('mix', { st: 3 }), 'choice');
-  assert.equal(questionKind('mix', { st: 4, iv: 28 }), 'choice');
-  // 틀려서 0단계로 내려가면 다시 직접 입력
-  assert.equal(questionKind('mix', { st: 0, k: 2 }), 'type');
-  // 이번 학습에서 틀렸거나 힌트 쓰고 다시 나온 단어는 언제나 직접 입력
-  assert.equal(questionKind('mix', { st: 4 }, { again: true }), 'type');
   assert.equal(questionKind('choice', { st: 0 }, { again: true }), 'choice');
-  // 예전 형식 기록(b = 단계)도
-  assert.equal(questionKind('mix', { b: 3, d: 0, s: 0 }), 'choice');
+  // 복습 중(mix): 배울 때 맞힘(1단계) · 복습 한 번 맞힘(2단계)은 직접 입력, 두 번(3단계)부터 4지선다. 설정이 무엇이든
+  for (const kind of ['choice', 'type']) {
+    const mix = { mix: true };
+    assert.equal(questionKind(kind, undefined, mix), 'type');
+    assert.equal(questionKind(kind, { st: 1 }, mix), 'type');
+    assert.equal(questionKind(kind, { st: 2 }, mix), 'type');
+    assert.equal(questionKind(kind, { st: 3 }, mix), 'choice');
+    assert.equal(questionKind(kind, { st: 4, iv: 28 }, mix), 'choice');
+    assert.equal(questionKind(kind, { st: 0, k: 2 }, mix), 'type'); // 틀려서 0단계로 내려가면 다시 직접 입력
+    assert.equal(questionKind(kind, { st: 4 }, { mix: true, again: true }), 'type'); // 이번 학습에서 틀렸거나 힌트 쓰고 다시 나옴
+    assert.equal(questionKind(kind, { b: 3, d: 0, s: 0 }, mix), 'choice'); // 예전 형식 기록(b = 단계)도
+  }
   // 실제 흐름: 배울 때 맞힘 → 1일 복습 맞힘 → 3일 복습 맞힘이면 4지선다
+  const mix = { mix: true };
   let s = applyResult(undefined, 'ok', { today: '2026-11-01' });
-  assert.equal(questionKind('mix', s), 'type');
+  assert.equal(questionKind('choice', s, mix), 'type');
   s = applyResult(s, 'ok', { today: s.due, now: Date.parse(s.due + 'T12:00:00') });
-  assert.equal(questionKind('mix', s), 'type');
+  assert.equal(questionKind('choice', s, mix), 'type');
   s = applyResult(s, 'ok', { today: s.due, now: Date.parse(s.due + 'T12:00:00') });
-  assert.equal(questionKind('mix', s), 'choice');
+  assert.equal(questionKind('choice', s, mix), 'choice');
 });
