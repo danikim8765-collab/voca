@@ -1975,7 +1975,8 @@ function againLater(id, kind) {
   const slots = cleanAgain(settings.again)[kind];
   session.queue = requeue(session.queue, session.pos, id, slots);
   if (slots.length) session.again[id] = (session.again[id] || 0) + 1;
-  return slots.length ? `${slots.map(s => (s === 'end' ? '맨 끝에' : AGAIN_NAME[s])).join('·')} 다시` : '내일 다시';
+  // 라벨이 길어지지 않게 가장 가까운 때 하나만 알려 줌 (뒤의 때에도 그대로 다시 나옴)
+  return slots.length ? `${slots[0] === 'end' ? '맨 끝에' : AGAIN_NAME[slots[0]]} 다시` : '내일 다시';
 }
 // 맞혔는데 이번 학습 안에 그 단어가 아직 또 잡혀 있으면(전에 틀려서 '조금 뒤·맨 끝'처럼 여러 번 잡아 둔 것) 언제쯤 또 나오는지.
 // 몇 문제 뒤인지 숫자로 말하지 않고 느낌으로만: 얼마나 뒤인지에 따라 고른 말 중 하나를 그때그때 섞어 씀. 없으면 ''
@@ -2026,7 +2027,8 @@ function showSynFeedback(correct, given, kind, label) {
   const head = $('#fb-head');
   head.hidden = false;
   head.className = 'tag fb-head ' + state;
-  head.textContent = label;
+  // 정답 보고 쓴 건 본인이 방금 한 일이라 화면엔 '조금 뒤 다시'만 (신고·AI에 붙는 fbLabel엔 그대로 남김)
+  head.textContent = kind === 'copied' ? label.replace(/^정답 보고 씀 · /, '') : label;
   const prompt = document.querySelector('.q-prompt');
   prompt.textContent = !correct && given ? `내 답: ${given}` : ' ';
   prompt.classList.toggle('my-answer', !correct && !!given);
