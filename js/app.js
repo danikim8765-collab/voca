@@ -110,7 +110,10 @@ const settings = Object.assign({
   coach: false, coachGoal: '', coachBase: 0, coachKey: '', coachReview: 0, coachRest: [], coachFix: 0, coachTail: '',
   // 다시 나오기 (core.js AGAIN_*): 틀림·힌트 두 번·힌트 한 번마다 이번 학습에서 다시 나올 때. 두 모드가 같이 씀(againAt = 바꾼 시각)
   again: AGAIN_REC, againAt: 0,
+  reviewMix: false, // 복습은 외운 단어만 4지선다 (core.js questionKind)
 }, load(KEY.settings, {}));
+// 잠깐 있던 문제 방식 '섞어서'(새 단어도 직접 입력) → 직접 입력 + 복습은 외운 단어만 4지선다
+if (settings.kind === 'mix') Object.assign(settings, { kind: 'type', reviewMix: true });
 // 화면 설정 (기기마다, 예문·단어 모드가 같이 씀)
 const UI_KEY = 'voca.ui.v1';
 const ui = Object.assign({
@@ -524,7 +527,7 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
-  $('#kind-note').hidden = settings.kind !== 'mix';
+  $('#opt-review-mix').checked = !!settings.reviewMix;
   setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
   setSeg('#seg-rev', String(settings.reviewSize));
@@ -551,7 +554,8 @@ function renderHome() {
   const lo = Math.min(settings.from, settings.to), hi = Math.max(settings.from, settings.to);
   $('#plan-sum').textContent = [
     lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`,
-    { type: '직접 입력', mix: '섞어서' }[settings.kind] || '4지선다',
+    settings.kind === 'type' ? '직접 입력' : '4지선다',
+    ...(settings.reviewMix ? ['복습 섞어서'] : []),
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     ...(coachActive()
       ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 전체 복습 중'])
@@ -1768,7 +1772,7 @@ function onSeg(sel, fn) {
 }
 
 // ---------- 학습 세션 ----------
-async function startSession(mode, list) {
+async function startSession(mode, list, { mixed = false } = {}) {
   // 하던 학습이 있으면: 같은 학습이면 이어서, 다른 학습이면 물어보고 (말없이 덮어쓰지 않게)
   const saved = mode === 'retry' ? null : load(KEY.session, null);
   if (saved && saved.date === dateStr() && saved.pos > 0 && saved.pos < saved.queue.length) {
@@ -1832,6 +1836,7 @@ async function startSession(mode, list) {
   }
   session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
   if (startedFrom === 'list') session.from = 'list';
+  if (mixed) session.mixed = true; // 복습에서 틀린 단어 다시 풀기도 복습처럼 ('복습은 외운 단어만 4지선다')
   if (mode !== 'retry') setTint(mode === 'day' ? 'study' : null); // 틀린 단어 다시 풀기는 하던 색 그대로
   saveSession();
   show('quiz');
@@ -2059,8 +2064,13 @@ function showSynFeedback(correct, given, kind, label) {
 }
 
 let q = null; // 현재 문제 상태
-// 이 문제를 4지선다로 낼지 직접 입력으로 낼지 (설정 '섞어서'면 단어 단계로: 복습에서 두 번 넘게 맞힌 단어만 4지선다, 이번 학습에서 틀렸거나 힌트 쓴 단어는 직접 입력)
-const kindFor = w => questionKind(settings.kind, stats[w.id], { again: session.wrong.includes(w.id) || session.hinted.includes(w.id) });
+// 이 문제를 4지선다로 낼지 직접 입력으로 낼지. '복습은 외운 단어만 4지선다'를 켰으면 복습(오늘의 복습 · 추가 복습, 거기서 틀린 단어 다시 풀기)에서만
+// 단어 단계로: 복습에서 두 번 넘게 맞힌 단어만 4지선다, 나머지와 이번 학습에서 틀렸거나 힌트 쓴 단어는 직접 입력
+const reviewSession = s => !!s && (s.mode === 'review' || s.mode === 'extraReview' || !!s.mixed);
+const kindFor = w => questionKind(settings.kind, stats[w.id], {
+  mix: !!settings.reviewMix && reviewSession(session),
+  again: session.wrong.includes(w.id) || session.hinted.includes(w.id),
+});
 
 function renderQuestion() {
   const id = session.queue[session.pos];
@@ -3396,7 +3406,7 @@ function finishSession() {
     again.onclick = () => startSynSession(s.synDay, wrong.length ? wrong.map(id => byId.get(id)) : null);
   } else if (wrong.length) {
     again.textContent = '틀린 단어 다시 풀기';
-    again.onclick = () => startSession('retry', wrong.map(id => byId.get(id)));
+    again.onclick = () => startSession('retry', wrong.map(id => byId.get(id)), { mixed: reviewSession(s) });
   } else if (nextStep) {
     [again.textContent, again.onclick] = nextStep;
   } else {
@@ -4045,7 +4055,8 @@ function bind() {
     if (r === 'last3') setRange(days[Math.max(0, days.length - 3)], last);
     if (r === 'all') setRange(days[0], last);
   });
-  onSeg('#seg-kind', v => { settings.kind = v; $('#kind-note').hidden = v !== 'mix'; saveSettings(); });
+  onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
+  $('#opt-review-mix').addEventListener('change', e => { settings.reviewMix = e.target.checked; saveSettings(); });
   onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
   // 설정 바로가기: 그 카드로 스크롤
   $('#set-nav').addEventListener('click', e => {

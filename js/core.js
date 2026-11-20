@@ -554,13 +554,13 @@ export function examDue(today, i, exam, opt = {}) {
 
 export const isDue = (s, today) => !!(s && s.due && s.due <= today);
 
-// 문제 방식 '섞어서': 복습에서 두 번 넘게 맞힌 단어(MIX_CHOICE_STAGE단계 이상 — 배울 때 1단계, 복습에서 맞힐 때마다 +1)는
-// 4지선다로 떠올리기만, 그 밖(새 단어 · 아직 덜 굳은 단어 · 틀려서 내려간 단어)은 직접 입력으로 써 보며 외움.
-// again = 이번 학습에서 틀렸거나 힌트를 쓰고 다시 나온 단어 → 언제나 직접 입력
+// 문제 방식: kind = 설정의 4지선다('choice') · 직접 입력('type').
+// mix = '복습은 외운 단어만 4지선다'를 켜고 복습 중일 때: 복습에서 두 번 넘게 맞힌 단어(MIX_CHOICE_STAGE단계 이상 — 배울 때 1단계,
+// 복습에서 맞힐 때마다 +1)는 4지선다로 떠올리기만, 그 밖(아직 덜 굳은 단어 · 틀려서 내려간 단어)은 직접 입력으로 써 보며 외움.
+// again = 이번 학습에서 틀렸거나 힌트를 쓰고 다시 나온 단어 → 직접 입력
 export const MIX_CHOICE_STAGE = 3;
-export function questionKind(kind, stat, { again = false } = {}) {
-  if (kind === 'type') return 'type';
-  if (kind !== 'mix') return 'choice';
+export function questionKind(kind, stat, { mix = false, again = false } = {}) {
+  if (!mix) return kind === 'type' ? 'type' : 'choice';
   if (again) return 'type';
   const s = normalizeStat(stat);
   return s && (s.st || 0) >= MIX_CHOICE_STAGE ? 'choice' : 'type';
