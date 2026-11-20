@@ -2027,7 +2027,8 @@ function showSynFeedback(correct, given, kind, label) {
   const head = $('#fb-head');
   head.hidden = false;
   head.className = 'tag fb-head ' + state;
-  head.textContent = label;
+  // 정답 보고 쓴 건 본인이 방금 한 일이라 화면엔 '조금 뒤 다시'만 (신고·AI에 붙는 fbLabel엔 그대로 남김)
+  head.textContent = kind === 'copied' ? label.replace(/^정답 보고 씀 · /, '') : label;
   const prompt = document.querySelector('.q-prompt');
   prompt.textContent = !correct && given ? `내 답: ${given}` : ' ';
   prompt.classList.toggle('my-answer', !correct && !!given);
