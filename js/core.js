@@ -554,6 +554,18 @@ export function examDue(today, i, exam, opt = {}) {
 
 export const isDue = (s, today) => !!(s && s.due && s.due <= today);
 
+// 문제 방식 '섞어서': 복습에서 두 번 넘게 맞힌 단어(MIX_CHOICE_STAGE단계 이상 — 배울 때 1단계, 복습에서 맞힐 때마다 +1)는
+// 4지선다로 떠올리기만, 그 밖(새 단어 · 아직 덜 굳은 단어 · 틀려서 내려간 단어)은 직접 입력으로 써 보며 외움.
+// again = 이번 학습에서 틀렸거나 힌트를 쓰고 다시 나온 단어 → 언제나 직접 입력
+export const MIX_CHOICE_STAGE = 3;
+export function questionKind(kind, stat, { again = false } = {}) {
+  if (kind === 'type') return 'type';
+  if (kind !== 'mix') return 'choice';
+  if (again) return 'type';
+  const s = normalizeStat(stat);
+  return s && (s.st || 0) >= MIX_CHOICE_STAGE ? 'choice' : 'type';
+}
+
 /**
  * 밀린 복습의 위험도: 지난번에 본 뒤 지난 날 ÷ 원래 잡혀 있던 간격. 클수록 까먹었을 가능성이 큼
  * (간격 1일짜리가 사흘 밀린 것(3) > 14일짜리가 사흘 밀린 것(17/14)). 밀린 게 많아 다 못 할 때 이 순서로 먼저
