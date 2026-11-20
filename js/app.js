@@ -2,7 +2,7 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
 } from './core.js';
 import { createSync } from './sync.js';
 import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
@@ -524,6 +524,7 @@ function renderHome() {
   $('#day-from').value = settings.from;
   $('#day-to').value = settings.to;
   setSeg('#seg-kind', settings.kind);
+  $('#kind-note').hidden = settings.kind !== 'mix';
   setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
   setSeg('#seg-rev', String(settings.reviewSize));
@@ -550,7 +551,7 @@ function renderHome() {
   const lo = Math.min(settings.from, settings.to), hi = Math.max(settings.from, settings.to);
   $('#plan-sum').textContent = [
     lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`,
-    settings.kind === 'type' ? '직접 입력' : '4지선다',
+    { type: '직접 입력', mix: '섞어서' }[settings.kind] || '4지선다',
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     ...(coachActive()
       ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 전체 복습 중'])
@@ -2058,6 +2059,8 @@ function showSynFeedback(correct, given, kind, label) {
 }
 
 let q = null; // 현재 문제 상태
+// 이 문제를 4지선다로 낼지 직접 입력으로 낼지 (설정 '섞어서'면 단어 단계로: 복습에서 두 번 넘게 맞힌 단어만 4지선다, 이번 학습에서 틀렸거나 힌트 쓴 단어는 직접 입력)
+const kindFor = w => questionKind(settings.kind, stats[w.id], { again: session.wrong.includes(w.id) || session.hinted.includes(w.id) });
 
 function renderQuestion() {
   const id = session.queue[session.pos];
@@ -2069,7 +2072,7 @@ function renderQuestion() {
   $('#btn-idk').hidden = true;
   const b1 = w.ex1 ? makeBlanks(w.ex1, w.blank, w.word) : null;
   const b2 = w.ex2 ? makeBlanks(w.ex2, w.blank, w.word) : null;
-  q = { w, b1, b2, answered: false, letterHint: false, revealed: false, usedHint: hintedId() === id };
+  q = { w, b1, b2, kind: kindFor(w), answered: false, letterHint: false, revealed: false, usedHint: hintedId() === id };
 
   $('#feedback').hidden = true;
   $('#fb-head').hidden = true;
@@ -2089,7 +2092,7 @@ function renderQuestion() {
   });
   document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요'
     : { same: '빈칸에 공통으로 들어갈 말은?', single: '빈칸에 들어갈 말은?',
-      diff: settings.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2, answerWordCount(w.blank))];
+      diff: q.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2, answerWordCount(w.blank))];
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
 
   const mEl = $('#q-meaning');
@@ -2104,7 +2107,7 @@ function renderQuestion() {
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
-  if (settings.kind === 'type') renderTyping(actions);
+  if (q.kind === 'type') renderTyping(actions);
   else {
     renderChoices(actions);
     if (q.usedHint) { strikeChoices(); setHintButtons(null); }
@@ -2233,12 +2236,12 @@ function wordCard(w) {
 }
 
 function renderWordQuestion(w) {
-  q = { w, answered: false, usedHint: hintedId() === w.id };
+  q = { w, kind: kindFor(w), answered: false, usedHint: hintedId() === w.id };
   $('#feedback').hidden = true;
   $('#fb-head').hidden = true;
   const prompt = document.querySelector('.q-prompt');
   prompt.classList.remove('my-answer');
-  prompt.textContent = settings.kind === 'type' ? '이 단어의 뜻을 써 보세요' : '이 단어의 뜻은?';
+  prompt.textContent = q.kind === 'type' ? '이 단어의 뜻을 써 보세요' : '이 단어의 뜻은?';
   $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = `DAY ${w.day}`;
@@ -2259,7 +2262,7 @@ function renderWordQuestion(w) {
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
-  if (settings.kind === 'type') renderMeaningTyping(actions);
+  if (q.kind === 'type') renderMeaningTyping(actions);
   else { renderMeaningChoices(actions); fitChoices(); }
 }
 
@@ -2954,7 +2957,7 @@ function showFeedback(correct, given, kind, label) {
   }
   $('#btn-hint').hidden = true;
   $('#btn-idk').hidden = true;
-  if (settings.kind === 'type') {
+  if (q.kind === 'type') {
     unpinChoices();
     $('#q-actions').innerHTML = '';
     $('#quiz').classList.remove('kb-mode', 'phone-choices');
@@ -3036,7 +3039,7 @@ function reportCtx() {
   const w = q.w;
   const bold = ko => (ko ? highlightMeaning(ko, w.meaning, w.koMark).map(x => (x.t === 'mark' ? `**${x.v}**` : x.v)).join('') : '');
   const mode = q.syn ? 'syn' : WORD ? 'word' : 'ex';
-  const how = q.syn ? 'choice' : settings.kind;
+  const how = q.syn ? 'choice' : q.kind;
   const opts = q.syn ? q.syn.options : q.choices;
   const text = o => (q.syn ? o.text : WORD ? o.meaning : displayAnswer(o));
   const ctx = {
@@ -3144,7 +3147,7 @@ const ASK_QUICK = ['외우는 요령', '비슷한 단어와 차이', '어원 알
 function askProblemOf(cur) {
   const w = cur.w;
   const ex = [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].filter(([en]) => en).map(([en, ko]) => ({ en, ko }));
-  const pick = settings.kind !== 'type';
+  const pick = cur.kind !== 'type';
   const mode = cur.syn ? '유의어·반의어 고르기' : WORD ? `영단어 보고 한글 뜻 ${pick ? '고르기(4지선다)' : '쓰기'}` : `예문 빈칸에 들어갈 영단어 ${pick ? '고르기(4지선다)' : '쓰기'}`;
   return { word: w.word, pos: w.pos, meaning: w.meaning, mode, examples: ex, extras: w.extras, user: cur.fbGiven || '', result: cur.fbLabel || (cur.fbCorrect ? '정답' : '오답') };
 }
@@ -4042,7 +4045,7 @@ function bind() {
     if (r === 'last3') setRange(days[Math.max(0, days.length - 3)], last);
     if (r === 'all') setRange(days[0], last);
   });
-  onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
+  onSeg('#seg-kind', v => { settings.kind = v; $('#kind-note').hidden = v !== 'mix'; saveSettings(); });
   onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
   // 설정 바로가기: 그 카드로 스크롤
   $('#set-nav').addEventListener('click', e => {
