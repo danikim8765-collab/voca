@@ -316,8 +316,7 @@ button { cursor: pointer; }
 }
 #settings .card.tab-off { display: none; }
 .set-tabs button { flex: 1 1 auto; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
-/* 추가 기능: '화면 꾸미기'를 꺼 두면 세부 꾸미기는 숨김 */
-#settings:not(.x-look-on) .x-look { display: none; }
+/* 홈 맨 아래 고급 기능 스위치 */
 #home-adv { margin-top: 28px; }
 .desk #home-adv { grid-column: 1 / -1; }
 .x-desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--muted); }

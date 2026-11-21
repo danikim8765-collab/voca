@@ -66,7 +66,7 @@
         </div>
       </div>
 
-      <!-- 단어 코치: 고른 캐릭터가 시험일에 맞춘 오늘 분량을 말해 줌 (설정 > 추가 기능에서 켰을 때만) -->
+      <!-- 단어 코치: 고른 캐릭터가 시험일에 맞춘 오늘 분량을 말해 줌 (홈의 고급 기능을 켜고 설정에서 켰을 때만) -->
       <div id="buddy-card" class="buddy-card" hidden>
         <button class="buddy-char" id="buddy-char" aria-label="단어 코치"></button>
         <div class="buddy-say">
@@ -192,7 +192,7 @@
         </div>
       </div>
       <div id="regular-opts">
-      <label class="switch-row coach-row" id="coach-plan-row"><span>단어 코치</span><input type="checkbox" role="switch" class="switch" id="opt-coach-plan"></label>
+      <label class="switch-row coach-row"><span>단어 코치</span><input type="checkbox" role="switch" class="switch" id="opt-coach-plan"></label>
       <div class="label">하루 새 단어 수 <span class="muted" id="coach-new-note" hidden></span></div>
       <div class="seg" id="seg-new">
         <button data-v="10">10</button>
@@ -318,9 +318,9 @@
     <!-- 탭: 누른 탭의 카드(data-tab)만 보임 -->
     <div class="seg set-tabs" id="set-tabs" role="tablist" aria-label="설정 종류">
       <button data-v="quiz" role="tab">문제</button>
-      <button data-v="srs" role="tab" id="tab-srs">복습</button>
+      <button data-v="srs" role="tab">복습</button>
       <button data-v="look" role="tab">화면·오디오</button>
-      <button data-v="etc" role="tab" id="tab-etc">동기화</button>
+      <button data-v="etc" role="tab">동기화</button>
     </div>
     <div class="card" id="set-quiz" data-tab="quiz">
       <div class="label">문제 풀기</div>
@@ -384,6 +384,7 @@
     </div>
     <div class="card" id="srs-card" data-tab="srs">
       <div class="label">복습</div>
+      <label class="switch-row"><span>단어 코치 <span class="muted">(시험일에 맞춰 오늘 분량을 정해 줌)</span></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
       <p class="muted srs-desc" id="coach-plan" hidden></p>
       <div class="srs-dates">
         <label id="goal-label">목표일 <span class="muted">(새 단어 끝)</span><input type="date" id="goal-date" class="date-input"></label>
@@ -398,6 +399,9 @@
       <div class="coach-choices" id="coach-chars" role="radiogroup" aria-label="코치 캐릭터" hidden></div>
       <div class="label" id="coach-rest-label" hidden>쉬는 요일</div>
       <div class="rest-chips" id="coach-rest" hidden></div>
+      <div id="srs-manual">
+      <label class="switch-row"><span>주기 복습</span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
+      </div>
       <div id="srs-opts">
         <div class="label mt">기억 유지 그래프</div>
         <div class="srs-graph" id="srs-graph"></div>
@@ -417,20 +421,20 @@
         <div class="seg" id="seg-theme"><button data-v="auto">폰 설정</button><button data-v="light">밝게</button><button data-v="dark">어둡게</button></div></div>
       <div class="opt-row"><span>글자 크기</span>
         <div class="seg" id="seg-size"><button data-v="s">작게</button><button data-v="m">보통</button><button data-v="l">크게</button><button data-v="xl">더 크게</button></div></div>
-      <label class="x-look switch-row"><span>홈 간단히 보기</span><input type="checkbox" role="switch" class="switch" id="opt-simplehome"></label>
-      <div class="x-look opt-row"><span>강조 색</span><div class="swatches" id="sw-accent" role="radiogroup" aria-label="강조 색"></div></div>
-      <div class="x-look opt-row"><span>예문 글꼴</span>
+      <label class="switch-row"><span>홈 간단히 보기</span><input type="checkbox" role="switch" class="switch" id="opt-simplehome"></label>
+      <div class="opt-row"><span>강조 색</span><div class="swatches" id="sw-accent" role="radiogroup" aria-label="강조 색"></div></div>
+      <div class="opt-row"><span>예문 글꼴</span>
         <div class="seg" id="seg-font"><button data-v="sans">고딕</button><button data-v="serif">명조</button></div></div>
-      <div class="x-look opt-row"><span>모서리</span>
+      <div class="opt-row"><span>모서리</span>
         <div class="seg" id="seg-radius"><button data-v="round">둥글게</button><button data-v="soft">조금</button><button data-v="square">각지게</button></div></div>
-      <div class="x-look opt-row"><span>카드</span>
+      <div class="opt-row"><span>카드</span>
         <div class="seg" id="seg-edge"><button data-v="shadow">그림자</button><button data-v="line">테두리</button></div></div>
-      <div class="x-look opt-row"><span>퀴즈 바탕</span>
+      <div class="opt-row"><span>퀴즈 바탕</span>
         <div class="seg" id="seg-glow"><button data-v="warm">기본</button><button data-v="sky">하늘</button><button data-v="mint">민트</button><button data-v="none">단색</button></div></div>
-      <label class="x-look switch-row"><span>꾸미기도 동기화·백업하기</span><input type="checkbox" role="switch" class="switch" id="opt-look-share"></label>
-      <div class="x-look label mt">홈에 보일 것</div>
-      <div class="x-look" id="home-parts"></div>
-      <button class="x-look btn ghost small" id="btn-look-reset">꾸미기 처음대로</button>
+      <label class="switch-row"><span>꾸미기도 동기화·백업하기</span><input type="checkbox" role="switch" class="switch" id="opt-look-share"></label>
+      <div class="label mt">홈에 보일 것</div>
+      <div id="home-parts"></div>
+      <button class="btn ghost small" id="btn-look-reset">꾸미기 처음대로</button>
     </div>
     <div class="card" id="set-voice" data-tab="look">
       <div class="label">발음</div>
@@ -446,6 +450,7 @@
     <!-- AI: 두 모드 공용 (키·스위치도 같이 씀) -->
     <div class="card" id="ai-card" data-tab="etc">
       <div class="label">AI</div>
+      <label class="switch-row"><span>AI 사용하기</span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
       <div id="ai-box" hidden>
       <div id="ai-off">
         <ol class="steps">
@@ -519,18 +524,6 @@
       <p class="app-ver"><b id="app-ver"></b> <span class="muted" id="app-ver-state"></span></p>
       <button class="btn ghost small" id="btn-update">새 버전 확인</button>
       <button class="link-btn report-link" id="btn-report" type="button">이상한 점 알려 주기</button>
-    </div>
-    <!-- 추가 기능: 홈의 고급 기능을 켜야 설정에 들어올 수 있음. 여기서 켠 기능만 설정·홈에 나옴 (app.js applyExtras). 어느 탭이든 맨 아래에 보임 -->
-    <div class="card" id="set-extra">
-      <div class="label">추가 기능</div>
-      <p class="muted">필요한 기능만 켜세요.</p>
-      <label class="switch-row"><span>단어 코치<small class="x-desc">시험일에 맞춰 하루 분량을 정해 줘요</small></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
-      <div id="srs-manual">
-      <label class="switch-row"><span>주기 복습<small class="x-desc">잊을 때쯤 다시 복습해요</small></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
-      </div>
-      <label class="switch-row"><span>AI<small class="x-desc">틀린 이유를 AI가 설명해 줘요</small></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
-      <label class="switch-row"><span>기기 동기화<small class="x-desc">폰·아이패드 진도를 맞춰요</small></span><input type="checkbox" role="switch" class="switch" id="opt-x-sync"></label>
-      <label class="switch-row"><span>화면 꾸미기<small class="x-desc">색·글꼴·홈 구성을 바꿔요</small></span><input type="checkbox" role="switch" class="switch" id="opt-x-look"></label>
     </div>
   </section>
 
