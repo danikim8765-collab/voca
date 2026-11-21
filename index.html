@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#1f3a68">
+  <meta name="theme-color" content="#f2f4f7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -62,7 +62,7 @@
         </div>
         <div class="row">
           <button class="trash-btn" id="btn-resume-drop" aria-label="지우기" title="지우기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/></svg></button>
-          <button class="btn primary small" id="btn-resume">이어하기</button>
+          <button class="btn secondary small" id="btn-resume">이어하기</button>
         </div>
       </div>
 
@@ -84,17 +84,19 @@
           <button class="btn ghost small" id="btn-solo-close" hidden>정규 학습으로</button>
         </div>
         <div class="flow" id="today-flow"><span data-s="learn">학습</span><i>›</i><span data-s="review">복습</span><i>›</i><span data-s="extra">더 하기</span></div>
+        <!-- 학습·복습·DAY 단계는 카드 전체가 시작 버튼 (버튼을 카드 크기로 깔고, ✎·단계 이동만 위에서 따로 눌림) -->
         <div id="stage-day" hidden>
-          <button class="btn primary big" id="btn-day">DAY 학습 시작</button>
+          <div class="go-row"><div class="plan" id="day-info"></div><span class="today-go" aria-hidden="true">시작<i class="chev">›</i></span></div>
+          <button class="btn primary big stretch" id="btn-day">DAY 학습 시작</button>
           <button class="day-reset" id="btn-day-reset">이 DAY 기록 지우기</button>
         </div>
         <div id="stage-learn">
-          <div class="plan" id="plan-info"></div>
-          <button class="btn primary big" id="btn-start">오늘 학습 시작</button>
+          <div class="go-row"><div class="plan" id="plan-info"></div><span class="today-go" aria-hidden="true">시작<i class="chev">›</i></span></div>
+          <button class="btn primary big stretch" id="btn-start">오늘 학습 시작</button>
         </div>
         <div id="stage-review" hidden>
-          <div class="plan" id="review-info"></div>
-          <button class="btn primary big" id="btn-review">오늘 복습 시작</button>
+          <div class="go-row"><div class="plan" id="review-info"></div><span class="today-go" aria-hidden="true">시작<i class="chev">›</i></span></div>
+          <button class="btn primary big stretch" id="btn-review">오늘 복습 시작</button>
         </div>
         <div id="stage-extra" hidden>
           <div class="seg" id="seg-extra">
@@ -109,30 +111,38 @@
           </div>
           <div class="row two">
             <button class="btn primary" id="btn-extra-new">추가 학습</button>
-            <button class="btn primary" id="btn-extra-review">추가 복습</button>
+            <button class="btn secondary" id="btn-extra-review">추가 복습</button>
           </div>
         </div>
         <div class="muted" id="today-note"></div>
       </div>
 
       <!-- 학습 계획 요약: 누르면 학습 계획 화면(범위·문제 방식·하루 개수·시험일) -->
-      <div class="card plan-sum" id="plan-sum-card">
-        <div class="plan-sum-head">
-          <div class="label">학습 계획</div>
-          <button class="btn ghost small plan-go" id="btn-plan">바꾸기 ›</button>
-        </div>
-        <div class="plan-sum-text" id="plan-sum"></div>
+      <button class="card plan-sum" id="plan-sum-card" aria-label="학습 계획 바꾸기">
+        <span class="plan-sum-main">
+          <span class="label">학습 계획</span>
+          <span class="plan-sum-text" id="plan-sum"></span>
+        </span>
+        <i class="chev" aria-hidden="true">›</i>
+      </button>
+
+      <!-- 학습 범위에서 외운 단어 (홈 간단히 보기를 끄면 학습 범위 카드 안으로 옮겨짐, applyHomeLayout) -->
+      <div class="card prog-card" id="prog-card">
         <div id="range-progress">
-          <div class="stats" id="range-stats"></div>
+          <div class="label">암기 완료</div>
+          <div class="prog-num"><b id="prog-done">0</b><span id="prog-total"></span></div>
           <div class="bar"><div class="bar-fill" id="range-bar"></div></div>
         </div>
       </div>
 
-      <div class="row two" id="range-practice">
-        <button class="btn secondary" id="btn-wrong">다시 볼 단어 <span id="wrong-count" class="pill"></span></button>
-        <button class="btn secondary" id="btn-order">범위 순서대로 연습</button>
+      <!-- 바로가기 목록: 다시 볼 단어 · 범위 순서대로 연습 · 단어장 -->
+      <div class="card menu" id="home-menu">
+        <div id="range-practice">
+          <button class="menu-row" id="btn-wrong"><span>다시 볼 단어</span><span class="menu-end"><span id="wrong-count"></span><i class="chev" aria-hidden="true">›</i></span></button>
+          <button class="menu-row" id="btn-order"><span>범위 순서대로 연습</span><i class="chev" aria-hidden="true">›</i></button>
+        </div>
+        <button class="menu-row" id="btn-list"><span>단어장</span><i class="chev" aria-hidden="true">›</i></button>
       </div>
-      <button class="btn ghost" id="btn-list">단어장 보기</button>
 
      </div>
      <div class="home-side">
@@ -174,6 +184,7 @@
         <button class="chip" data-range="last3">최근 3 DAY</button>
         <button class="chip" data-range="all">전체</button>
       </div>
+      <div class="muted range-sum" id="range-sum"></div>
     </div>
 
     <div class="card" id="card-kind">
@@ -432,7 +443,7 @@
       <div class="opt-row"><span>모서리</span>
         <div class="seg" id="seg-radius"><button data-v="round">둥글게</button><button data-v="soft">조금</button><button data-v="square">각지게</button></div></div>
       <div class="opt-row"><span>카드</span>
-        <div class="seg" id="seg-edge"><button data-v="shadow">그림자</button><button data-v="line">테두리</button></div></div>
+        <div class="seg" id="seg-edge"><button data-v="flat">평평하게</button><button data-v="shadow">그림자</button><button data-v="line">테두리</button></div></div>
       <div class="opt-row"><span>퀴즈 바탕</span>
         <div class="seg" id="seg-glow"><button data-v="warm">기본</button><button data-v="sky">하늘</button><button data-v="mint">민트</button><button data-v="none">단색</button></div></div>
       <div class="label mt">정답 반응</div>

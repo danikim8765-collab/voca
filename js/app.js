@@ -124,16 +124,16 @@ const ui = Object.assign({
 const uiWasSaved = Object.keys(load(UI_KEY, {})).length > 0; // 이 기기에서 전에 앱을 써 봤는지 (고급 기능 처음 값)
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
 function applyHomeLayout() {
-  const range = $('#card-range'), kind = $('#card-kind'), prog = $('#range-progress'), sum = $('#plan-sum-card');
+  const range = $('#card-range'), kind = $('#card-kind'), prog = $('#range-progress'), sum = $('#plan-sum-card'), pc = $('#prog-card');
   if (ui.simpleHome) {
     $('#plan > header').after(range);
-    sum.appendChild(prog);
+    pc.appendChild(prog);
   } else {
     $('#card-today').after(range);
     range.appendChild(prog);
   }
   range.after(kind);
-  sum.hidden = !ui.simpleHome;
+  sum.hidden = pc.hidden = !ui.simpleHome;
 }
 applyHomeLayout();
 let session = null;
@@ -544,25 +544,24 @@ function renderHome() {
     if (isMastered(s)) mastered++;
     if (isWrongNote(s)) wrong++;
   }
-  const st = $('#range-stats');
-  st.innerHTML = '';
-  for (const [n, l] of [[rw.length, '단어'], [seen, '학습'], [mastered, '암기 완료'], [wrong, '다시 볼 것']]) {
-    const d = el('div');
-    d.append(el('b', null, n), l);
-    st.appendChild(d);
-  }
+  // 홈 진도 카드는 외운 수 하나만 크게. 범위 단어 수·배운 수는 학습 범위 카드에
+  const num = n => n.toLocaleString('ko-KR');
+  $('#prog-done').textContent = num(mastered);
+  $('#prog-total').textContent = ` / ${num(rw.length)}`;
+  $('#range-sum').textContent = `${num(rw.length)}단어 중 ${num(seen)}개 배움`;
   $('#range-bar').style.width = rw.length ? `${(mastered / rw.length) * 100}%` : '0';
   // 홈의 학습 계획 요약 한 줄 (바꾸는 건 학습 계획 화면에서)
   const lo = Math.min(settings.from, settings.to), hi = Math.max(settings.from, settings.to);
-  $('#plan-sum').textContent = [
-    lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`,
+  const sumBox = $('#plan-sum');
+  sumBox.innerHTML = '';
+  sumBox.append(el('b', 'plan-sum-range', lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`), el('span', 'plan-sum-desc', [
     settings.kind === 'type' ? '직접 입력' : '4지선다',
     ...(settings.reviewMix ? ['복습 섞어서'] : []),
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     ...(coachActive()
       ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 전체 복습 중'])
       : [`새 단어 ${settings.newPerDay}`, srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`]),
-  ].join(' · ');
+  ].join(' · ')));
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
 
@@ -1671,6 +1670,7 @@ function renderCoach(stage = soloDay != null && days.includes(soloDay) ? 'day' :
   const ai = settings.coach && stage !== 'day' ? aiSayFor(say) : null;
   if (ai) say = { ...say, mood: ai.mood, text: ai.text };
   $('#buddy-name').textContent = ai ? '단어 코치 · AI' : '단어 코치';
+  $('#buddy-name').hidden = !ai; // 말풍선은 가볍게: 이름은 AI가 말할 때만
   $('#buddy-char').innerHTML = coachSvg(say.mood);
   $('#buddy-char').setAttribute('aria-label', `단어 코치 ${COACH_NAMES[coachChar()]}`);
   $('#buddy-text').textContent = say.text;
@@ -1739,7 +1739,8 @@ function renderPlan() {
   if (stage === 'day') {
     const dw = dayWords(soloDay);
     const seen = dw.filter(w => stats[w.id]).length;
-    $('#btn-day').textContent = `DAY ${soloDay} 학습 시작 (${dw.length})`;
+    fill($('#day-info'), [[dw.length, `DAY ${soloDay} 단어`]]);
+    $('#btn-day').textContent = `DAY ${soloDay} 학습 시작`;
     $('#btn-day-reset').hidden = !dayHasRecords(soloDay);
     note = `${dw.length}단어 중 ${seen}개 배움 · 정규 학습과 기록이 같이 쌓여요`;
   }
@@ -1748,7 +1749,7 @@ function renderPlan() {
     const items = [[plan.fresh.length, '새 단어', editNewToday]];
     if (plan.examInfo && plan.examInfo.finalDay) items.unshift([plan.final.length, `시험 대비 ${plan.examInfo.finalDay}/3`]);
     fill($('#plan-info'), items);
-    $('#btn-start').textContent = learnLeft ? `오늘 학습 시작 (${learnLeft})` : '오늘 학습 완료 ✓';
+    $('#btn-start').textContent = learnLeft ? '오늘 학습 시작' : '오늘 학습 완료 ✓';
     $('#btn-start').disabled = !learnLeft;
     const waiting = rv.started ? rv.left.length : plan.review.length;
     note = !learnLeft ? '숫자를 누르면 오늘 더 배울 수 있어요.'
@@ -1759,7 +1760,7 @@ function renderPlan() {
     const shown = rv.left.length;
     const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
     fill($('#review-info'), [[shown, '복습', editReviewToday], [dueIn, '복습일 된 단어']]);
-    $('#btn-review').textContent = shown ? `오늘 복습 시작 (${shown})` : '오늘 복습 완료 ✓';
+    $('#btn-review').textContent = shown ? '오늘 복습 시작' : '오늘 복습 완료 ✓';
     $('#btn-review').disabled = !shown;
     if (srsOn()) {
       const sp = srsPick();
@@ -1777,13 +1778,16 @@ function renderPlan() {
     $('#extra-n').textContent = `${n}개`;
     const nNew = extraNew(n).length, nRev = extraReview(n).length;
     const bn = $('#btn-extra-new'), br = $('#btn-extra-review');
-    bn.textContent = nNew ? `추가 학습 (${nNew})` : '새 단어 없음';
-    br.textContent = nRev ? `추가 복습 (${nRev})` : '복습할 단어 없음';
+    bn.textContent = nNew ? '추가 학습' : '새 단어 없음';
+    br.textContent = nRev ? '추가 복습' : '복습할 단어 없음';
     bn.disabled = !nNew;
     br.disabled = !nRev;
     note = nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
   }
   $('#today-note').textContent = note;
+  // 시작할 게 있으면 카드 전체가 시작 버튼 (인디고로 칠함). 다 했거나 '더 하기'면 흰 카드
+  const go = { day: true, learn: !!learnLeft, review: !!rv.left.length, extra: false }[stage];
+  $('#card-today').classList.toggle('go', go);
   // 코치가 켜져 있으면 하루 새 단어 수는 코치가 정함 (버튼은 흐리게)
   const ca = coachActive();
   $('#seg-new').classList.toggle('dim', ca);
@@ -3777,7 +3781,12 @@ function renderSyncStatus() {
   const badge = $('#sync-badge');
   badge.hidden = !sync.enabled;
   badge.className = 'sync-badge ' + sync.status;
-  badge.textContent = { syncing: '☁︎ 동기화 중', ok: '☁︎ 동기화됨', error: '☁︎ 동기화 오류', wait: '☁︎ 잠시 뒤 동기화', idle: '☁︎' }[sync.status] || '';
+  // 헤더에선 조용하게 점 하나 (글자는 누르거나 마우스를 올리면 · 화면 읽기)
+  const said = { syncing: '동기화 중', ok: '동기화됨', error: '동기화 오류', wait: '잠시 뒤 동기화', idle: '동기화' }[sync.status] || '';
+  badge.textContent = said;
+  badge.title = said;
+  badge.setAttribute('role', 'img');
+  badge.setAttribute('aria-label', said);
   $('#sync-off').hidden = sync.enabled;
   $('#sync-on').hidden = !sync.enabled;
   if (sync.enabled) {
@@ -3900,9 +3909,9 @@ function renderSrsGraph(iv) {
 }
 
 // ---------- 꾸미기 (js/look.js가 <head>에서 먼저 불러 둠) ----------
-const ACCENT_NAME = { navy: '네이비', forest: '숲', grape: '포도', coral: '코랄', ink: '먹색' };
-const ACCENT_SW = { navy: '#1f3a68', forest: '#1e6b4f', grape: '#5b3f9e', coral: '#c2493d', ink: '#1a1a17' };
-const HOME_PART = { coach: '코치 말풍선', plan: '학습 계획 요약', practice: '다시 볼 단어 · 범위 연습', book: '단어장 보기 버튼', days: 'DAY별 진도' };
+const ACCENT_NAME = { navy: '인디고', forest: '숲', grape: '포도', coral: '코랄', ink: '먹색' };
+const ACCENT_SW = { navy: '#4f5bd5', forest: '#1e9e6a', grape: '#7a5af8', coral: '#f0614f', ink: '#1a1a17' };
+const HOME_PART = { coach: '코치 말풍선', plan: '학습 계획 · 암기 진도', practice: '다시 볼 단어 · 범위 연습', book: '단어장 보기 버튼', days: 'DAY별 진도' };
 // 짧은 소리 (파일 없이 Web Audio로): tone([[주파수, 길이초], …], 크기, 파형)
 // 소리 낼 때 처음 켜면 스피커·이어폰이 깨어나는 동안 늦게 들려서, 화면을 처음 누를 때 미리 켜 둠 (warmAudio)
 let audioCtx = null;

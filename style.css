@@ -1,12 +1,15 @@
 /* ---------- 디자인 토큰: 색·모서리·그림자는 모두 여기서 (화면마다 숫자를 따로 쓰지 않게) ---------- */
 :root {
-  --bg: #f3f5f9;
+  /* 바탕은 옅은 회색, 카드는 흰색: 테두리·그림자 없이 색 차이로만 나눔 */
+  --bg: #f2f4f7;
   --card: #ffffff;
-  --text: #1a2233;
-  --muted: #707a8c;
-  --line: #e3e7ef;
-  --primary: #1f3a68;
-  --primary-soft: #e6ecf5;
+  --text: #191c26;
+  --text2: #4e5466;  /* 카드 제목·말풍선처럼 본문보다 한 단계 옅은 글자 */
+  --muted: #8b91a1;  /* 설명·단위 */
+  --line: #e6e8ee;
+  --fill: #eff1f5;   /* 카드 안의 옅은 칸(막대 바탕·세그먼트) */
+  --primary: #4f5bd5;
+  --primary-soft: #eceefb;
   --on-primary: #ffffff;
   --danger: #e03131;
   --danger-soft: #ffe8e8;
@@ -25,8 +28,9 @@
   --warn: #f59f00;
   --warn-soft: rgba(245, 159, 0, .12);
   --on-warn: #ffffff;
-  --blank: #d3deef;
-  --shadow: 0 2px 10px rgba(20, 35, 70, .06);
+  --blank: #dde1f8;
+  --shadow: none;                                  /* 카드 기본은 평평하게 (설정 > 화면 > 카드) */
+  --shadow-soft: 0 2px 10px rgba(20, 35, 70, .06); /* '그림자'를 고르면 */
   --shadow-pop: 0 24px 60px rgba(8, 14, 30, .3);   /* 창·시트처럼 위에 뜨는 것 */
   --scrim: rgba(8, 14, 30, .45);
   --thumb: var(--card);                           /* 예문↔단어 전환 칸 */
@@ -40,7 +44,7 @@
   --study-c: #12b886; --study-c2: #82c91e; --study-soft: #e3f8f1; --swipe-text: #fff;
   --tint-syn-a: #d6e7fb; --tint-syn-b: #fbd9d9; --tint-study-a: #e6f5c6; --tint-study-b: #c9f0e0;
   /* 모서리: 작은 표시(sm) · 칸·버튼(md) · 목록 줄·보기(lg) · 카드(xl) · 창(2xl) · 알약(pill) */
-  --r-xs: 6px; --r-sm: 8px; --r-md: 12px; --r-lg: 14px; --r-xl: 18px; --r-2xl: 22px; --r-pill: 999px;
+  --r-xs: 6px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 22px; --r-2xl: 26px; --r-pill: 999px;
   /* 알약 버튼(칩·DAY 고르기·바로가기) 한 모양 */
   --chip-h: 34px;
   --fz: 1;     /* 글자 크기 (설정 > 화면) */
@@ -49,15 +53,17 @@
 }
 /* 다크: js/look.js가 <html data-theme>을 정함 (폰 설정대로 · 늘 밝게 · 늘 어둡게) */
 :root[data-theme="dark"] {
-  /* 다크: 네이비 바탕 + 아이보리 */
-  --bg: #0e1626;
-  --card: #1a2640;
-  --text: #edf0f6;
-  --muted: #aeb7c7;
-  --line: #2b3b5c;
-  --primary: #f1ebe2;
-  --primary-soft: #162238;
-  --on-primary: #0e1626;
+  /* 다크: 깊은 남색 바탕 + 한 단계 밝은 카드 + 밝은 인디고 */
+  --bg: #0f121c;
+  --card: #1b1f2c;
+  --text: #eceef4;
+  --text2: #b8bdcc;
+  --muted: #8a90a3;
+  --line: #2a2f40;
+  --fill: #262b3a;
+  --primary: #6672ee;
+  --primary-soft: #252a4a;
+  --on-primary: #ffffff;
   --danger: #ef4444;
   --danger-soft: #3a1d26;
   --mark-bg: rgba(110, 225, 170, .5);   /* 다크: 민트 형광펜 (네이비 위에서 잘 보이게) */
@@ -72,10 +78,11 @@
   --bad-soft: #43201f;
   --on-bad: #1f0b0b;
   --on-warn: #1f1600;  /* 다크: 노랑·초록·빨강 띠 위 글자는 검정 쪽 (흰 글자는 잘 안 읽힘) */
-  --blank: #24365a;
+  --blank: #2e3560;
   --shadow: none;
+  --shadow-soft: none;
   --scrim: rgba(0, 0, 0, .55);
-  --thumb: #3b4d73;
+  --thumb: #3a4058;
   --on-hint: #1f1600;
   --spell: #d9b440; --spell-soft: #3a3215;
   --solo: #ff9f43; --solo-soft: #3a2614; --on-solo: #1a1006; --solo-glow: rgba(255, 159, 67, .3);
@@ -83,8 +90,8 @@
   --study-c: #38d9a9; --study-c2: #a9e34b; --study-soft: #143a33; --swipe-text: #111; /* 다크: 밝은 띠 위 글자는 검정 */
   --tint-syn-a: #173252; --tint-syn-b: #44202a; --tint-study-a: #2b3d15; --tint-study-b: #12403a;
   /* 키보드 키·4지선다 보기: 민트 그라데이션 위에서 잘 구별되게 어둡게 */
-  --key-bg: #0f1829;
-  --key-fn: #1f2f4c;
+  --key-bg: #141825;
+  --key-fn: #262b3a;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -125,8 +132,8 @@ button { cursor: pointer; }
 .screen.active { display: block; }
 
 .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-.top h1 { font-size: 22px; margin: 0; }
-.top h1 .sub { font-size: 14px; color: var(--muted); font-weight: 500; }
+.top h1 { font-size: 24px; font-weight: 800; letter-spacing: -.4px; margin: 0; }
+.top h1 .sub { font-size: 13px; color: var(--muted); font-weight: 500; letter-spacing: 0; margin-left: 2px; }
 .icon-btn { border: 0; background: transparent; font-size: 22px; width: 40px; height: 40px; border-radius: var(--r-md); display: inline-grid; place-items: center; padding: 0; color: var(--text); }
 .icon-btn .ic { width: 22px; height: 22px; }
 /* 아이콘(.ic, js/app.js ICON): 글자 옆에선 글자 크기에 맞춤 */
@@ -137,9 +144,10 @@ button { cursor: pointer; }
 .status { text-align: center; color: var(--muted); padding: 40px 12px; white-space: pre-line; }
 .status code { background: var(--primary-soft); padding: 1px 6px; border-radius: var(--r-xs); }
 
-.card { background: var(--card); border-radius: var(--r-xl); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.card { background: var(--card); border-radius: var(--r-xl); padding: 20px; margin-bottom: 12px; box-shadow: var(--shadow); }
 .card.center { text-align: center; }
-.label { font-size: 13px; font-weight: 700; color: var(--muted); margin: 4px 0 8px; }
+/* 카드 제목: 본문보다 작고 옅게 (숫자·값이 주인공) */
+.label { font-size: 14px; font-weight: 600; color: var(--text2); margin: 2px 0 8px; }
 .label.mt { margin-top: 20px; }
 .muted { color: var(--muted); font-size: 13px; font-weight: 400; }
 .row { display: flex; gap: 8px; align-items: center; }
@@ -160,11 +168,8 @@ button { cursor: pointer; }
 .chip:active, .dp:active, .chat-top-btn:active, .chat-retry:active { background: var(--primary-soft); }
 .chip.on, .dp.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .chip:disabled { opacity: .45; }
-.stats { display: flex; justify-content: space-between; margin: 14px 0 8px; font-size: 13px; color: var(--muted); }
-.stats b { display: block; font-size: 18px; color: var(--text); }
-.stats > div { text-align: center; flex: 1; }
 
-.bar { height: 8px; background: var(--line); border-radius: var(--r-pill); overflow: hidden; }
+.bar { height: 8px; background: var(--fill); border-radius: var(--r-pill); overflow: hidden; }
 .bar.grow { flex: 1; }
 .bar-fill { height: 100%; width: 0; background: var(--primary); border-radius: var(--r-pill); transition: width .3s; }
 
@@ -176,7 +181,7 @@ button { cursor: pointer; }
 #settings .seg button.on, #list .seg button.on { background: var(--primary-soft); }
 
 .btn { border: 0; border-radius: var(--r-lg); padding: 13px 16px; font-weight: 700; width: 100%; margin-bottom: 8px; }
-.btn.big { padding: 17px; font-size: 18px; }
+.btn.big { padding: 16px; font-size: 17px; border-radius: var(--r-lg); letter-spacing: -.2px; }
 /* 작은 버튼 한 크기 (36px). 카드 머리에 붙는 건 .btn.small 그대로 두고 높이만 30px */
 .btn.small { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; font-size: 14px; width: auto; }
 .btn.primary { background: var(--primary); color: var(--on-primary); }
@@ -196,7 +201,7 @@ button { cursor: pointer; }
 .day .muted { font-size: 12px; }
 .day .bar { height: 5px; margin-top: 6px; }
 
-.resume { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 2px solid var(--primary-soft); }
+.resume { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .resume .btn { margin: 0; }
 /* 설명이 길어도(예: 범위 순서대로 연습) 버튼 글자는 한 줄로, 설명은 낱말 중간('완/료')에서 줄이 갈리지 않게 */
 .resume > div:first-child { flex: 1 1 auto; min-width: 0; }
@@ -482,11 +487,15 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
 }
 
 /* 동기화 */
-.head-right { display: flex; align-items: center; gap: 6px; }
-.sync-badge { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.sync-badge.ok { color: var(--ok); }
-.sync-badge.error { color: var(--bad); }
-.sync-badge.wait { color: var(--warn); }
+.head-right { display: flex; align-items: center; gap: 8px; }
+/* 동기화: 글자 없이 작은 점 하나 (글자는 title·화면 읽기로) */
+.sync-badge { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .55; font-size: 0; overflow: hidden; flex: none; margin-right: 2px; }
+.sync-badge.ok { background: var(--ok); opacity: .7; }
+.sync-badge.error { background: var(--bad); opacity: 1; }
+.sync-badge.wait { background: var(--warn); opacity: .9; }
+.sync-badge.syncing { background: var(--primary); animation: sync-pulse 1s ease-in-out infinite alternate; }
+@keyframes sync-pulse { from { opacity: .25; } to { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .sync-badge.syncing { animation: none; } }
 .sync-info { white-space: pre-line; font-size: 14px; margin: 0 0 10px; }
 .steps { font-size: 14px; padding-left: 20px; margin: 8px 0 12px; color: var(--text); }
 .steps li { margin-bottom: 6px; }
@@ -555,18 +564,21 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .speak-btn:active { transform: scale(.95); }
 
 /* 오늘의 학습 */
-.today { border: 2px solid var(--primary-soft); }
-.today-head { display: flex; justify-content: space-between; align-items: center; }
-.plan { display: flex; gap: 8px; margin: 6px 0 12px; }
-.plan > div { flex: 1; background: var(--bg); border-radius: var(--r-md); padding: 10px 8px; text-align: center; font-size: 13px; color: var(--muted); }
-.plan b { display: block; font-size: 22px; color: var(--text); }
+.today { padding: 22px 20px 20px; }
+.today-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.today-head .label { margin: 0; font-size: 15px; }
+/* 오늘 할 개수: 숫자는 크고 굵게, 이름은 작고 흐리게 */
+.plan { display: flex; gap: 32px; margin: 14px 0 22px; }
+.plan > div, .plan > .editable { text-align: left; font-size: 14px; color: var(--muted); }
+.plan b { display: block; font-size: 40px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; color: var(--text); margin-bottom: 4px; }
 .today .btn { margin-bottom: 6px; }
 #stage-extra .row.two { margin-bottom: 6px; }
-.flow { display: flex; align-items: center; gap: 6px; margin: 2px 0 10px; font-size: 12px; color: var(--muted); }
-.flow i { font-style: normal; opacity: .5; }
+.flow { display: flex; align-items: center; gap: 7px; margin: 6px 0 0; font-size: 13px; color: var(--muted); }
+.flow i { font-size: 0; width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .5; } /* › 대신 작은 점 */
 .flow span.done::before { content: '✓ '; }
-.flow span.on { color: var(--primary); font-weight: 800; }
-#today-note { text-align: center; }
+.flow span.on { color: var(--primary); font-weight: 700; }
+#today-note { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+#today-note:empty { display: none; }
 .exam-row { gap: 8px; }
 .date-input { flex: 1; padding: 11px 12px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--bg); font-size: 16px; min-width: 0; }
 .tag.dday { color: var(--on-bad); background: var(--bad); }
@@ -577,16 +589,16 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 
 
 /* 예문 ↔ 단어 모드 전환 (index.html · meaning.html 머리에 같은 모양, 같은 자리) */
-.mode-switch{position:relative;display:flex;gap:2px;padding:3px;background:var(--line);border-radius:var(--r-md);flex:none}
-.mode-thumb{position:absolute;top:3px;left:3px;width:40px;height:32px;border-radius:9px;background:var(--thumb);
-  box-shadow:0 1px 3px rgba(15,30,60,.14);transition:transform .2s cubic-bezier(.2,.8,.2,1);view-transition-name:mode-thumb}
-.mode-switch[data-mode="wd"] .mode-thumb{transform:translateX(42px)}
-.mode-switch a{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:40px;height:32px;border-radius:9px;color:var(--muted);transition:color .2s}
-.mode-switch a.on{color:var(--text)}
+.mode-switch{position:relative;display:flex;gap:2px;padding:2px;background:var(--fill);border-radius:var(--r-pill);flex:none}
+.mode-thumb{position:absolute;top:2px;left:2px;width:34px;height:28px;border-radius:var(--r-pill);background:var(--thumb);
+  transition:transform .2s cubic-bezier(.2,.8,.2,1);view-transition-name:mode-thumb}
+.mode-switch[data-mode="wd"] .mode-thumb{transform:translateX(36px)}
+.mode-switch a{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;width:34px;height:28px;border-radius:var(--r-pill);color:var(--muted);opacity:.75;transition:color .2s,opacity .2s}
+.mode-switch a.on{color:var(--text2);opacity:1}
 .mode-switch a:not(.on):active{opacity:.6}
 .mode-switch a[data-m="ex"]{view-transition-name:mode-ex}
 .mode-switch a[data-m="wd"]{view-transition-name:mode-wd}
-.mode-switch svg{width:20px;height:20px}
+.mode-switch svg{width:17px;height:17px}
 /* 예문 ↔ 단어 페이지 사이 전환 */
 @view-transition{navigation:auto}
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.22s}
@@ -599,31 +611,31 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 /* ---------- 단어 모드 (./?m=word): 화면은 같고 색만 예전 뜻 퀴즈 색 (종이색 바탕 · 먹색 버튼) ---------- */
 :root[data-mode="word"] [data-only="ex"], :root:not([data-mode="word"]) [data-only="word"] { display: none !important; }
 :root[data-mode="word"] {
-  --bg: #f7f6f1; --card: #ffffff; --text: #1a1a17; --muted: #8f8e85; --line: #e4e2d9;
+  --bg: #f7f6f1; --card: #ffffff; --text: #1a1a17; --text2: #55544c; --muted: #8f8e85; --line: #e4e2d9; --fill: #f1efe8;
   --primary: #1a1a17; --primary-soft: #efeee7; --on-primary: #f7f6f1;
   --ok: #166f4a; --ok-soft: #e2f1e9; --bad: #a8352d; --bad-soft: #fbe6e3; --warn: #8d6009;
   --blank: #ebe6d6; --mark-bg: #ebe6d6; --mark-top: 58%;
   --danger: #d9342b; --danger-soft: #fbe6e3;
   --glow-0: #f7f6f1; --glow-1: #f7f6f1; /* 단어 모드는 바탕 단색 */
-  --shadow: 0 1px 2px rgba(26, 26, 23, .04);
+  --shadow-soft: 0 2px 10px rgba(26, 26, 23, .07);
 }
 :root[data-mode="word"][data-theme="dark"] {
-  --bg: #17171a; --card: #1f1f23; --text: #f0efe9; --muted: #87857c; --line: #33333a;
+  --bg: #17171a; --card: #222226; --text: #f0efe9; --text2: #bdbbb2; --muted: #87857c; --line: #33333a; --fill: #2c2c31;
   --primary: #f0efe9; --primary-soft: #2a2a30; --on-primary: #17171a;
   --ok: #63c99b; --ok-soft: #14281f; --bad: #f08c82; --bad-soft: #2e1815; --warn: #e0b45c;
   --blank: #3a3a42; --mark-bg: rgba(110, 225, 170, .4); --mark-top: 50%;
   --danger: #e5484d; --danger-soft: #3a1c1c;
   --glow-0: #17171a; --glow-1: #17171a;
-  --shadow: none;
+  --shadow-soft: none;
   --key-bg: var(--card); --key-fn: var(--line); /* 단어 모드는 바탕 단색이라 그대로 */
   --thumb: #3a3a42;
 }
-/* 카드 구분: 얇은 테두리(단어 모드 기본) · 그림자(예문 모드 기본). 설정 > 화면 > 카드 */
+/* 카드 구분: 평평하게(기본, 바탕색 차이만) · 그림자 · 얇은 테두리. 설정 > 화면 > 카드 */
+:root[data-edge="shadow"] { --shadow: var(--shadow-soft); }
 :root[data-edge="line"] { --shadow: none; }
 :root[data-edge="line"] .card, :root[data-edge="line"] .sent, :root[data-edge="line"] .item, :root[data-edge="line"] .buddy-say { border: 1px solid var(--line); }
 :root[data-edge="line"] .day:not(.solo) { border-color: var(--line); }
 :root[data-edge="line"] .fb-pane .sent, :root[data-edge="line"] .fb-card, :root[data-edge="line"] .item .detail .sent { border: 0; }
-:root[data-mode="word"][data-edge="shadow"]:not([data-theme="dark"]) { --shadow: 0 2px 10px rgba(26, 26, 23, .07); }
 :root[data-mode="word"] .choice { font-size: calc(16px * var(--fz)); line-height: 1.45; }
 :root[data-mode="word"] .toast { box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
 
@@ -668,20 +680,62 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .day.solo { border-color: var(--solo); background: var(--solo-soft); box-shadow: 0 4px 14px var(--solo-glow); }
 .day.solo b { color: var(--solo); }
 .day.solo .bar-fill { background: var(--solo); }
-#card-today.solo-mode { border-color: var(--solo); }
+#card-today.solo-mode { background: var(--solo-soft); --go-bg: var(--solo); --go-fg: var(--on-solo); }
+/* 오늘 카드 = 시작 버튼 (.go, app.js renderPlan): 시작 버튼을 카드 크기로 밑에 깔고 내용은 그 위에 (누르면 아래 버튼이 눌림).
+   숫자 옆 ✎ · 학습/복습/더 하기 이동 · 정규 학습으로 · 기록 지우기만 위에서 따로 눌림 */
+.today { --go-bg: var(--primary); --go-fg: var(--on-primary); position: relative; isolation: isolate; transition: background-color .2s; }
+.go-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.today-go { display: none; }
+.today .stretch:disabled { background: var(--fill); color: var(--muted); opacity: 1; }
+#card-today.go { background: var(--go-bg); color: var(--go-fg); }
+.today.go .today-head, .today.go .flow, .today.go .go-row, .today.go #today-note, .today.go .day-reset { position: relative; z-index: 1; pointer-events: none; }
+.today.go .editable, .today.go .flow span.link, .today.go .today-head button, .today.go .day-reset { pointer-events: auto; }
+.today.go .stretch {
+  position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; margin: 0; padding: 0;
+  border-radius: inherit; background: transparent; color: transparent; font-size: 0; transform: none;
+}
+.today.go .stretch:active { background: rgba(0, 0, 0, .08); }
+.today.go:has(.stretch:focus-visible) { outline: 3px solid var(--go-bg); outline-offset: 3px; }
+.today.go .stretch:focus-visible { outline: none; }
+.today.go .label, .today.go .flow, .today.go .plan > *, .today.go #today-note, .today.go .day-reset, .today.go .edit-ic { color: var(--go-fg); opacity: .78; }
+.today.go .plan > * { opacity: 1; }
+.today.go .plan > * { color: color-mix(in srgb, var(--go-fg) 78%, transparent); }
+.today.go .plan b, .today.go .flow span.on { color: var(--go-fg); }
+.today.go .flow span.link { text-decoration-color: color-mix(in srgb, var(--go-fg) 40%, transparent); }
+.today.go .tag { background: color-mix(in srgb, var(--go-fg) 18%, transparent); color: var(--go-fg); }
+.today.go .today-head .btn.ghost { color: var(--go-fg); }
+.today.go .plan { margin-bottom: 4px; }
+.today.go .today-go { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 4px; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.today.go .today-go .chev { color: inherit; opacity: 1; font-size: 26px; margin-top: -2px; }
+.today.go #today-note { margin-top: 12px; }
 #card-today.solo-mode #today-title { color: var(--solo); }
 #btn-day { background: var(--solo); color: var(--on-solo); box-shadow: 0 6px 18px var(--solo-glow); }
-.today-head .btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; }
+.today-head .btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; margin: 0; }
 .dim { opacity: .4; filter: grayscale(1); pointer-events: none; }
 .faded { opacity: .45; filter: grayscale(1); }
 
 /* 홈의 학습 계획 요약 카드: 누르면 학습 계획 화면 */
-.plan-sum { cursor: pointer; }
-.plan-sum:active { background: var(--primary-soft); }
-.plan-sum-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.plan-sum-head .label { margin: 0; }
-.plan-sum .btn.plan-go { margin: 0; min-height: 30px; padding: 0 8px; font-size: 13px; }
-.plan-sum-text { margin-top: 6px; font-weight: 700; font-size: 15px; }
+/* 학습 계획 요약: 카드 전체가 버튼 (범위는 크게, 나머지는 한 줄로 작게) */
+.plan-sum { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.plan-sum:active { background: var(--fill); }
+.plan-sum-main { flex: 1; min-width: 0; display: block; }
+.plan-sum .label { display: block; margin: 0 0 4px; }
+.plan-sum-text { display: block; }
+.plan-sum-range { display: block; font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+.plan-sum-desc { display: block; margin-top: 2px; font-size: 14px; color: var(--muted); word-break: keep-all; }
+.chev { flex: none; font-style: normal; font-size: 22px; line-height: 1; color: var(--muted); opacity: .7; }
+/* 암기 완료 카드 */
+.prog-num { margin: 0 0 14px; color: var(--muted); font-size: 18px; font-weight: 600; }
+.prog-num b { font-size: 32px; font-weight: 800; letter-spacing: -.8px; color: var(--text); }
+.range-sum { margin-top: 12px; }
+/* 바로가기 목록 (버튼처럼 보이지 않게 줄로) */
+.card.menu { padding: 6px 0; }
+.menu-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 52px; padding: 0 20px; border: 0; background: none; color: var(--text); font-size: 16px; font-weight: 500; text-align: left; }
+.menu-row:active { background: var(--fill); }
+.menu-row:disabled { color: var(--muted); }
+.menu-row:disabled .chev { opacity: .35; }
+.menu-end { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; }
+#range-practice.dim { filter: none; }
 /* 단어장: 볼 DAY 고르기 (가로로 넘기는 한 줄) · DAY 제목 */
 .day-pick { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 10px; padding: 2px 16px 4px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .day-pick::-webkit-scrollbar { display: none; }
@@ -808,9 +862,9 @@ html:not(.desk) .desk-only { display: none; }
 .day-head .day-del:hover { color: var(--danger); }
 
 /* 맨 위 카드: 누르면 개수를 정하는 숫자 */
-.plan > .editable { position: relative; flex: 1; background: var(--bg); border-radius: var(--r-md); padding: 10px 8px; text-align: center; font-size: 13px; color: var(--muted); border: 1.5px dashed var(--line); cursor: pointer; }
-.plan > .editable:active { transform: scale(.98); }
-.plan > .editable .edit-ic { position: absolute; top: 7px; right: 8px; color: var(--muted); opacity: .7; }
+.plan > .editable { border: 0; background: none; padding: 0; margin: 0; cursor: pointer; border-radius: var(--r-sm); }
+.plan > .editable:active { opacity: .6; }
+.plan > .editable .edit-ic { display: inline-block; margin-left: 4px; vertical-align: -1px; color: var(--muted); opacity: .8; }
 .plan > .editable .edit-ic .ic { width: 13px; height: 13px; }
 /* 앱 안 숫자 키패드 */
 .numpad-card { max-width: 340px; }
@@ -954,18 +1008,20 @@ body[data-tint] {
 .sent.multi .sent-part + .sent-part { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 
 /* 단어 코치: 홈 맨 위에서 고른 캐릭터가 말풍선으로 오늘 분량을 알려 줌 (그림은 32×32 픽셀이라 2배·3배 크기로) */
-.buddy-card { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
+.buddy-card { display: flex; align-items: flex-end; gap: 6px; margin: 4px 0 14px; }
 .buddy-char { flex: none; width: 64px; height: 64px; padding: 0; border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .buddy-svg { display: block; width: 100%; height: 100%; }
 .buddy-char .buddy-svg { animation: buddy-bob 2.4s steps(2, end) infinite; }
 .buddy-char.hop .buddy-svg { animation: buddy-hop .45s ease-out; }
 @keyframes buddy-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 @keyframes buddy-hop { 0% { transform: translateY(0); } 40% { transform: translateY(-10px); } 100% { transform: translateY(0); } }
-.buddy-say { position: relative; flex: 1; min-width: 0; background: var(--card); border-radius: var(--r-xl) var(--r-xl) var(--r-xl) 4px; padding: 10px 14px 12px; box-shadow: var(--shadow); }
-.buddy-name { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
-.buddy-text { font-size: 15px; line-height: 1.5; word-break: keep-all; overflow-wrap: anywhere; }
-.buddy-acts { display: flex; gap: 8px; margin-top: 10px; }
-.buddy-acts .btn { margin: 0; }
+.buddy-say { position: relative; flex: 0 1 auto; min-width: 0; background: var(--card); border-radius: 18px 18px 18px 4px; padding: 9px 14px 10px; box-shadow: var(--shadow); }
+.buddy-name { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 1px; }
+.buddy-text { font-size: 14px; line-height: 1.5; color: var(--text2); word-break: keep-all; overflow-wrap: anywhere; }
+.buddy-acts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+/* 말풍선 안 버튼은 글자 링크처럼 */
+.buddy-acts .btn { margin: 0; min-height: 26px; padding: 0; background: none; font-size: 13px; font-weight: 700; color: var(--primary); }
+.buddy-acts .btn.ghost { color: var(--muted); font-weight: 600; }
 .res-buddy { width: 96px; height: 96px; margin: 0 auto 4px; }
 .res-buddy .buddy-svg { animation: buddy-hop .6s ease-out 2; }
 /* 정답 시트에서 같이 반응하는 코치 */
@@ -1084,12 +1140,12 @@ body[data-tint] {
 
 /* ---------- 꾸미기 (js/look.js가 <html>에 붙이는 속성. 설정 > 화면 · 문제 풀기) ---------- */
 /* 강조 색: 버튼·막대·고른 칸·빈칸. 모드 색 블록보다 뒤에 있어야 이김. 다크 값은 [data-theme="dark"]와 같이 */
-:root[data-accent="navy"]   { --primary: #1f3a68; --primary-soft: #e6ecf5; --on-primary: #ffffff; --blank: #d3deef; }
-:root[data-accent="forest"] { --primary: #1e6b4f; --primary-soft: #e2f2ea; --on-primary: #ffffff; --blank: #cde8da; }
-:root[data-accent="grape"]  { --primary: #5b3f9e; --primary-soft: #ece6f8; --on-primary: #ffffff; --blank: #dcd2f2; }
-:root[data-accent="coral"]  { --primary: #c2493d; --primary-soft: #fbe7e4; --on-primary: #ffffff; --blank: #f6d3ce; }
+:root[data-accent="navy"]   { --primary: #4f5bd5; --primary-soft: #eceefb; --on-primary: #ffffff; --blank: #dde1f8; } /* 이름은 navy지만 인디고 */
+:root[data-accent="forest"] { --primary: #1e9e6a; --primary-soft: #e3f5ec; --on-primary: #ffffff; --blank: #cdebdc; }
+:root[data-accent="grape"]  { --primary: #7a5af8; --primary-soft: #f0ecfe; --on-primary: #ffffff; --blank: #e0d8fd; }
+:root[data-accent="coral"]  { --primary: #e8574a; --primary-soft: #fdebe8; --on-primary: #ffffff; --blank: #f9d5cf; }
 :root[data-accent="ink"]    { --primary: #1a1a17; --primary-soft: #efeee7; --on-primary: #f7f6f1; --blank: #ebe6d6; }
-:root[data-theme="dark"][data-accent="navy"]   { --primary: #f1ebe2; --primary-soft: #162238; --on-primary: #0e1626; --blank: #24365a; }
+:root[data-theme="dark"][data-accent="navy"]   { --primary: #6672ee; --primary-soft: #252a4a; --on-primary: #ffffff; --blank: #2e3560; }
 :root[data-theme="dark"][data-accent="forest"] { --primary: #8fdcb8; --primary-soft: #15302a; --on-primary: #0d1f19; --blank: #1e4236; }
 :root[data-theme="dark"][data-accent="grape"]  { --primary: #c9b6f5; --primary-soft: #251d3d; --on-primary: #160f29; --blank: #382c5c; }
 :root[data-theme="dark"][data-accent="coral"]  { --primary: #ffab9e; --primary-soft: #3a1f1c; --on-primary: #2a0f0b; --blank: #55302b; }
@@ -1126,8 +1182,8 @@ body[data-tint] {
 :root[data-kb="s"] { --key-k: .86; }
 :root[data-kb="l"] { --key-k: 1.14; }
 /* 홈에 보일 것 ('오늘' 카드는 늘) */
-:root[data-hide~="coach"] #buddy-card, :root[data-hide~="plan"] #plan-sum-card, :root[data-hide~="practice"] #range-practice,
-:root[data-hide~="book"] #btn-list, :root[data-hide~="days"] .home-side { display: none !important; }
+:root[data-hide~="coach"] #buddy-card, :root[data-hide~="plan"] #plan-sum-card, :root[data-hide~="plan"] #prog-card, :root[data-hide~="practice"] #range-practice,
+:root[data-hide~="book"] #btn-list, :root[data-hide~="practice"][data-hide~="book"] #home-menu, :root[data-hide~="days"] .home-side { display: none !important; }
 /* 컴퓨터에서 DAY별 진도를 숨기면 오른쪽 칸 없이 한 칸으로 (머리와 폭을 맞춤) */
 .desk[data-hide~="days"] #home-body:not([hidden]) { display: block; }
 .desk[data-hide~="days"] #home.screen { max-width: 680px; }
