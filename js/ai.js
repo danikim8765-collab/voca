@@ -233,7 +233,8 @@ async function askClaude(c, r, signal) {
       model: c.model || CLAUDE_MODEL,
       max_tokens: r.maxTokens || 2048,
       system: [{ type: 'text', text: r.system, cache_control: cacheMark }],
-      output_config: r.json ? { effort: 'low', format: { type: 'json_schema', schema: r.schema || CLAUDE_SCHEMA } } : { effort: 'low' },
+      // effort: 얼마나 생각하고 답할지. 기본은 low(채점·말풍선처럼 짧은 일), 코치와 이야기하기는 high (r.effort)
+      output_config: r.json ? { effort: r.effort || 'low', format: { type: 'json_schema', schema: r.schema || CLAUDE_SCHEMA } } : { effort: r.effort || 'low' },
       messages: [{ role: 'user', content: claudeContent(r) }],
     }),
   });
@@ -334,8 +335,10 @@ async function askCoach(r) {
     }
     // 넘어갈 다른 모델이 있으면 오래 기다리지 않음. 다만 코치와 이야기하기는 긴 설명을 쓰는 중일 수 있어서 30초까지 기다림
     // (중간에 끊어도 그때까지 쓴 토큰 값은 나가고, 다른 모델에 처음부터 다시 물어야 해서 두 번 값을 냄)
+    // Claude를 effort high·medium으로 부르면 생각하느라 더 걸려서, 예비 모델로 넘어가기 전 기다리는 시간도 길게
     const spare = models.slice(i + 1).some(m => m !== models[i] && !tried.includes(m));
-    const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, r.chat ? 30000 : 15000) : r.timeout }, { ...c, model: models[i] });
+    const wait = r.chat ? (c.provider === 'claude' && r.effort && r.effort !== 'low' ? 75000 : 30000) : 15000;
+    const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, wait) : r.timeout }, { ...c, model: models[i] });
     if (out) return out;
     if (out === '') lastErr = 'bad';
     errs.push(lastErr);
@@ -442,7 +445,8 @@ export function askProblem(p) {
 export async function aiAskWord({ problem, history = [], message }) {
   const past = history.slice(-8).map(m => `${m.who === 'me' ? '학생' : '선생님'}: ${clip(safeAnswer(m.text), 600)}`).join('\n');
   const text = await askCoach({
-    system: ASK, chat: true, maxTokens: 2048, timeout: 30000,
+    // Claude면 생각을 조금 하고 답함(medium). 생각한 토큰도 max_tokens에 들어가 넉넉히
+    system: ASK, chat: true, effort: 'medium', maxTokens: 8192, timeout: 45000,
     user: `<problem>\n${askProblem(problem)}\n</problem>${past ? `\n\n앞서 나눈 이야기:\n${past}` : ''}\n\n<question>${clip(safeAnswer(message), 500)}</question>`,
   });
   const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|[#`]/g, '').trim();
@@ -789,9 +793,10 @@ ${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 
   parts.push({ text: `${lookup ? `<lookup>\n${lookup}\n</lookup>\n` : ''}${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
 <message>${safeAnswer(message)}</message>` });
   const raw = await askCoach({
-    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 40000, chat: true,
-    // 긴 설명이 잘리면(cut) 다른 모델로 처음부터 다시 물어 두 번 값을 내니, 답 길이 한도는 넉넉히
-    maxTokens: 8192, parts, user: parts.map(p => p.text).join(''),
+    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 90000, chat: true,
+    // Claude면 충분히 생각하고 답함(effort high, low는 앱 자료를 빠뜨리거나 엉뚱하게 답함). Gemini·Groq는 이 값을 안 씀
+    // 긴 설명이 잘리면(cut) 다른 모델로 처음부터 다시 물어 두 번 값을 내니, 답 길이 한도는 넉넉히 (생각한 토큰도 여기에 들어감)
+    effort: 'high', maxTokens: 16000, parts, user: parts.map(p => p.text).join(''),
   });
   if (!raw) return null;
   let out = null;

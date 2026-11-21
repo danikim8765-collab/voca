@@ -475,7 +475,7 @@ test('토큰 아끼기: 같은 단어에 같은 답이면 채점·왜 틀렸어?
   assert.equal(calls.length, 5);
 });
 
-test('토큰 아끼기: Claude는 지시문과 앞선 이야기를 캐시로, 대화 답 한도는 넉넉히', async t => {
+test('토큰 아끼기: Claude는 지시문과 앞선 이야기를 캐시로, 대화는 충분히 생각하고(effort high) 답 한도는 넉넉히', async t => {
   store.set('voca.ai.v1', JSON.stringify({ key: 'sk-ant-x', provider: 'claude' }));
   const realNow = Date.now;
   Date.now = () => realNow() + 7200000;
@@ -486,12 +486,15 @@ test('토큰 아끼기: Claude는 지시문과 앞선 이야기를 캐시로, �
   assert.deepEqual(body.system.at(-1).cache_control, { type: 'ephemeral' });
   assert.equal(typeof body.messages[0].content, 'string');
   assert.equal(body.max_tokens, 2048);
+  assert.equal(body.output_config.effort, 'low'); // 채점은 짧은 일이라 low
   const say = '{"mood":"normal","text":"좋아요.","review":0,"perDay":0,"rest":"","today":-1,"remember":""}';
   reply = claudeText(say);
   const history = [{ who: 'me', text: '안녕', day: '11월 13일', t: 1 }, { who: 'coach', text: '반가워요.', day: '11월 13일', t: 2 }];
   await aiCoachChat({ char: 'cat', facts: '시험까지 9일', history, message: '퀴즈 내 줘', day: '11월 13일' });
   body = JSON.parse(calls.at(-1).opts.body);
-  assert.equal(body.max_tokens, 8192);
+  assert.equal(body.max_tokens, 16000);
+  assert.equal(body.output_config.effort, 'high');
+  assert.equal(body.model, 'claude-sonnet-5-5');
   const blocks = body.messages[0].content;
   // 상황 → 이야기 한 줄씩 → 방금 한 말. 방금 한 말 바로 앞 조각까지 캐시
   assert.deepEqual(blocks.map(b => !!b.cache_control), [false, false, true, false]);
