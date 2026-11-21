@@ -844,8 +844,6 @@ html:not(.desk) .desk-only { display: none; }
 @media (min-width: 1000px) {
   .desk .screen { max-width: 1160px; padding: 24px 40px 40px; }
   .desk #settings, .desk #plan, .desk #list, .desk #result { max-width: 800px; }
-  /* 홈은 한 칸 (DAY별 진도는 진도 탭) */
-  .desk #home.screen { max-width: 680px; }
     .desk .days { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
   /* 퀴즈: 왼쪽 문제, 오른쪽 정답 풀이 */
   /* 위·아래 빈 줄(1fr)로 문제와 정답 풀이를 화면 가운데에 */
@@ -1247,6 +1245,7 @@ body.kb-up .tabbar { display: none !important; }
 .tabbar button .ic { width: 26px; height: 26px; stroke-width: 1.8; }
 .tabbar button.on { color: var(--text); opacity: 1; }
 .tabbar button.on .ic { stroke-width: 2.2; }
+.tab-name { display: none; }
 .tabbar button:active .ic { transform: scale(.92); }
 /* 탭 화면은 아래 탭만큼 띄움, 아래 고정 버튼(단어장)은 탭 위로 */
 body[data-screen="home"] .screen.active, body[data-screen="days"] .screen.active, body[data-screen="list"] .screen.active,
@@ -1256,3 +1255,39 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 /* 탭으로 오가니 단어장·설정의 ← 는 필요 없음 */
 #btn-list-back, #btn-settings-back { display: none; }
 #days .top h1, #list .top h1, #settings .top h1 { font-size: 24px; font-weight: 800; letter-spacing: -.4px; }
+
+/* ---------- 넓은 화면 (컴퓨터 · 가로 아이패드, 1000px~): 왼쪽 사이드바 + 두 칸 홈 ---------- */
+@media (min-width: 1000px) {
+  :root { --rail-w: 88px; --tab-h: 0px; }
+  /* 아래 탭 → 왼쪽 세로 메뉴 (아이콘 + 작은 이름, 홈이 맨 위) */
+  .tabbar {
+    top: 0; right: auto; width: var(--rail-w); height: auto;
+    flex-direction: column; justify-content: flex-start; gap: 6px;
+    padding: calc(env(safe-area-inset-top, 0px) + 20px) 10px 20px;
+    box-shadow: 1px 0 0 var(--line);
+  }
+  .tabbar button { flex: none; flex-direction: column; gap: 4px; height: 64px; border-radius: var(--r-lg); opacity: .8; }
+  .tabbar button .ic { width: 24px; height: 24px; }
+  .tabbar button.on { background: var(--fill); }
+  .tabbar button:not(.on):hover { background: var(--fill); opacity: 1; }
+  .tabbar [data-tab="home"] { order: -1; }
+  .tab-name { display: block; font-size: 12px; font-weight: 600; }
+  /* 탭 화면은 사이드바만큼 오른쪽으로 */
+  body[data-screen="home"], body[data-screen="days"], body[data-screen="list"], body[data-screen="settings"] { padding-left: var(--rail-w); }
+  #coach.screen.active { left: var(--rail-w); }
+  body[data-screen="list"] .sticky-bottom { left: var(--rail-w); }
+  body[data-screen="home"] .screen.active, body[data-screen="days"] .screen.active, body[data-screen="list"] .screen.active,
+  body[data-screen="settings"] .screen.active { padding-bottom: 40px; }
+
+  /* 홈 두 칸: 왼쪽 크게 '오늘' 카드, 오른쪽 학습 계획 · 암기 완료 · 다시 볼 단어 */
+  #home.screen { max-width: 1080px; padding-top: calc(env(safe-area-inset-top) + 24px); }
+  .home-main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); column-gap: 16px; align-items: start; grid-auto-flow: row dense; }
+  .home-main > * { grid-column: 2; }
+  .home-main > #resume-card { grid-column: 1 / -1; }
+  .home-main > #card-today { grid-column: 1; grid-row: span 4; align-self: stretch; min-height: 360px; display: flex; flex-direction: column; padding: 28px; }
+  #card-today > [id^="stage-"]:not([hidden]) { margin-top: auto; }
+  #card-today .plan b { font-size: 64px; letter-spacing: -2px; }
+  #card-today .today-head .label { font-size: 17px; }
+  #card-today.go .today-go { font-size: 18px; }
+  #home-adv { margin-top: 16px; }
+}

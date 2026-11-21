@@ -4067,7 +4067,7 @@ function applyAdv() {
 function setAdv(on) {
   ui.adv = !!on;
   save(UI_KEY, ui);
-  if (on) toast('아래 설정 탭에서 필요한 기능을 켜세요');
+  if (on) toast('설정 탭에서 필요한 기능을 켜세요');
   else {
     const off = [];
     if (settings.coach) { setCoach(false); off.push('단어 코치'); }
