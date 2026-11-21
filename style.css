@@ -309,7 +309,13 @@ button { cursor: pointer; }
 #settings .card { scroll-margin-top: 64px; }
 #settings .card > .label:first-child { font-size: 17px; font-weight: 800; color: var(--text); margin: 0 0 12px; }
 #settings .card .seg + .label, #settings .card .switch-row + div > .label:first-child { margin-top: 16px; }
-/* 설정: 덜 쓰는 것은 카드마다 '더 보기'에 접어 둠 */
+/* 설정: 위에 붙는 탭. 누른 탭의 카드만 보임 (app.js setTab) */
+.set-tabs {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; margin: 0 0 12px;
+  box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg); /* 뒤로 지나가는 카드 가림 */
+}
+#settings .card.tab-off { display: none; }
+/* 설정: 동기화 연결 방법 같은 긴 설명은 접어 둠 */
 .set-more { margin-top: 12px; }
 .set-more > summary { list-style: none; cursor: pointer; padding: 6px 0; color: var(--muted); font-size: 14px; font-weight: 700; }
 .set-more > summary::-webkit-details-marker { display: none; }

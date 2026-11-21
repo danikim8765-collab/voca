@@ -4194,6 +4194,16 @@ function bind() {
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
   $('#opt-review-mix').addEventListener('change', e => { settings.reviewMix = e.target.checked; saveSettings(); });
   onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
+  // 설정 탭: 누른 탭의 카드만 보임. 앱을 켜 둔 동안은 마지막 탭을 기억
+  let setTab = 'quiz';
+  const showSetTab = t => {
+    setTab = t;
+    setSeg('#set-tabs', t);
+    document.querySelectorAll('#settings .card[data-tab]').forEach(c => c.classList.toggle('tab-off', c.dataset.tab !== t));
+    $('#set-tabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', b.dataset.v === t));
+  };
+  onSeg('#set-tabs', v => { showSetTab(v); scrollTo(0, 0); });
+  showSetTab(setTab);
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
