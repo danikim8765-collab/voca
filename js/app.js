@@ -2147,7 +2147,7 @@ function renderSynQuestion(w) {
   mEl.textContent = sq.sentence ? sq.sentence.ko || meaningText(w) : `뜻: ${meaningText(w)}`;
   mEl.hidden = true;
   $('#btn-hint').hidden = !mEl.textContent;
-  setLabel($('#btn-hint'), '힌트');
+  setLabel($('#btn-hint'), '힌트'); $('#btn-hint').classList.remove('say');
   $('#btn-idk').hidden = false;
   const actions = $('#q-actions');
   unpinChoices();
@@ -2306,7 +2306,7 @@ function renderQuestion() {
   mEl.textContent = meaningText(w);
   mEl.hidden = !(settings.showMeaning || noBlank) || !mEl.textContent;
   $('#btn-hint').hidden = false;
-  setLabel($('#btn-hint'), '힌트');
+  setLabel($('#btn-hint'), '힌트'); $('#btn-hint').classList.remove('say');
 
   const actions = $('#q-actions');
   unpinChoices();
@@ -2461,7 +2461,7 @@ function renderWordQuestion(w) {
   mEl.textContent = wordHint(w);
   mEl.hidden = true;
   $('#btn-hint').hidden = !mEl.textContent;
-  setLabel($('#btn-hint'), '힌트');
+  setLabel($('#btn-hint'), '힌트'); $('#btn-hint').classList.remove('say');
   $('#btn-idk').hidden = false;
   const actions = $('#q-actions');
   unpinChoices();
@@ -3072,6 +3072,7 @@ function setHintButtons(label) {
     if (!b) continue;
     b.hidden = label == null;
     if (label) setLabel(b, label);
+    b.classList.toggle('say', !!label && label !== '힌트'); // '힌트'는 아이콘만, 다른 말(정답 보고 쓰기)은 글자도
   }
 }
 
