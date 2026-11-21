@@ -1438,16 +1438,23 @@ function coachFacts(both = false) {
   }
   const learned = rw.filter(w => stats[w.id]).length;
   lines.push(`학습 범위: DAY ${from}~${to}, ${rw.length}단어 (배운 단어 ${learned}개, 아직 안 배운 새 단어 ${rw.length - learned}개)`);
-  if (!ex) lines.push('시험일: 아직 안 정함');
+  if (!ex) lines.push('시험일: 아직 안 정함 (그래서 목표일도 없음. 학습 계획 화면에서 시험일을 정하면 코치가 목표일과 하루 새 단어 수를 정함)');
   else if (ex === today) lines.push('오늘이 시험 날');
   else if (ex < today) lines.push('시험이 끝남');
   else {
     const g = settings.coachGoal, f = flowState();
-    lines.push(`시험일: ${fmtDay(ex)} ${weekday(ex)}요일, 시험까지 ${daysBetween(today, ex)}일`);
-    if (g && today >= g) lines.push('지금은 전체 복습 기간: 새 단어는 다 봤고, 시험 전날까지 범위 전체를 날마다 나눠 복습');
-    else if (g) {
+    // 목표일과 시험일을 헷갈리지 않게 이름을 붙여 따로 적음. 목표일 = 새 단어를 보는 마지막 날(coachGoal 전날), 홈의 '목표 D-n'과 같은 셈
+    const dEx = daysBetween(today, ex);
+    lines.push(`시험일(시험 보는 날): ${fmtDay(ex)} ${weekday(ex)}요일, 시험까지 ${dEx}일`);
+    if (g && today >= g) {
+      lines.push('목표일(새 단어를 다 배우는 날)은 지남. 지금은 전체 복습 기간: 새 단어는 다 봤고, 시험 전날까지 범위 전체를 날마다 나눠 복습');
+      lines.push(`홈 위쪽 표시: '시험 D-${dEx}'`);
+    } else if (g) {
+      const last = lastLearnDay(), dg = daysBetween(today, last);
       const rd = daysBetween(g, ex), base = settings.coachBase || 0, need = coachDaily(), target = todayNewTarget();
-      lines.push(`일정: ${fmtDay(lastLearnDay())}까지 새 단어, ${fmtDay(g)}부터 ${rd}일 전체 복습 (${settings.coachFix ? `학생이 하루 새 단어를 ${settings.coachFix}개로 고정함` : settings.coachReview ? '복습 날 수는 학생이 정함' : '코치가 추천한 일정'})`);
+      lines.push(`목표일(새 단어를 다 배우는 마지막 날, 시험일과 다름): ${fmtDay(last)} ${weekday(last)}요일, ` + (dg > 0 ? `목표일까지 ${dg}일` : '오늘이 목표일'));
+      lines.push(`홈 위쪽 표시: ${dg > 0 ? `'목표 D-${dg}'` : "'목표 D-day'"} (목표일이 지나면 '시험 D-n'으로 바뀜)`);
+      lines.push(`일정: ${fmtDay(last)}까지 새 단어, ${fmtDay(g)}부터 시험 전날까지 ${rd}일 전체 복습 (${settings.coachFix ? `학생이 하루 새 단어를 ${settings.coachFix}개로 고정함` : settings.coachReview ? '복습 날 수는 학생이 정함' : '코치가 추천한 일정'})`);
       lines.push(`처음 계획은 하루 새 단어 ${base}개, 코치 계산으로 오늘 필요한 건 ${need}개` + (base && need > base * 1.25 + 2 ? ' (밀려서 늘어남)' : base && need < base ? ' (앞서 있어서 줄어듦)' : ' (계획대로)'));
       if (newTargetMine() && target !== need) lines.push(`학생이 오늘만 새 단어 목표를 ${target}개로 직접 정함 (${target > need ? '계획보다 많이 하려는 것, 밀린 게 아님' : '오늘은 덜 하려는 것'})`);
     }
