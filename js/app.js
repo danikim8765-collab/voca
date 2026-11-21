@@ -121,7 +121,6 @@ const ui = Object.assign({
   choiceLayout: DESK ? 'list' : 'grid', // 4지선다 선지 배치: grid(2×2) · list(한 줄씩)
   lean: 'mid', // 폰 4지선다 선지 쏠림: left(왼쪽 칸 넓게) · mid · right(오른쪽 칸 넓게). 한 손으로 누를 때
 }, load(UI_KEY, {}));
-if (typeof ui.xSettings !== 'boolean') { ui.xSettings = Object.keys(load(UI_KEY, {})).length > 0; save(UI_KEY, ui); }
 let setTab = 'quiz'; // 설정에서 보고 있는 탭 (앱을 켜 둔 동안 기억)
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
 function applyHomeLayout() {
@@ -517,7 +516,6 @@ function setRange(from, to) {
 }
 
 function renderHome() {
-  applyExtras();
   if (!words.length) return;
   const last = days[days.length - 1];
   if (!days.includes(settings.from)) settings.from = days[0];
@@ -780,7 +778,7 @@ function setCoach(on) {
   save(OTHER_P + 'settings.v1', o);
   if (on && coachActive()) planCoach(true); else { saveSettings(); sync.soon(); }
   coachMoved = false;
-  if (current === 'settings') { renderSrs(); if (on) { showSetTab('srs'); scrollTo(0, 0); } }
+  if (current === 'settings') renderSrs();
   renderHome();
 }
 
@@ -851,7 +849,7 @@ function setCoachChar(c) {
 async function toggleCoach(on) {
   if (on && !COACH_ART[ui.coachChar]) {
     const c = await pickCoach();
-    if (!c) { renderPlan(); applyExtras(); if (current === 'settings') renderSrs(); return; } // 스위치를 원래대로
+    if (!c) { renderPlan(); if (current === 'settings') renderSrs(); return; } // 스위치를 원래대로
     ui.coachChar = c;
     ui.coachCharAt = Date.now();
     save(UI_KEY, ui);
@@ -1657,7 +1655,7 @@ function aiSayFor(say) {
   return null;
 }
 
-// 홈 맨 위 코치 카드. 설정 > 추가 기능에서 코치를 켰을 때만
+// 홈 맨 위 코치 카드. 코치를 켰을 때만 (설정 > 고급 기능 > 복습)
 function renderCoach(stage = soloDay != null && days.includes(soloDay) ? 'day' : null) {
   const card = $('#buddy-card');
   let say = null;
@@ -1791,7 +1789,7 @@ function renderPlan() {
   $('#coach-new-note').hidden = !ca;
   if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
   $('#opt-coach-plan').checked = !!settings.coach;
-  $('#coach-plan-row').hidden = !settings.coach;
+  $('#coach-plan-row').hidden = !advOn();
   renderCoach(stage);
 }
 
@@ -3782,7 +3780,7 @@ function renderSyncStatus() {
   badge.textContent = { syncing: '☁︎ 동기화 중', ok: '☁︎ 동기화됨', error: '☁︎ 동기화 오류', wait: '☁︎ 잠시 뒤 동기화', idle: '☁︎' }[sync.status] || '';
   $('#sync-off').hidden = sync.enabled;
   $('#sync-on').hidden = !sync.enabled;
-  applyExtras();
+  if (current === 'settings') applyAdv();
   if (sync.enabled) {
     const t = sync.last ? new Date(sync.last).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '아직 없음';
     $('#sync-info').textContent = `GitHub 계정 ${sync.login}에 연결됨\n마지막 동기화: ${t}` + (sync.status === 'error' || sync.status === 'wait' ? `\n⚠︎ ${sync.error}` : sync.status === 'syncing' ? '\n동기화 중…' : '');
@@ -3793,12 +3791,14 @@ function renderSyncStatus() {
 const PRESET_LABEL = { xs: '매우 짧게', s: '짧게', m: '보통', l: '길게', xl: '매우 길게' };
 function renderSrs() {
   ensureCoachPlan();
-  applyExtras();
   const g = settings.goal, ex = settings.exam;
   $('#goal-date').value = g || '';
   $('#srs-exam-date').value = ex || '';
+  $('#opt-srs').checked = !!settings.srs;
   // 단어 코치가 켜져 있으면 목표일은 코치가 정하니 직접 정하는 칸(주기 복습 스위치·목표일)은 숨김
   const coach = !!settings.coach;
+  $('#opt-coach').checked = coach;
+  $('#srs-manual').hidden = coach;
   $('#goal-label').hidden = coach;
   const cp = $('#coach-plan');
   cp.hidden = !coach;
@@ -3984,47 +3984,47 @@ function renderLook() {
 
 // 설정 탭: 누른 탭의 카드만 보임
 function showSetTab(t) {
-  if ($('#set-tabs').querySelector(`button[data-v="${t}"]`).hidden) t = 'quiz';
+  if ($(`#set-tabs button[data-v="${t}"]`).hidden) t = 'quiz';
   setTab = t;
   setSeg('#set-tabs', t);
   document.querySelectorAll('#settings .card[data-tab]').forEach(c => c.classList.toggle('tab-off', c.dataset.tab !== t));
   $('#set-tabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', b.dataset.v === t));
 }
-// 추가 기능 (클래식이 기본): 켠 기능만 설정에 보임. 예전부터 쓰던 기능은 켜진 채로 둠
-// 화면 꾸미기는 처음 한 번, 기본과 다르게 꾸며 둔 게 있으면 켬
+// 고급 기능 (기기마다 ui.adv): 끄면 클래식. 단어 외우기만 하고 코치·주기 복습·AI·동기화·화면 꾸미기는 설정에서도 숨김.
+// 처음엔 꺼져 있고, 이 기능들 가운데 이미 쓰던 게 있으면 켜진 채로 시작
 function lookCustomized() {
   const lk = LOOK.get();
   return lk.font !== 'sans' || lk.radius !== 'round' || lk.hide.length > 0 || !lk.share || ui.simpleHome === false
     || ['ex', 'word'].some(m => Object.keys(LOOK.MODE_DEFAULT[m]).some(k => lk[m][k] !== LOOK.MODE_DEFAULT[m][k]));
 }
-const needGear = () => !!ui.xSettings || !!settings.coach || !!settings.srs || aiSwitch() || !!ui.xSync || sync.enabled || !!ui.xLook;
-// 홈에서 추가 기능을 켜면 그 기능을 맞추는 설정 탭을 바로 엶
-function openSetTab(t) {
-  if (current !== 'settings') { renderSettings(); renderSyncStatus(); show('settings'); }
-  showSetTab(t);
-  scrollTo(0, 0);
-}
-function applyExtras() {
-  if (typeof ui.xLook !== 'boolean') { ui.xLook = lookCustomized(); save(UI_KEY, ui); }
-  const xSync = !!ui.xSync || sync.enabled, srsTab = !!settings.coach || !!settings.srs;
-  // 홈 맨 아래 추가 기능 스위치
-  $('#opt-coach').checked = !!settings.coach;
-  $('#opt-srs').checked = !!settings.srs;
-  $('#srs-manual').hidden = !!settings.coach; // 코치가 복습 일정을 짜면 주기 복습 스위치는 필요 없음
-  $('#opt-ai').checked = aiSwitch();
-  $('#opt-x-sync').checked = xSync;
-  $('#opt-x-look').checked = ui.xLook;
-  // 설정 버튼: 직접 켰거나, 설정이 필요한 추가 기능을 하나라도 켰을 때만
-  const gear = needGear();
-  $('#opt-x-settings').checked = gear;
-  $('#btn-settings').hidden = !gear;
-  $('#settings').classList.toggle('x-look-on', ui.xLook);
-  $('#set-sync').hidden = !xSync;
-  $('#ai-card').hidden = !aiSwitch();
-  $('#srs-card').hidden = !srsTab;
-  $('#tab-srs').hidden = !srsTab;
-  $('#tab-etc').textContent = xSync ? '동기화' : '백업';
+const advOn = () => {
+  if (typeof ui.adv !== 'boolean') { ui.adv = !!settings.coach || !!settings.srs || aiSwitch() || sync.enabled || lookCustomized(); save(UI_KEY, ui); }
+  return ui.adv;
+};
+function applyAdv() {
+  const adv = advOn(), syncCard = adv || sync.enabled; // 동기화가 연결돼 있으면 끊을 수 있게 카드는 남김
+  $('#opt-adv').checked = adv;
+  $('#settings').classList.toggle('adv-on', adv);
+  $('#srs-card').hidden = $('#tab-srs').hidden = !adv;
+  $('#ai-card').hidden = !adv;
+  $('#set-sync').hidden = !syncCard;
+  $('#tab-etc').textContent = syncCard ? '동기화' : '백업';
+  $('#coach-plan-row').hidden = !adv;
   if ($(`#set-tabs button[data-v="${setTab}"]`).hidden) showSetTab('quiz');
+}
+// 고급 기능을 끄면 쓰던 코치·주기 복습·AI도 같이 끔 (꾸미기는 그대로 두고 고르는 칸만 숨김, 동기화는 연결을 직접 끊어야 함)
+function setAdv(on) {
+  ui.adv = !!on;
+  save(UI_KEY, ui);
+  if (!on) {
+    const off = [];
+    if (settings.coach) { setCoach(false); off.push('단어 코치'); }
+    if (settings.srs) { settings.srs = false; settings.prefsAt = Date.now(); saveSettings(); sync.soon(); off.push('주기 복습'); }
+    if (aiSwitch()) { setAiSwitch(false); off.push('AI'); }
+    if (off.length) toast(`${off.join('·')}도 껐어요`);
+  }
+  renderSettings();
+  renderHome();
 }
 function renderSettings() {
   renderLook();
@@ -4044,7 +4044,7 @@ function renderSettings() {
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
   renderAgain();
   renderAiStatus();
-  applyExtras();
+  applyAdv();
   showSetTab(setTab);
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
@@ -4086,7 +4086,6 @@ function renderAiStatus() {
   const sw = aiSwitch(), key = aiHasKey();
   $('#opt-ai').checked = sw;
   $('#ai-box').hidden = !sw;
-  applyExtras();
   $('#ai-off').hidden = key;
   $('#ai-on').hidden = !key;
   if (key) $('#ai-info').textContent = navigator.onLine === false ? `${aiName()} 연결됨 · 지금은 오프라인이라 ${WORD ? '규칙대로 채점해요' : '기본 말풍선만 보여요'}`
@@ -4239,21 +4238,7 @@ function bind() {
   $('#opt-review-mix').addEventListener('change', e => { settings.reviewMix = e.target.checked; saveSettings(); });
   onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
   onSeg('#set-tabs', v => { showSetTab(v); scrollTo(0, 0); });
-  // 추가 기능: 동기화·화면 꾸미기는 보일지만 정함 (코치·주기 복습·AI 스위치는 원래 하던 일 그대로)
-  $('#opt-x-sync').addEventListener('change', e => {
-    if (!e.target.checked && sync.enabled) { e.target.checked = true; toast('먼저 동기화 탭에서 연결을 끊어 주세요'); return; }
-    ui.xSync = e.target.checked; save(UI_KEY, ui); applyExtras();
-    if (ui.xSync) openSetTab('etc');
-  });
-  // 추가 기능에서 켜면 그 기능 설정이 있는 탭을 열어 줌 (코치·주기 복습은 시험일부터 정해야 해서)
-  const openTab = (sel, t) => $(sel).addEventListener('change', e => { if (e.target.checked) setTimeout(() => { if (e.target.checked) openSetTab(t); }, 0); });
-  openTab('#opt-srs', 'srs'); openTab('#opt-ai', 'etc');
-  $('#opt-x-look').addEventListener('change', e => { ui.xLook = e.target.checked; save(UI_KEY, ui); applyExtras(); if (ui.xLook) openSetTab('look'); });
-  $('#opt-x-settings').addEventListener('change', e => {
-    ui.xSettings = e.target.checked; save(UI_KEY, ui); applyExtras();
-    if (!e.target.checked && needGear()) toast('켜 둔 추가 기능이 있어서 설정 버튼은 그대로 있어요');
-  });
-  $('#btn-report-home').addEventListener('click', () => openReport(null));
+  $('#opt-adv').addEventListener('change', e => setAdv(e.target.checked));
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
@@ -4463,7 +4448,7 @@ function bind() {
   $('#btn-local-csv').addEventListener('click', () => $('#csv-file').click());
   // 복습 방식 (주기 복습)
   const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
-  $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); renderHome(); });
+  $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); });
   $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
   $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); if (coachActive()) planCoach(true); coachMoved = false; srsChanged(); });
   // 단어 코치: 설정과 학습 계획 화면의 스위치, 일정 다시 짜기, 캐릭터를 누르면 폴짝
