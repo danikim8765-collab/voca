@@ -3937,7 +3937,7 @@ function tone(notes, vol = .06, type = 'sine') {
   // 잠들어 있었으면 깨어난 다음에 (멈춘 시계에 맞춰 놓으면 깨어날 때 한꺼번에 밀려서 남)
   if (ctx.state === 'running') play(); else ctx.resume().then(play, () => {});
 }
-// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 문제 풀기). test = 스위치를 켤 때 한 번 들려 주기
+// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 소리). test = 스위치를 켤 때 한 번 들려 주기
 function answerFx(state, test = false) {
   const lk = LOOK.get();
   if (state === 'ok' && (lk.sound || test)) tone([[880, .09], [1320, .16]], .07);
