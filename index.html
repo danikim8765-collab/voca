@@ -147,6 +147,20 @@
       <div class="days" id="day-grid"></div>
       <div class="heat-legend" id="heat-legend" hidden><span>적게</span><i style="opacity:.15"></i><i style="opacity:.45"></i><i style="opacity:.96"></i><span>많이 외움</span></div>
      </div>
+    <!-- 추가 기능: 기본은 단어 외우기만(클래식, 설정 버튼도 없음). 홈 맨 아래 스위치로 켠 기능만 나옴 (app.js applyExtras) -->
+    <div class="card" id="home-extra">
+      <div class="label">추가 기능</div>
+      <p class="muted">필요한 것만 켜세요.</p>
+      <label class="switch-row"><span>단어 코치<small class="x-desc">시험일에 맞춰 하루 분량을 정해 줘요</small></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
+      <div id="srs-manual">
+      <label class="switch-row"><span>주기 복습<small class="x-desc">잊을 때쯤 다시 복습해요</small></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
+      </div>
+      <label class="switch-row"><span>AI<small class="x-desc">틀린 이유를 AI가 설명해 줘요</small></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
+      <label class="switch-row"><span>기기 동기화<small class="x-desc">폰·아이패드 진도를 맞춰요</small></span><input type="checkbox" role="switch" class="switch" id="opt-x-sync"></label>
+      <label class="switch-row"><span>화면 꾸미기<small class="x-desc">색·글꼴·홈 구성을 바꿔요</small></span><input type="checkbox" role="switch" class="switch" id="opt-x-look"></label>
+      <label class="switch-row"><span>설정 버튼<small class="x-desc">문제 풀기·발음·백업 같은 세부 설정</small></span><input type="checkbox" role="switch" class="switch" id="opt-x-settings"></label>
+      <button class="link-btn report-link" id="btn-report-home" type="button">이상한 점 알려 주기</button>
+    </div>
     </div>
   </section>
 
@@ -515,18 +529,6 @@
       <p class="app-ver"><b id="app-ver"></b> <span class="muted" id="app-ver-state"></span></p>
       <button class="btn ghost small" id="btn-update">새 버전 확인</button>
       <button class="link-btn report-link" id="btn-report" type="button">이상한 점 알려 주기</button>
-    </div>
-    <!-- 추가 기능: 기본은 단어 외우기만(클래식). 켠 기능만 설정·홈에 나옴 (app.js applyExtras). 어느 탭이든 맨 아래에 보임 -->
-    <div class="card" id="set-extra">
-      <div class="label">추가 기능</div>
-      <p class="muted">기본은 단어 외우기만 해요. 필요한 기능만 켜세요.</p>
-      <label class="switch-row"><span>단어 코치<small class="x-desc">시험일에 맞춰 하루 분량을 정해 줘요</small></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
-      <div id="srs-manual">
-      <label class="switch-row"><span>주기 복습<small class="x-desc">잊을 때쯤 다시 복습해요</small></span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
-      </div>
-      <label class="switch-row"><span>AI<small class="x-desc">틀린 이유를 AI가 설명해 줘요</small></span><input type="checkbox" role="switch" class="switch" id="opt-ai"></label>
-      <label class="switch-row"><span>기기 동기화<small class="x-desc">폰·아이패드 진도를 맞춰요</small></span><input type="checkbox" role="switch" class="switch" id="opt-x-sync"></label>
-      <label class="switch-row"><span>화면 꾸미기<small class="x-desc">색·글꼴·홈 구성을 바꿔요</small></span><input type="checkbox" role="switch" class="switch" id="opt-x-look"></label>
     </div>
   </section>
 

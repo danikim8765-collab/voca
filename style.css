@@ -316,8 +316,11 @@ button { cursor: pointer; }
 }
 #settings .card.tab-off { display: none; }
 .set-tabs button { flex: 1 1 auto; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
-/* 추가 기능: '화면 꾸미기'를 꺼 두면 세부 꾸미기는 숨김 */
+/* 추가 기능(홈 맨 아래): '화면 꾸미기'를 꺼 두면 세부 꾸미기는 숨김 */
 #settings:not(.x-look-on) .x-look { display: none; }
+#home-extra { margin-top: 28px; }
+#home-extra > .muted { margin: -6px 0 6px; }
+.desk #home-extra { grid-column: 1 / -1; }
 .x-desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--muted); }
 /* 설정: 동기화 연결 방법 같은 긴 설명은 접어 둠 */
 .set-more { margin-top: 12px; }
