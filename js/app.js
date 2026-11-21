@@ -4194,11 +4194,6 @@ function bind() {
   onSeg('#seg-kind', v => { settings.kind = v; saveSettings(); });
   $('#opt-review-mix').addEventListener('change', e => { settings.reviewMix = e.target.checked; saveSettings(); });
   onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
-  // 설정 바로가기: 그 카드로 스크롤
-  $('#set-nav').addEventListener('click', e => {
-    const b = e.target.closest('button');
-    if (b) document.getElementById(b.dataset.go).scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
