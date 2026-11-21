@@ -121,6 +121,7 @@ const ui = Object.assign({
   choiceLayout: DESK ? 'list' : 'grid', // 4지선다 선지 배치: grid(2×2) · list(한 줄씩)
   lean: 'mid', // 폰 4지선다 선지 쏠림: left(왼쪽 칸 넓게) · mid · right(오른쪽 칸 넓게). 한 손으로 누를 때
 }, load(UI_KEY, {}));
+const uiWasSaved = Object.keys(load(UI_KEY, {})).length > 0; // 이 기기에서 전에 앱을 써 봤는지 (고급 기능 처음 값)
 let setTab = 'quiz'; // 설정에서 보고 있는 탭 (앱을 켜 둔 동안 기억)
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
 function applyHomeLayout() {
@@ -516,6 +517,7 @@ function setRange(from, to) {
 }
 
 function renderHome() {
+  applyAdv();
   if (!words.length) return;
   const last = days[days.length - 1];
   if (!days.includes(settings.from)) settings.from = days[0];
@@ -778,7 +780,7 @@ function setCoach(on) {
   save(OTHER_P + 'settings.v1', o);
   if (on && coachActive()) planCoach(true); else { saveSettings(); sync.soon(); }
   coachMoved = false;
-  if (current === 'settings') renderSrs();
+  if (current === 'settings') { renderSrs(); if (on) { showSetTab('srs'); scrollTo(0, 0); } }
   renderHome();
 }
 
@@ -1655,7 +1657,7 @@ function aiSayFor(say) {
   return null;
 }
 
-// 홈 맨 위 코치 카드. 코치를 켰을 때만 (설정 > 고급 기능 > 복습)
+// 홈 맨 위 코치 카드. 설정 > 추가 기능에서 코치를 켰을 때만
 function renderCoach(stage = soloDay != null && days.includes(soloDay) ? 'day' : null) {
   const card = $('#buddy-card');
   let say = null;
@@ -1789,7 +1791,7 @@ function renderPlan() {
   $('#coach-new-note').hidden = !ca;
   if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
   $('#opt-coach-plan').checked = !!settings.coach;
-  $('#coach-plan-row').hidden = !advOn();
+  $('#coach-plan-row').hidden = !settings.coach;
   renderCoach(stage);
 }
 
@@ -3780,7 +3782,7 @@ function renderSyncStatus() {
   badge.textContent = { syncing: '☁︎ 동기화 중', ok: '☁︎ 동기화됨', error: '☁︎ 동기화 오류', wait: '☁︎ 잠시 뒤 동기화', idle: '☁︎' }[sync.status] || '';
   $('#sync-off').hidden = sync.enabled;
   $('#sync-on').hidden = !sync.enabled;
-  if (current === 'settings') applyAdv();
+  applyExtras();
   if (sync.enabled) {
     const t = sync.last ? new Date(sync.last).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '아직 없음';
     $('#sync-info').textContent = `GitHub 계정 ${sync.login}에 연결됨\n마지막 동기화: ${t}` + (sync.status === 'error' || sync.status === 'wait' ? `\n⚠︎ ${sync.error}` : sync.status === 'syncing' ? '\n동기화 중…' : '');
@@ -3791,6 +3793,7 @@ function renderSyncStatus() {
 const PRESET_LABEL = { xs: '매우 짧게', s: '짧게', m: '보통', l: '길게', xl: '매우 길게' };
 function renderSrs() {
   ensureCoachPlan();
+  applyExtras();
   const g = settings.goal, ex = settings.exam;
   $('#goal-date').value = g || '';
   $('#srs-exam-date').value = ex || '';
@@ -3984,47 +3987,56 @@ function renderLook() {
 
 // 설정 탭: 누른 탭의 카드만 보임
 function showSetTab(t) {
-  if ($(`#set-tabs button[data-v="${t}"]`).hidden) t = 'quiz';
+  if ($('#set-tabs').querySelector(`button[data-v="${t}"]`).hidden) t = 'quiz';
   setTab = t;
   setSeg('#set-tabs', t);
   document.querySelectorAll('#settings .card[data-tab]').forEach(c => c.classList.toggle('tab-off', c.dataset.tab !== t));
   $('#set-tabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', b.dataset.v === t));
 }
-// 고급 기능 (기기마다 ui.adv): 끄면 클래식. 단어 외우기만 하고 코치·주기 복습·AI·동기화·화면 꾸미기는 설정에서도 숨김.
-// 처음엔 꺼져 있고, 이 기능들 가운데 이미 쓰던 게 있으면 켜진 채로 시작
+// 추가 기능 (클래식이 기본): 켠 기능만 설정에 보임. 예전부터 쓰던 기능은 켜진 채로 둠
+// 화면 꾸미기는 처음 한 번, 기본과 다르게 꾸며 둔 게 있으면 켬
 function lookCustomized() {
   const lk = LOOK.get();
   return lk.font !== 'sans' || lk.radius !== 'round' || lk.hide.length > 0 || !lk.share || ui.simpleHome === false
     || ['ex', 'word'].some(m => Object.keys(LOOK.MODE_DEFAULT[m]).some(k => lk[m][k] !== LOOK.MODE_DEFAULT[m][k]));
 }
+// 고급 기능 (홈 맨 아래 스위치 하나, 기기마다 ui.adv): 끄면 클래식. 단어 외우기만 하고 설정 버튼도 없음.
+// 처음 쓰는 기기는 꺼진 채로, 전에 쓰던 기기는 켜진 채로 시작 (갑자기 설정이 사라지지 않게)
 const advOn = () => {
-  if (typeof ui.adv !== 'boolean') { ui.adv = !!settings.coach || !!settings.srs || aiSwitch() || sync.enabled || lookCustomized(); save(UI_KEY, ui); }
+  if (typeof ui.adv !== 'boolean') { ui.adv = uiWasSaved || !!settings.coach || !!settings.srs || aiSwitch() || sync.enabled; save(UI_KEY, ui); }
   return ui.adv;
 };
 function applyAdv() {
-  const adv = advOn(), syncCard = adv || sync.enabled; // 동기화가 연결돼 있으면 끊을 수 있게 카드는 남김
+  const adv = advOn();
   $('#opt-adv').checked = adv;
-  $('#settings').classList.toggle('adv-on', adv);
-  $('#srs-card').hidden = $('#tab-srs').hidden = !adv;
-  $('#ai-card').hidden = !adv;
-  $('#set-sync').hidden = !syncCard;
-  $('#tab-etc').textContent = syncCard ? '동기화' : '백업';
-  $('#coach-plan-row').hidden = !adv;
-  if ($(`#set-tabs button[data-v="${setTab}"]`).hidden) showSetTab('quiz');
+  $('#btn-settings').hidden = !adv;
 }
-// 고급 기능을 끄면 쓰던 코치·주기 복습·AI도 같이 끔 (꾸미기는 그대로 두고 고르는 칸만 숨김, 동기화는 연결을 직접 끊어야 함)
+// 고급 기능을 끄면 쓰던 코치·주기 복습·AI도 같이 끔 (꾸미기는 그대로, 동기화 연결은 그대로)
 function setAdv(on) {
   ui.adv = !!on;
   save(UI_KEY, ui);
-  if (!on) {
+  if (on) toast('오른쪽 위 설정에서 필요한 기능을 켜세요');
+  else {
     const off = [];
     if (settings.coach) { setCoach(false); off.push('단어 코치'); }
     if (settings.srs) { settings.srs = false; settings.prefsAt = Date.now(); saveSettings(); sync.soon(); off.push('주기 복습'); }
     if (aiSwitch()) { setAiSwitch(false); off.push('AI'); }
     if (off.length) toast(`${off.join('·')}도 껐어요`);
   }
-  renderSettings();
   renderHome();
+}
+function applyExtras() {
+  if (typeof ui.xLook !== 'boolean') { ui.xLook = lookCustomized(); save(UI_KEY, ui); }
+  const xSync = !!ui.xSync || sync.enabled, srsTab = !!settings.coach || !!settings.srs;
+  $('#opt-x-sync').checked = xSync;
+  $('#opt-x-look').checked = ui.xLook;
+  $('#settings').classList.toggle('x-look-on', ui.xLook);
+  $('#set-sync').hidden = !xSync;
+  $('#ai-card').hidden = !aiSwitch();
+  $('#srs-card').hidden = !srsTab;
+  $('#tab-srs').hidden = !srsTab;
+  $('#tab-etc').textContent = xSync ? '동기화' : '백업';
+  if ($(`#set-tabs button[data-v="${setTab}"]`).hidden) showSetTab('quiz');
 }
 function renderSettings() {
   renderLook();
@@ -4044,7 +4056,7 @@ function renderSettings() {
   $('#strict-desc').textContent = STRICT_DESC[settings.strict] || '';
   renderAgain();
   renderAiStatus();
-  applyAdv();
+  applyExtras();
   showSetTab(setTab);
   $('#data-info').textContent = `단어 ${words.length}개 · DAY ${days.length ? days[0] : '-'}~${days.length ? days[days.length - 1] : '-'}\n${dataInfo}`;
   $('#data-info').style.whiteSpace = 'pre-line';
@@ -4086,6 +4098,7 @@ function renderAiStatus() {
   const sw = aiSwitch(), key = aiHasKey();
   $('#opt-ai').checked = sw;
   $('#ai-box').hidden = !sw;
+  applyExtras();
   $('#ai-off').hidden = key;
   $('#ai-on').hidden = !key;
   if (key) $('#ai-info').textContent = navigator.onLine === false ? `${aiName()} 연결됨 · 지금은 오프라인이라 ${WORD ? '규칙대로 채점해요' : '기본 말풍선만 보여요'}`
@@ -4238,7 +4251,17 @@ function bind() {
   $('#opt-review-mix').addEventListener('change', e => { settings.reviewMix = e.target.checked; saveSettings(); });
   onSeg('#seg-layout', v => { ui.choiceLayout = v; save(UI_KEY, ui); });
   onSeg('#set-tabs', v => { showSetTab(v); scrollTo(0, 0); });
+  // 추가 기능: 동기화·화면 꾸미기는 보일지만 정함 (코치·주기 복습·AI 스위치는 원래 하던 일 그대로)
+  $('#opt-x-sync').addEventListener('change', e => {
+    if (!e.target.checked && sync.enabled) { e.target.checked = true; toast('먼저 동기화 탭에서 연결을 끊어 주세요'); return; }
+    ui.xSync = e.target.checked; save(UI_KEY, ui); applyExtras();
+    if (ui.xSync) { showSetTab('etc'); scrollTo(0, 0); }
+  });
+  // 추가 기능에서 켜면 그 기능 설정이 있는 탭을 열어 줌 (코치·주기 복습은 시험일부터 정해야 해서)
+  const openTab = (sel, t) => $(sel).addEventListener('change', e => { if (e.target.checked) setTimeout(() => { if (e.target.checked) { showSetTab(t); scrollTo(0, 0); } }, 0); });
+  openTab('#opt-srs', 'srs'); openTab('#opt-ai', 'etc');
   $('#opt-adv').addEventListener('change', e => setAdv(e.target.checked));
+  $('#opt-x-look').addEventListener('change', e => { ui.xLook = e.target.checked; save(UI_KEY, ui); applyExtras(); if (ui.xLook) { showSetTab('look'); scrollTo(0, 0); } });
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
