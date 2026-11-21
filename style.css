@@ -109,7 +109,8 @@ body::before {
 }
 /* 홈 화면은 단색 (퀴즈로 들어가면 그라데이션이 서서히 나타남). body[data-screen]은 app.js show()가 정함
    (body:has(...)는 DOM이 바뀔 때마다 문서 전체를 다시 따져서 느림) */
-body[data-screen="home"]::before, body[data-screen="settings"]::before { opacity: 0; } /* 홈·설정은 바탕색 그대로 */
+body[data-screen="home"]::before, body[data-screen="settings"]::before, body[data-screen="days"]::before,
+body[data-screen="list"]::before, body[data-screen="coach"]::before { opacity: 0; } /* 아래 탭 화면은 바탕색 그대로 */
 @media (prefers-reduced-motion: reduce) { body::before { transition: none; } }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
@@ -633,7 +634,7 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 /* 카드 구분: 평평하게(기본, 바탕색 차이만) · 그림자 · 얇은 테두리. 설정 > 화면 > 카드 */
 :root[data-edge="shadow"] { --shadow: var(--shadow-soft); }
 :root[data-edge="line"] { --shadow: none; }
-:root[data-edge="line"] .card, :root[data-edge="line"] .sent, :root[data-edge="line"] .item, :root[data-edge="line"] .buddy-say { border: 1px solid var(--line); }
+:root[data-edge="line"] .card, :root[data-edge="line"] .sent, :root[data-edge="line"] .item { border: 1px solid var(--line); }
 :root[data-edge="line"] .day:not(.solo) { border-color: var(--line); }
 :root[data-edge="line"] .fb-pane .sent, :root[data-edge="line"] .fb-card, :root[data-edge="line"] .item .detail .sent { border: 0; }
 :root[data-mode="word"] .choice { font-size: calc(16px * var(--fz)); line-height: 1.45; }
@@ -842,9 +843,8 @@ html:not(.desk) .desk-only { display: none; }
 @media (min-width: 1000px) {
   .desk .screen { max-width: 1160px; padding: 24px 40px 40px; }
   .desk #settings, .desk #plan, .desk #list, .desk #result { max-width: 800px; }
-  /* 홈: 왼쪽 오늘·범위·설정, 오른쪽 DAY별 진도 */
-  .desk #home-body:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: start; }
-  .desk .home-side { position: sticky; top: 16px; }
+  /* 홈은 한 칸 (DAY별 진도는 진도 탭) */
+  .desk #home.screen { max-width: 680px; }
     .desk .days { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
   /* 퀴즈: 왼쪽 문제, 오른쪽 정답 풀이 */
   /* 위·아래 빈 줄(1fr)로 문제와 정답 풀이를 화면 가운데에 */
@@ -1008,20 +1008,10 @@ body[data-tint] {
 .sent.multi .sent-part + .sent-part { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
 
 /* 단어 코치: 홈 맨 위에서 고른 캐릭터가 말풍선으로 오늘 분량을 알려 줌 (그림은 32×32 픽셀이라 2배·3배 크기로) */
-.buddy-card { display: flex; align-items: flex-end; gap: 6px; margin: 4px 0 14px; }
-.buddy-char { flex: none; width: 64px; height: 64px; padding: 0; border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .buddy-svg { display: block; width: 100%; height: 100%; }
-.buddy-char .buddy-svg { animation: buddy-bob 2.4s steps(2, end) infinite; }
-.buddy-char.hop .buddy-svg { animation: buddy-hop .45s ease-out; }
+.chat-char .buddy-svg { animation: buddy-bob 2.4s steps(2, end) infinite; }
 @keyframes buddy-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 @keyframes buddy-hop { 0% { transform: translateY(0); } 40% { transform: translateY(-10px); } 100% { transform: translateY(0); } }
-.buddy-say { position: relative; flex: 0 1 auto; min-width: 0; background: var(--card); border-radius: 18px 18px 18px 4px; padding: 9px 14px 10px; box-shadow: var(--shadow); }
-.buddy-name { font-size: 11px; font-weight: 700; color: var(--primary); margin-bottom: 1px; }
-.buddy-text { font-size: 14px; line-height: 1.5; color: var(--text2); word-break: keep-all; overflow-wrap: anywhere; }
-.buddy-acts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
-/* 말풍선 안 버튼은 글자 링크처럼 */
-.buddy-acts .btn { margin: 0; min-height: 26px; padding: 0; background: none; font-size: 13px; font-weight: 700; color: var(--primary); }
-.buddy-acts .btn.ghost { color: var(--muted); font-weight: 600; }
 .res-buddy { width: 96px; height: 96px; margin: 0 auto 4px; }
 .res-buddy .buddy-svg { animation: buddy-hop .6s ease-out 2; }
 /* 정답 시트에서 같이 반응하는 코치 */
@@ -1052,18 +1042,22 @@ body[data-tint] {
 .talk-opts .preset { padding: 10px 2px; }
 .talk-opts .p-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .talk-opts .p-name { min-width: 0; }
-@media (prefers-reduced-motion: reduce) { .buddy-svg, .buddy-char .buddy-svg, .buddy-char.hop .buddy-svg, .res-buddy .buddy-svg, .fb-coach .buddy-svg, #coach-pick .coach-choice.on .buddy-svg, .talk-char .buddy-svg { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .buddy-svg, .chat-char .buddy-svg, .chat-char.hop .buddy-svg, .res-buddy .buddy-svg, .fb-coach .buddy-svg, #coach-pick .coach-choice.on .buddy-svg, .talk-char .buddy-svg { animation: none; } }
 /* 코치와 이야기하기: 폰은 화면 가득, 넓은 화면은 가운데 카드 */
-.chat-dialog { padding: 0; align-items: stretch; }
-.chat-card { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--card); color: var(--text); }
-.chat-head { flex: none; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px; border-bottom: 1px solid var(--line); }
-.chat-char { flex: none; width: 44px; height: 44px; }
+/* 코치 탭: 메신저처럼 화면 가득 (위 코치 이름 · 가운데 이야기 · 아래 입력, 그 아래 탭) */
+#coach.screen.active { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; max-width: none; padding: 0 0 var(--tab-h); display: flex; }
+body.kb-up #coach.screen.active { padding-bottom: 0; }
+.chat-card { display: flex; flex-direction: column; width: 100%; max-width: 760px; height: 100%; min-height: 0; margin: 0 auto; color: var(--text); }
+.chat-head { flex: none; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 8px; }
+.chat-char { flex: none; width: 48px; height: 48px; cursor: pointer; }
+.chat-char.hop .buddy-svg { animation: buddy-hop .45s ease-out; }
+.chat-noai { flex: none; margin: 0; padding: 10px 16px 14px; font-size: 13px; color: var(--muted); }
 .chat-who { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
 .chat-who b { font-size: 16px; }
 .chat-who span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-top-btn { flex: none; padding: 0 12px; font-size: 13px; }
 .chat-body { flex: 1; min-height: 0; position: relative; display: flex; }
-.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 14px 12px; background: var(--bg); }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }
 .chat-day { align-self: center; font-size: 12px; color: var(--muted); margin: 4px 0; }
 .chat-note { align-self: center; max-width: 92%; font-size: 13px; color: var(--muted); text-align: center; }
 .chat-msg { max-width: 86%; padding: 9px 13px; border-radius: var(--r-xl) var(--r-xl) var(--r-xl) 4px; background: var(--card); font-size: 15px; line-height: 1.55; text-align: left; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; align-self: flex-start; box-shadow: var(--shadow); }
@@ -1091,10 +1085,13 @@ body[data-tint] {
 .chat-plan .btn { margin: 6px 0 0; }
 .chat-plan .cp-ok { background: var(--primary); color: var(--on-primary); }
 .chat-plan .cp-ok:disabled { opacity: .45; }
-.chat-chips { flex: none; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 8px 12px 0; }
+.chat-chips { flex: none; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 8px 16px 0; }
+.chat-chips[hidden] { display: none; }
 .chat-chips::-webkit-scrollbar { display: none; }
 .chat-chips .chip { flex: none; }
-.chat-ask { flex: none; display: flex; align-items: flex-end; gap: 6px; padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 10px); }
+.chat-ask { flex: none; display: flex; align-items: flex-end; gap: 6px; padding: 8px 16px 12px; }
+.chat-ask[hidden] { display: none; }
+body.kb-up .chat-ask { padding-bottom: 8px; }
 .chat-ask .type-input { flex: 1; min-width: 0; margin: 0; padding: 10px 12px; font-size: 16px; line-height: 1.4; resize: none; max-height: 120px; text-align: left; font-family: inherit; }
 .chat-ask .btn { flex: none; margin: 0; padding: 11px 14px; }
 .chat-mem { position: absolute; inset: 0; overflow-y: auto; padding: 14px; background: var(--card); text-align: left; display: flex; flex-direction: column; gap: 8px; }
@@ -1104,11 +1101,6 @@ body[data-tint] {
 .mem-row span { flex: 1; min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
 .mem-del { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 6px; }
 #cc-wipe { align-self: flex-start; margin-top: 8px; }
-@media (min-width: 640px) {
-  .chat-dialog { padding: 24px; align-items: center; }
-  .chat-card { max-width: 480px; height: min(760px, 100%); border-radius: var(--r-2xl); overflow: hidden; box-shadow: var(--shadow-pop); }
-  .chat-head { padding-top: 12px; }
-}
 @media (prefers-reduced-motion: reduce) { .chat-msg.typing i { animation: none; } }
 .coach-row { margin-bottom: 6px; }
 #btn-coach-replan { margin: 0 0 8px; }
@@ -1182,11 +1174,7 @@ body[data-tint] {
 :root[data-kb="s"] { --key-k: .86; }
 :root[data-kb="l"] { --key-k: 1.14; }
 /* 홈에 보일 것 ('오늘' 카드는 늘) */
-:root[data-hide~="coach"] #buddy-card, :root[data-hide~="plan"] #plan-sum-card, :root[data-hide~="plan"] #prog-card, :root[data-hide~="practice"] #range-practice,
-:root[data-hide~="book"] #btn-list, :root[data-hide~="practice"][data-hide~="book"] #home-menu, :root[data-hide~="days"] .home-side { display: none !important; }
-/* 컴퓨터에서 DAY별 진도를 숨기면 오른쪽 칸 없이 한 칸으로 (머리와 폭을 맞춤) */
-.desk[data-hide~="days"] #home-body:not([hidden]) { display: block; }
-.desk[data-hide~="days"] #home.screen { max-width: 680px; }
+:root[data-hide~="plan"] #plan-sum-card, :root[data-hide~="plan"] #prog-card, :root[data-hide~="practice"] #home-menu { display: none !important; }
 
 /* 설정 > 화면: 이름(왼쪽) + 고르기(오른쪽) 한 줄씩 */
 .opt-row { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 10px; margin-bottom: 8px; }
@@ -1201,9 +1189,8 @@ body[data-tint] {
 .react-demo { display: flex; align-items: center; gap: 8px; margin: -4px 2px 6px; font-size: 12px; }
 
 /* 홈 DAY별 진도: 제목 옆 보기 방식 (격자 · 줄 막대 · 잔디) */
-.days-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 20px 0 8px; }
+.days-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 10px; }
 .days-head .label { margin: 0; flex: 1; min-width: 0; }
-.desk .home-side .days-head { margin-top: 4px; }
 .seg.mini { flex: none; margin: 0; padding: 3px; gap: 2px; background: var(--card); box-shadow: var(--shadow); }
 .seg.mini button { flex: none; width: 34px; height: 28px; padding: 0; display: grid; place-items: center; }
 .seg.mini button.on { background: var(--primary-soft); box-shadow: none; }
@@ -1225,3 +1212,31 @@ body[data-tint] {
 .days.heat .day.solo::before { background: var(--solo); }
 .heat-legend { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--muted); }
 .heat-legend i { width: 14px; height: 14px; border-radius: 4px; background: var(--primary); }
+
+/* ---------- 아래 탭 (진도 · 단어장 · 홈 · 코치 · 설정) ---------- */
+:root { --tab-h: calc(58px + env(safe-area-inset-bottom, 0px)); }
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; display: none;
+  height: var(--tab-h); padding: 0 max(8px, calc((100% - 560px) / 2)) env(safe-area-inset-bottom, 0px);
+  background: var(--card); box-shadow: 0 -1px 0 var(--line);
+}
+/* 탭이 있는 화면에서만 */
+body[data-screen="home"] .tabbar, body[data-screen="days"] .tabbar, body[data-screen="list"] .tabbar,
+body[data-screen="coach"] .tabbar, body[data-screen="settings"] .tabbar { display: flex; }
+body.kb-up .tabbar { display: none !important; }
+.tabbar button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  border: 0; background: none; padding: 6px 0 4px; color: var(--muted); opacity: .75; font-size: 11px; font-weight: 600;
+}
+.tabbar button .ic { width: 24px; height: 24px; stroke-width: 1.8; }
+.tabbar button.on { color: var(--text); opacity: 1; }
+.tabbar button.on .ic { stroke-width: 2.2; }
+.tabbar button:active .ic { transform: scale(.92); }
+/* 탭 화면은 아래 탭만큼 띄움, 아래 고정 버튼(단어장)은 탭 위로 */
+body[data-screen="home"] .screen.active, body[data-screen="days"] .screen.active, body[data-screen="list"] .screen.active,
+body[data-screen="settings"] .screen.active { padding-bottom: calc(var(--tab-h) + 24px); }
+body[data-screen="list"] .sticky-bottom { bottom: var(--tab-h); }
+body[data-screen="list"] .list { margin-bottom: 70px; }
+/* 탭으로 오가니 단어장·설정의 ← 는 필요 없음 */
+#btn-list-back, #btn-settings-back { display: none; }
+#days .top h1, #list .top h1, #settings .top h1 { font-size: 24px; font-weight: 800; letter-spacing: -.4px; }

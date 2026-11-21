@@ -19,10 +19,12 @@
   };
   var HIDE = ['coach', 'plan', 'practice', 'book', 'days']; // 홈에서 숨길 수 있는 덩어리 ('오늘' 카드는 늘 보임)
   var DEFAULT = { theme: 'auto', size: 'm', font: 'sans', radius: 'round', react: 'mid', kb: 'm', days: 'grid', sound: false, buzz: false, kbSound: false, hide: [], at: 0, share: true };
-  var MODE_DEFAULT = { ex: { accent: 'navy', edge: 'flat', glow: 'warm' }, word: { accent: 'ink', edge: 'flat', glow: 'none' } };
-  // 꾸미기 저장 형식 판: 2부터 카드 기본이 '평평하게'. 그 전에 저장된 기본값(예문 그림자 · 단어 테두리)은 새 기본으로 옮김
+  var MODE_DEFAULT = { ex: { accent: 'navy', edge: 'flat', glow: 'none' }, word: { accent: 'ink', edge: 'flat', glow: 'none' } };
+  // 꾸미기 저장 형식 판: 2부터 카드 기본이 '평평하게', 예문 모드 퀴즈 바탕 기본이 '단색'.
+  // 그 전에 저장된 기본값(예문 그림자·피치 바탕 · 단어 테두리)은 새 기본으로 옮김 (일부러 고른 다른 값은 그대로)
   var VER = 2;
   var OLD_EDGE = { ex: 'shadow', word: 'line' };
+  var OLD_GLOW = { ex: 'warm', word: 'none' };
   // 상태 표시줄 색 = 바탕색
   var BAR = { ex: { light: '#f2f4f7', dark: '#0f121c' }, word: { light: '#f7f6f1', dark: '#17171a' } };
 
@@ -40,7 +42,8 @@
     ['ex', 'word'].forEach(function (m) {
       var src = o[m] && typeof o[m] === 'object' ? o[m] : {}, d = MODE_DEFAULT[m];
       var edge = old && src.edge === OLD_EDGE[m] ? d.edge : src.edge;
-      out[m] = { accent: pick(src.accent, CHOICES.accent, d.accent), edge: pick(edge, CHOICES.edge, d.edge), glow: pick(src.glow, CHOICES.glow, d.glow) };
+      var glow = old && src.glow === OLD_GLOW[m] ? d.glow : src.glow;
+      out[m] = { accent: pick(src.accent, CHOICES.accent, d.accent), edge: pick(edge, CHOICES.edge, d.edge), glow: pick(glow, CHOICES.glow, d.glow) };
     });
     out.v = VER;
     return out;
