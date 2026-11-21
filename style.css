@@ -315,6 +315,10 @@ button { cursor: pointer; }
   box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg); /* 뒤로 지나가는 카드 가림 */
 }
 #settings .card.tab-off { display: none; }
+.set-tabs button { flex: 1 1 auto; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
+/* 추가 기능: '화면 꾸미기'를 꺼 두면 세부 꾸미기는 숨김 */
+#settings:not(.x-look-on) .x-look { display: none; }
+.x-desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--muted); }
 /* 설정: 동기화 연결 방법 같은 긴 설명은 접어 둠 */
 .set-more { margin-top: 12px; }
 .set-more > summary { list-style: none; cursor: pointer; padding: 6px 0; color: var(--muted); font-size: 14px; font-weight: 700; }
