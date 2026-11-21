@@ -152,12 +152,12 @@ button { cursor: pointer; }
 }
 .chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 /* 알약 버튼 한 모양: 칩 · 설정 바로가기 · 단어장 DAY 고르기 · 코치 대화 위 버튼. 고른 것(.on)은 테두리+옅은 바탕 */
-.chip, .set-nav button, .dp, .chat-top-btn, .chat-retry {
+.chip, .dp, .chat-top-btn, .chat-retry {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   min-height: var(--chip-h); padding: 0 14px; border: 1.5px solid var(--line); border-radius: var(--r-pill);
   background: var(--card); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.2; white-space: nowrap;
 }
-.chip:active, .set-nav button:active, .dp:active, .chat-top-btn:active, .chat-retry:active { background: var(--primary-soft); }
+.chip:active, .dp:active, .chat-top-btn:active, .chat-retry:active { background: var(--primary-soft); }
 .chip.on, .dp.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .chip:disabled { opacity: .45; }
 .stats { display: flex; justify-content: space-between; margin: 14px 0 8px; font-size: 13px; color: var(--muted); }
@@ -305,17 +305,28 @@ button { cursor: pointer; }
 .desk .quiz-actions.fit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .desk .quiz-actions.fit .choice { margin: 0; padding: 11px 14px; }
 .desk #quiz.active > .quiz-actions.fit { padding-bottom: 8px; }
-/* 설정: 위쪽에 붙는 바로가기, 카드 제목은 크게 */
-.set-nav {
-  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
-  margin: 0 0 12px; padding: 8px 0; background: var(--bg); -webkit-overflow-scrolling: touch;
-  box-shadow: 0 calc(-1 * env(safe-area-inset-top, 0px)) 0 var(--bg); /* 노치 아래 띠도 가림 */
-}
-.set-nav::-webkit-scrollbar { display: none; }
-.set-nav button { flex: none; }
+/* 설정: 카드 제목은 크게 */
 #settings .card { scroll-margin-top: 64px; }
 #settings .card > .label:first-child { font-size: 17px; font-weight: 800; color: var(--text); margin: 0 0 12px; }
 #settings .card .seg + .label, #settings .card .switch-row + div > .label:first-child { margin-top: 16px; }
+/* 설정: 위에 붙는 탭. 누른 탭의 카드만 보임 (app.js setTab) */
+.set-tabs {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; margin: 0 0 12px;
+  box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg); /* 뒤로 지나가는 카드 가림 */
+}
+#settings .card.tab-off { display: none; }
+.set-tabs button { flex: 1 1 auto; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
+/* 홈 맨 아래 고급 기능 스위치 */
+#home-adv { margin-top: 28px; }
+.desk #home-adv { grid-column: 1 / -1; }
+.x-desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--muted); }
+/* 설정: 동기화 연결 방법 같은 긴 설명은 접어 둠 */
+.set-more { margin-top: 12px; }
+.set-more > summary { list-style: none; cursor: pointer; padding: 6px 0; color: var(--muted); font-size: 14px; font-weight: 700; }
+.set-more > summary::-webkit-details-marker { display: none; }
+.set-more > summary::after { content: ' ›'; display: inline-block; transition: transform .15s; }
+.set-more[open] > summary::after { transform: rotate(90deg); }
+.set-more[open] > summary { margin-bottom: 8px; }
 .set-plan-btn { margin: 12px 0 0; padding-left: 0; padding-right: 0; color: var(--primary); }
 .link-btn { border: 0; background: none; padding: 0; color: var(--primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .lean-bar { display: flex; justify-content: center; gap: 4px; }
@@ -676,7 +687,6 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .day-pick::-webkit-scrollbar { display: none; }
 /* 컴퓨터는 마우스 휠로 옆으로 못 넘기니 DAY 줄·설정 바로가기를 여러 줄로 다 보여 줌 */
 .desk .day-pick { flex-wrap: wrap; overflow: visible; margin: 0 0 10px; padding: 2px 0 4px; }
-.desk .set-nav { flex-wrap: wrap; overflow: visible; }
 .dp { flex: none; min-width: 42px; padding: 0 10px; color: var(--muted); font-weight: 700; }
 .day-head { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 4px 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .day-head b { font-size: 15px; font-weight: 800; }
