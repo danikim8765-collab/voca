@@ -226,18 +226,46 @@ const cacheMark = { type: 'ephemeral' };
 export const claudeContent = r => (r.parts
   ? r.parts.filter(p => p.text).map(p => (p.cache ? { type: 'text', text: p.text, cache_control: cacheMark } : { type: 'text', text: p.text }))
   : r.user);
+// ---------- 받는 대로 보여 주기 (스트리밍) ----------
+// r.onText가 있으면 답을 한 번에 받지 않고 조각조각 받으며, 지금까지 온 글 전체를 onText로 넘김 (코치와 이야기하기)
+// 세 회사 모두 'data: {JSON}' 줄로 보냄(SSE). 한 줄씩 읽어 JSON으로
+async function* sseData(res) {
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '';
+  const parse = line => { const d = line.replace(/\r$/, ''); if (!d.startsWith('data:')) return null; const v = d.slice(5).trim(); if (!v || v === '[DONE]') return null; try { return JSON.parse(v); } catch { return null; } };
+  for (;;) {
+    const { value, done } = await reader.read();
+    buf += done ? dec.decode() : dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) { const ev = parse(buf.slice(0, i)); buf = buf.slice(i + 1); if (ev) yield ev; }
+    if (done) { const ev = parse(buf); if (ev) yield ev; return; }
+  }
+}
+
 async function askClaude(c, r, signal) {
   const res = await fetch(`${CLAUDE_API}/messages`, {
     method: 'POST', headers: claudeHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
+      ...(r.onText ? { stream: true } : {}),
       model: c.model || CLAUDE_MODEL,
       max_tokens: r.maxTokens || 2048,
       system: [{ type: 'text', text: r.system, cache_control: cacheMark }],
-      output_config: r.json ? { effort: 'low', format: { type: 'json_schema', schema: r.schema || CLAUDE_SCHEMA } } : { effort: 'low' },
+      // effort: 얼마나 생각하고 답할지. 기본은 low(채점·말풍선처럼 짧은 일), 코치와 이야기하기는 high (r.effort)
+      output_config: r.json ? { effort: r.effort || 'low', format: { type: 'json_schema', schema: r.schema || CLAUDE_SCHEMA } } : { effort: r.effort || 'low' },
       messages: [{ role: 'user', content: claudeContent(r) }],
     }),
   });
   if (!res.ok) { lastErr = String(res.status); return null; }
+  if (r.onText) {
+    let text = '', stop = '';
+    for await (const ev of sseData(res)) {
+      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { text += ev.delta.text; r.onText(text); }
+      else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+      else if (ev.type === 'error') { lastErr = ev.error && ev.error.type === 'overloaded_error' ? '529' : 'cut'; return null; } // 도중에 몰림 → 다른 모델로
+    }
+    if (stop !== 'end_turn') { lastErr = 'cut'; return null; }
+    return text;
+  }
   const msg = await res.json();
   if (msg.stop_reason !== 'end_turn') { lastErr = 'cut'; return null; } // refusal·max_tokens 등
   return (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
@@ -248,7 +276,8 @@ async function askClaude(c, r, signal) {
 export const geminiThinking = model => (/gemini-3/.test(model || '') ? { thinkingLevel: 'low' } : { thinkingBudget: 512 });
 async function askGemini(c, r, signal) {
   const model = c.model || GEMINI_MODEL;
-  const url = c.provider === 'vertex' ? `${VERTEX_API}/${model}:generateContent` : `${GEMINI_API}/models/${model}:generateContent`;
+  const how = r.onText ? 'streamGenerateContent?alt=sse' : 'generateContent';
+  const url = c.provider === 'vertex' ? `${VERTEX_API}/${model}:${how}` : `${GEMINI_API}/models/${model}:${how}`;
   const call = thinking => fetch(url, {
     method: 'POST', headers: geminiHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
@@ -264,6 +293,18 @@ async function askGemini(c, r, signal) {
   let res = await call(geminiThinking(model));
   if (res.status === 400) res = await call(null); // 생각 설정을 안 받는 모델(2.0 등)이면 빼고 다시
   if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
+  if (r.onText) {
+    let text = '', fin = '';
+    for await (const d of sseData(res)) {
+      const cd = (d.candidates || [])[0];
+      if (!cd) continue;
+      const add = ((cd.content && cd.content.parts) || []).filter(p => !p.thought && p.text).map(p => p.text).join('');
+      if (add) { text += add; r.onText(text); }
+      if (cd.finishReason) fin = cd.finishReason;
+    }
+    if (fin !== 'STOP') { lastErr = 'cut'; return null; }
+    return text;
+  }
   const data = await res.json();
   const cand = (data.candidates || [])[0];
   if (!cand || cand.finishReason !== 'STOP') { lastErr = 'cut'; return null; }
@@ -279,8 +320,21 @@ async function askOpenAILike(c, r, signal) {
   };
   if (r.json && json) body.response_format = { type: 'json_object' };
   if (/gpt-oss/.test(c.model)) body.reasoning_effort = 'low'; // 생각을 짧게 → 빠르게
+  if (r.onText) body.stream = true;
   const res = await fetch(`${api}/chat/completions`, { method: 'POST', headers: bearer(c.key), cache: 'no-store', signal, body: JSON.stringify(body) });
   if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
+  if (r.onText) {
+    let text = '', fin = '';
+    for await (const d of sseData(res)) {
+      if (d.error) { lastErr = 'cut'; return null; }
+      const ch = (d.choices || [])[0];
+      if (!ch) continue;
+      if (ch.delta && ch.delta.content) { text += ch.delta.content; r.onText(text); }
+      if (ch.finish_reason) fin = ch.finish_reason;
+    }
+    if (fin !== 'stop') { lastErr = 'cut'; return null; }
+    return text;
+  }
   const data = await res.json();
   const ch = (data.choices || [])[0];
   if (!ch || ch.finish_reason !== 'stop') { lastErr = 'cut'; return null; }
@@ -334,8 +388,11 @@ async function askCoach(r) {
     }
     // 넘어갈 다른 모델이 있으면 오래 기다리지 않음. 다만 코치와 이야기하기는 긴 설명을 쓰는 중일 수 있어서 30초까지 기다림
     // (중간에 끊어도 그때까지 쓴 토큰 값은 나가고, 다른 모델에 처음부터 다시 물어야 해서 두 번 값을 냄)
+    // Claude를 effort high·medium으로 부르면 생각하느라 더 걸려서, 예비 모델로 넘어가기 전 기다리는 시간도 길게
     const spare = models.slice(i + 1).some(m => m !== models[i] && !tried.includes(m));
-    const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, r.chat ? 30000 : 15000) : r.timeout }, { ...c, model: models[i] });
+    const wait = r.chat ? (c.provider === 'claude' && r.effort && r.effort !== 'low' ? 75000 : 30000) : 15000;
+    if (r.onText && i) r.onText(''); // 다른 모델로 처음부터 다시 받음
+    const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, wait) : r.timeout }, { ...c, model: models[i] });
     if (out) return out;
     if (out === '') lastErr = 'bad';
     errs.push(lastErr);
@@ -442,7 +499,8 @@ export function askProblem(p) {
 export async function aiAskWord({ problem, history = [], message }) {
   const past = history.slice(-8).map(m => `${m.who === 'me' ? '학생' : '선생님'}: ${clip(safeAnswer(m.text), 600)}`).join('\n');
   const text = await askCoach({
-    system: ASK, chat: true, maxTokens: 2048, timeout: 30000,
+    // Claude면 생각을 조금 하고 답함(medium). 생각한 토큰도 max_tokens에 들어가 넉넉히
+    system: ASK, chat: true, effort: 'medium', maxTokens: 8192, timeout: 45000,
     user: `<problem>\n${askProblem(problem)}\n</problem>${past ? `\n\n앞서 나눈 이야기:\n${past}` : ''}\n\n<question>${clip(safeAnswer(message), 500)}</question>`,
   });
   const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|[#`]/g, '').trim();
@@ -544,8 +602,19 @@ export const COACH_PERSONA = {
 };
 const MOODS = ['normal', 'happy', 'worry', 'sleep', 'cheer'];
 
+// 앱에서 쓰는 말과 화면. 코치가 목표일·시험일 같은 말을 헷갈리지 않고, 어디서 무엇을 바꾸는지 알려 줄 수 있게 (숫자는 넣지 않음)
+const APP_GUIDE = `
+이 앱의 말 (헷갈리지 마요):
+- 시험일: 실제 시험 보는 날. 학생이 학습 계획 화면에서 정해요. 홈의 '시험 D-n'은 시험일까지 남은 날.
+- 목표일: 새 단어를 다 배우는 마지막 날. 시험일과 다른 날이고 늘 시험일보다 앞이에요. 다음 날부터 시험 전날까지는 '전체 복습 기간'(새 단어 없이 범위 전체를 나눠 훑음). 홈의 '목표 D-n'은 목표일까지 남은 날. 코치가 켜져 있으면 앱이 시험일과 남은 단어로 정해요. "언제 끝나?"엔 목표일인지 시험일인지 구별해서 답해요.
+- 오늘의 학습: 학습(새 단어) → 복습(복습일이 된 단어) → 더 하기(추가 학습·추가 복습). 주기 복습: 맞힐수록 다음 복습일까지 간격이 길어짐.
+- 다시 볼 단어: 마지막에 틀린 단어. 암기 완료: 마지막 단계까지 외운 단어. 쉬는 요일: 새 단어·전체 복습 없이 복습일 된 단어만.
+- 두 모드: 빈칸 암기(예문 모드)와 단어 암기(단어 모드). 진도·하루 일정은 따로, 시험일·쉬는 요일은 같이.
+- 화면: 홈 / 학습 계획(학습 범위·문제 방식·하루 새 단어 수·하루 복습 수·시험일·단어 코치) / 단어장(전체·오답·미학습·암기 완료·형광펜, DAY별 학습, 유반의어 테스트) / 설정(문제 풀기·단축키·복습·발음·AI·화면·동기화·백업).`;
+
 const SAY_FORMAT = '{"mood": "normal"|"happy"|"worry"|"sleep"|"cheer", "text": "…"}';
 const coachSystem = (char, format = SAY_FORMAT) => `영단어 시험을 준비하는 학생의 단어 앱 속 코치예요. ${COACH_PERSONA[char] || COACH_PERSONA.cat}
+${APP_GUIDE}
 - 학생에게 직접 말하듯 해요체로 써요. 모든 문장을 '~요'로 끝내요. 반말(~야, ~해, ~자, 힘내)은 캐릭터가 시크해도 쓰지 마요. 마크다운·이모지·목록 없이 문장으로만.
 - 어원은 확실히 아는 것만 말해요. 자신 없으면 어원 대신 비슷한 단어와 구별하기나 짧은 장면으로 요령을 줘요.
 - 아래 <facts>에 있는 사실만 말해요. 숫자(개수·날짜·날 수)는 <facts>에 그대로 있는 것만 쓰고, 계산해서 새 숫자를 만들지 마요. 숫자는 한글로 풀어 쓰지 말고 <facts>에 적힌 모양(13개, 18일)대로 써요.
@@ -621,10 +690,22 @@ const chatSystem = char => `영단어 시험을 준비하는 학생의 단어 �
 - 자기 의견을 말해요. 학생 계획이 무리이거나 너무 느슨하면 솔직하게 그렇다고 하고 까닭을 대요. 맞장구만 치지 않아요. 그래도 정하는 건 학생이라, 학생이 하겠다고 하면 따르고 응원해요.
 - 좋아하는 공부법과 싫어하는 것(예: 벼락치기), 말버릇, 그날의 기분이 있어요. 캐릭터다운 자기 이야기도 가끔 살짝 해요. 과하지 않게.
 - 앞에서 한 이야기와 <memory>, <summary>(앞선 이야기 중 오래된 부분을 줄인 메모)에 이어지게 말해요. 전에 한 약속이나 학생 사정을 먼저 꺼내도 좋아요.
-- 주제는 무엇이든 돼요: 단어 뜻·어원·예문·비슷한 단어 구별, 공부 방법, 일정, 고민, 잡담. 길이는 내용에 맞게 써요(잡담은 짧게, 설명은 필요한 만큼 길게).
+- 주제는 무엇이든 돼요: 단어 뜻·어원·예문·비슷한 단어 구별, 공부 방법, 일정, 고민, 잡담.
+
+길이 (폰 말풍선이라 길면 안 읽혀요):
+- 물은 것에 필요한 만큼만 써요. 보통 1~3문장(150자 안팎), 설명이 필요해도 5문장·300자 안쪽. 학생이 "자세히", "다 알려 줘"라고 할 때만 길게 써요.
+- 한 문장에는 한 가지만, 짧게 끊어 써요. 예문은 하나면 충분해요.
+- 첫 문장에 바로 답해요. 질문을 되풀이하거나 "좋은 질문이에요" 같은 인사·서론, 끝에 앞말을 다시 정리하는 말은 빼요.
+- 목록은 3개까지, 한 항목은 한 줄로. 더 있으면 "더 알려 줄까요?"로 물어요.
+- 학생이 묻지 않은 진도·일정·숫자를 늘어놓지 않아요. 상황과 기록은 답에 필요한 것만 골라 써요.
+- 문단이 둘 이상이면 사이에 빈 줄을 넣어 읽기 쉽게 해요.
 - 어원은 확실히 아는 것만 말해요. 자신 없으면 "어원은 확실하지 않아요"라고 하고 다른 요령을 줘요.
 - 해요체(반말 금지). 줄바꿈과 '- '로 시작하는 목록은 써도 되지만, 굵게·제목·표 같은 마크다운 기호와 이모지는 쓰지 마요.
-- <facts>는 앱이 계산한 지금 상황이에요. 진도·개수·날짜를 말할 땐 <facts>에 있는 것을 그대로 써요.
+- <facts>는 앱이 계산한 지금 상황이에요. 진도·개수·날짜를 말할 땐 <facts>에 있는 것을 그대로 써요. 목표일과 시험일은 <facts>에 따로 적혀 있으니 구별해서 써요.
+${APP_GUIDE}
+- <data>는 앱이 가진 자세한 기록이에요: 단어장 전체, DAY별 진도, 정답률, 최근 공부한 날, 앞으로의 복습일, 오늘 배울·복습할 단어, 형광펜, 설정, 일정 선택지. 학생이 진도·기록·설정을 물으면 여기서 찾아 그대로 답해요.
+- <lookup>은 학생 말(또는 바로 앞 코치 말)에 나온 단어와 DAY를 앱의 단어장에서 찾은 자료예요: 뜻·유의어·반의어·파생어·예문·해석과 두 모드의 기록. 단어 뜻이나 예문을 말할 땐 이 앱 단어장의 것을 먼저 쓰고, 그 단어를 언제 배웠는지·몇 번 틀렸는지도 여기서 봐요.
+- 앱 자료(<facts>·<data>·<lookup>·<weak>)에 없는 기록은 모른다고 하고 지어내지 마요. 단어 뜻은 단어장에 없으면 아는 대로 말해도 되지만, 이 앱 단어장 뜻이 아니라고 밝혀요.
 - <weak>는 학생이 약한 단어예요. 학생이 묻거나 흐름에 맞으면 몇 개를 짚어서 외우는 요령(어원, 비슷한 단어와 구별, 짧은 장면)을 알려 줘요. 퀴즈를 내 달라고 하면 여기서 한 문제씩 내고, 학생이 답하면 맞았는지 봐 준 다음 다음 문제로 가요.
 
 일정:
@@ -732,6 +813,27 @@ export async function aiCoachSummary({ summary = '', history = [] }) {
   return text.length > SUM_MAX ? text.slice(0, text.lastIndexOf('\n', SUM_MAX) > 200 ? text.lastIndexOf('\n', SUM_MAX) : SUM_MAX) : text;
 }
 
+// 코치 말에서 마크다운 기호 빼기 (받는 중에도, 다 받은 뒤에도 똑같이)
+// 모델이 줄바꿈을 두 번 이스케이프해서 역슬래시+n 두 글자로 오면 진짜 줄바꿈으로
+const tidyChat = t => String(t).replace(/\\n/g, '\n').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|`|^#+\s*/gm, '').replace(/^\s*\*\s+/gm, '- ');
+// 받는 중인 답(JSON 조각)에서 지금까지 온 "text" 값. 아직 text까지 안 왔으면 ''
+// JSON이 아니라 글로 오면 그 글 그대로 (looseChat처럼)
+export function streamedText(raw) {
+  const s = String(raw || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '');
+  const m = s.match(/"text"\s*:\s*"/);
+  if (!m) return !s.trim() || /^\s*(?:[{[]|`|json\b)/i.test(s) ? '' : s.trim();
+  let out = '', i = m.index + m[0].length;
+  while (i < s.length && s[i] !== '"') {
+    if (s[i] !== '\\') { out += s[i++]; continue; }
+    const n = s[i + 1];
+    if (n == null) break; // 이스케이프가 반만 옴
+    if (n === 'u') { const hex = s.slice(i + 2, i + 6); if (!/^[0-9a-f]{4}$/i.test(hex)) break; out += String.fromCharCode(parseInt(hex, 16)); i += 6; continue; }
+    out += { n: '\n', t: ' ', r: '', b: '', f: '' }[n] ?? n;
+    i += 2;
+  }
+  return out;
+}
+
 // JSON이 깨져 왔을 때: "text" 값만이라도 건지고, 그것도 없으면 온 글 그대로를 코치 말로
 function looseChat(raw) {
   const t = clean(raw).replace(/^json\s*/i, '');
@@ -745,10 +847,13 @@ function looseChat(raw) {
  * history: 앞선 이야기(chatTranscript 참고), message: 학생이 방금 한 말, day: 오늘 날짜
  * 반환 { mood, text, plan: { rest?, perDay?, review?, today? } | null, remember: 글자 } 또는 null(실패, aiCoachError()로 까닭)
  */
-export async function aiCoachChat({ char, facts, weak = '', notes = [], summary = '', history = [], message, day = '' }) {
+export const NEEDS_DATA = /진도|기록|정답|설정|일정|계획|선택지|복습|DAY|데이|언제|며칠|몇|형광|어제|오늘|이번 ?주|틀린|틀렸|배운|배웠|외운|외웠|남은|남았|밀린|밀렸|얼마|많이|모드|방식|동기화|버전|주기|암기 완료|다시 볼/i;
+export async function aiCoachChat({ char, facts, data = '', lookup = '', weak = '', notes = [], summary = '', history = [], message, day = '', onText = null }) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   const prev = chatFirst ? history.findIndex(h => itemKey(h) === chatFirst) : -1;
   const from = chatFrom(history, { ...chatWindow(coachConf().provider), prev });
+  // Groq 무료 등급은 분당 8,000토큰이라, 자세한 기록(<data>)은 기록·진도·일정·설정을 묻는 듯할 때만 (다른 곳은 늘)
+  const withData = data && (coachConf().provider !== 'groq' || NEEDS_DATA.test(message));
   chatFirst = from < history.length ? itemKey(history[from]) : null;
   const lines = chatLines(history.slice(from));
   // 조각으로 나눠 둠: 상황·기억 → 앞선 이야기 한 줄씩 → 방금 한 말. 이어 붙이면 한 덩어리 글과 같음.
@@ -757,7 +862,7 @@ export async function aiCoachChat({ char, facts, weak = '', notes = [], summary 
     { text: `<facts>
 ${facts}
 </facts>
-<weak>
+${withData ? `<data>\n${data}\n</data>\n` : ''}<weak>
 ${weak || '(아직 틀린 단어 기록이 없음)'}
 </weak>
 <memory>
@@ -767,18 +872,22 @@ ${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 
     ...lines.map(l => ({ text: `${l}\n` })),
   ];
   parts[parts.length - 1].cache = true;
-  parts.push({ text: `${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
+  // 학생 말에 나온 단어 자료는 말마다 달라서 캐시할 앞부분 뒤에 둠
+  parts.push({ text: `${lookup ? `<lookup>\n${lookup}\n</lookup>\n` : ''}${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
 <message>${safeAnswer(message)}</message>` });
   const raw = await askCoach({
-    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 40000, chat: true,
-    // 긴 설명이 잘리면(cut) 다른 모델로 처음부터 다시 물어 두 번 값을 내니, 답 길이 한도는 넉넉히
-    maxTokens: 8192, parts, user: parts.map(p => p.text).join(''),
+    system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 90000, chat: true,
+    // Claude면 충분히 생각하고 답함(effort high, low는 앱 자료를 빠뜨리거나 엉뚱하게 답함). Gemini·Groq는 이 값을 안 씀
+    // 긴 설명이 잘리면(cut) 다른 모델로 처음부터 다시 물어 두 번 값을 내니, 답 길이 한도는 넉넉히 (생각한 토큰도 여기에 들어감)
+    effort: 'high', maxTokens: 16000, parts, user: parts.map(p => p.text).join(''),
+    // onText: 받는 대로 지금까지 온 코치 말(text 값)을 넘김. 다른 모델로 다시 받으면 ''부터
+    ...(onText ? { onText: raw => onText(raw ? tidyChat(streamedText(raw)).trimStart().slice(0, CHAT_MAX) : '') } : {}),
   });
   if (!raw) return null;
   let out = null;
   try { out = pickJSON(raw); } catch { out = looseChat(raw); }
   if (!out || typeof out !== 'object') { lastErr = 'bad'; return null; }
-  let text = String(out.text == null ? '' : out.text).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|`|^#+\s*/gm, '').replace(/^\s*\*\s+/gm, '- ').trim().slice(0, CHAT_MAX);
+  let text = tidyChat(out.text == null ? '' : out.text).trim().slice(0, CHAT_MAX);
   const plan = {};
   const pd = Math.round(Number(out.perDay));
   if (pd >= 1 && pd <= 500) plan.perDay = pd;
@@ -797,7 +906,7 @@ ${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 
   // 일정 값을 뽑았으면 계산은 앱 카드가 보여 줌. AI가 결과를 짐작해서 쓴 숫자("총 180개, 48일 더")는 카드와 어긋나니,
   // 지금 상황·학생 말·뽑은 값에 없는 숫자가 든 문장은 빼고, 남는 게 없으면 앱의 말로
   if (has && text) {
-    const known = `${facts}\n${message}\n${Object.values(plan).flat().join(' ')}`;
+    const known = `${facts}\n${data}\n${lookup}\n${message}\n${Object.values(plan).flat().join(' ')}`;
     if (!numbersOk(text, known)) {
       const kept = (text.match(/[^.!?\n]+[.!?]*\s*/g) || []).filter(s => numbersOk(s, known)).join('').trim();
       text = kept || '말한 대로 계산해 볼게요. 바로 아래 카드에서 확인해 주세요.';

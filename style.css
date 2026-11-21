@@ -1009,6 +1009,10 @@ body[data-tint] {
 .chat-msg.typing i:nth-child(2) { animation-delay: .15s; }
 .chat-msg.typing i:nth-child(3) { animation-delay: .3s; }
 @keyframes chat-dot { 0%, 60%, 100% { opacity: .3; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
+/* 받는 중인 코치 말: 끝에 깜빡이는 막대 */
+.chat-msg.live::after { content: ''; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -2px; background: var(--muted); animation: chat-caret 1s steps(1) infinite; }
+@keyframes chat-caret { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .chat-msg.live::after { animation: none; } }
 /* 앱이 계산한 일정 카드 */
 .chat-plan { align-self: stretch; margin: 0 2px; padding: 12px 14px; border-radius: var(--r-lg); background: var(--card); border: 1px solid var(--line); text-align: left; display: flex; flex-direction: column; gap: 5px; }
 .cp-title { font-weight: 800; font-size: 15px; }
