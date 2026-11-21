@@ -164,12 +164,12 @@
       <div class="chat-head">
         <div class="chat-char" id="cc-char"></div>
         <div class="chat-who"><b id="cc-name">코치</b><span id="cc-sub"></span></div>
-        <button class="chat-top-btn" id="cc-menu" type="button">기억</button>
+        <button class="chat-ic-btn" id="cc-menu" type="button" data-icon="memo" aria-label="코치가 기억하는 것" title="코치가 기억하는 것"></button>
       </div>
       <div class="chat-body">
         <div class="chat-log" id="cc-log" aria-live="polite"></div>
         <div class="chat-mem" id="cc-mem" hidden>
-          <div class="chat-mem-head"><b>코치가 기억하는 것</b><button class="chat-top-btn" id="cc-mem-close" type="button">돌아가기</button></div>
+          <div class="chat-mem-head"><b>코치가 기억하는 것</b><button class="chat-ic-btn" id="cc-mem-close" type="button" data-icon="close" aria-label="닫기" title="닫기"></button></div>
           <p class="muted">이 기기에만 저장돼요. 다른 기기로 옮겨지지 않아요.</p>
           <div id="cc-mem-list"></div>
           <button class="btn ghost small" id="cc-wipe" type="button">이야기와 기억 모두 지우기</button>
@@ -179,7 +179,7 @@
       <p class="chat-noai" id="cc-noai" hidden>설정 &gt; AI를 켜면 코치와 자유롭게 이야기할 수 있어요</p>
       <div class="chat-ask" id="cc-ask">
         <textarea id="cc-input" class="type-input" rows="1" placeholder="코치에게 말하기" autocomplete="off" enterkeyhint="send" maxlength="1000" aria-label="코치에게 말하기"></textarea>
-        <button class="btn secondary small" id="cc-send" type="button">보내기</button>
+        <button class="chat-send" id="cc-send" type="button" data-icon="send" aria-label="보내기" title="보내기"></button>
       </div>
     </div>
   </section>
@@ -573,11 +573,11 @@
 
   <!-- 아래 탭: 진도 · 단어장 · 홈(가운데) · 코치 · 설정. 안 쓰는 탭(코치 끔, 고급 기능 끔)은 숨기고 홈이 가운데 오게 다시 놓음 (app.js renderTabs) -->
   <nav class="tabbar" id="tabbar" aria-label="메뉴">
-    <button type="button" data-tab="days" data-icon="tabDays"><span>진도</span></button>
-    <button type="button" data-tab="list" data-icon="tabBook"><span>단어장</span></button>
-    <button type="button" data-tab="home" data-icon="tabHome"><span>홈</span></button>
-    <button type="button" data-tab="coach" data-icon="tabCoach"><span>코치</span></button>
-    <button type="button" data-tab="settings" data-icon="gear"><span>설정</span></button>
+    <button type="button" data-tab="days" data-icon="tabDays" aria-label="DAY별 진도" title="DAY별 진도"></button>
+    <button type="button" data-tab="list" data-icon="tabBook" aria-label="단어장" title="단어장"></button>
+    <button type="button" data-tab="home" data-icon="tabHome" aria-label="홈" title="홈"></button>
+    <button type="button" data-tab="coach" data-icon="tabCoach" aria-label="코치" title="코치"></button>
+    <button type="button" data-tab="settings" data-icon="gear" aria-label="설정" title="설정"></button>
   </nav>
 
 

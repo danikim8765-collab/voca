@@ -161,12 +161,12 @@ button { cursor: pointer; }
 }
 .chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 /* 알약 버튼 한 모양: 칩 · 설정 바로가기 · 단어장 DAY 고르기 · 코치 대화 위 버튼. 고른 것(.on)은 테두리+옅은 바탕 */
-.chip, .dp, .chat-top-btn, .chat-retry {
+.chip, .dp {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   min-height: var(--chip-h); padding: 0 14px; border: 1.5px solid var(--line); border-radius: var(--r-pill);
   background: var(--card); color: var(--text); font-size: 14px; font-weight: 600; line-height: 1.2; white-space: nowrap;
 }
-.chip:active, .dp:active, .chat-top-btn:active, .chat-retry:active { background: var(--primary-soft); }
+.chip:active, .dp:active { background: var(--primary-soft); }
 .chip.on, .dp.on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
 .chip:disabled { opacity: .45; }
 
@@ -1055,7 +1055,6 @@ body.kb-up #coach.screen.active { padding-bottom: 0; }
 .chat-who { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
 .chat-who b { font-size: 16px; }
 .chat-who span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chat-top-btn { flex: none; padding: 0 12px; font-size: 13px; }
 .chat-body { flex: 1; min-height: 0; position: relative; display: flex; }
 .chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }
 .chat-day { align-self: center; font-size: 12px; color: var(--muted); margin: 4px 0; }
@@ -1063,7 +1062,6 @@ body.kb-up #coach.screen.active { padding-bottom: 0; }
 .chat-msg { max-width: 86%; padding: 9px 13px; border-radius: var(--r-xl) var(--r-xl) var(--r-xl) 4px; background: var(--card); font-size: 15px; line-height: 1.55; text-align: left; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; align-self: flex-start; box-shadow: var(--shadow); }
 .chat-msg.me { align-self: flex-end; border-radius: var(--r-xl) var(--r-xl) 4px var(--r-xl); background: var(--primary); color: var(--on-primary); box-shadow: none; }
 .chat-msg.err { color: var(--muted); }
-.chat-retry { display: flex; width: max-content; margin-top: 6px; min-height: 30px; padding: 0 12px; font-size: 13px; }
 .chat-msg.typing { display: flex; gap: 4px; padding: 14px 14px; }
 .chat-msg.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: chat-dot 1s infinite ease-in-out; }
 .chat-msg.typing i:nth-child(2) { animation-delay: .15s; }
@@ -1092,8 +1090,7 @@ body.kb-up #coach.screen.active { padding-bottom: 0; }
 .chat-ask { flex: none; display: flex; align-items: flex-end; gap: 6px; padding: 8px 16px 12px; }
 .chat-ask[hidden] { display: none; }
 body.kb-up .chat-ask { padding-bottom: 8px; }
-.chat-ask .type-input { flex: 1; min-width: 0; margin: 0; padding: 10px 12px; font-size: 16px; line-height: 1.4; resize: none; max-height: 120px; text-align: left; font-family: inherit; }
-.chat-ask .btn { flex: none; margin: 0; padding: 11px 14px; }
+.chat-ask .type-input { flex: 1; min-width: 0; margin: 0; padding: 10px 16px; border-radius: 22px; border-width: 1.5px; font-size: 16px; line-height: 1.4; resize: none; max-height: 120px; text-align: left; font-family: inherit; }
 .chat-mem { position: absolute; inset: 0; overflow-y: auto; padding: 14px; background: var(--card); text-align: left; display: flex; flex-direction: column; gap: 8px; }
 .chat-mem[hidden] { display: none; }
 .chat-mem-head { display: flex; align-items: center; justify-content: space-between; }
@@ -1214,7 +1211,20 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 .heat-legend i { width: 14px; height: 14px; border-radius: 4px; background: var(--primary); }
 
 /* ---------- 아래 탭 (진도 · 단어장 · 홈 · 코치 · 설정) ---------- */
-:root { --tab-h: calc(58px + env(safe-area-inset-bottom, 0px)); }
+:root { --tab-h: calc(56px + env(safe-area-inset-bottom, 0px)); }
+/* 글자 없이 아이콘만인 버튼 (이름은 aria-label · title) */
+.chat-ic-btn { flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; color: var(--text2); display: grid; place-items: center; padding: 0; }
+.chat-ic-btn .ic { width: 22px; height: 22px; }
+.chat-ic-btn:active { background: var(--fill); }
+.chat-send { flex: none; width: 42px; height: 42px; border: 0; border-radius: 50%; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; padding: 0; margin-bottom: 1px; }
+.chat-send .ic { width: 22px; height: 22px; stroke-width: 2.4; }
+.chat-send:disabled { background: var(--fill); color: var(--muted); }
+.chat-send:not(:disabled):active { transform: scale(.94); }
+.chat-retry { display: grid; place-items: center; width: 34px; min-height: 34px; padding: 0; margin-top: 6px; border-radius: 50%; color: var(--primary); }
+.chat-retry .ic { width: 18px; height: 18px; }
+.mem-del { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; }
+.mem-del .ic { width: 19px; height: 19px; }
+.mem-del:active { color: var(--danger); background: var(--danger-soft); }
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 8; display: none;
   height: var(--tab-h); padding: 0 max(8px, calc((100% - 560px) / 2)) env(safe-area-inset-bottom, 0px);
@@ -1225,10 +1235,10 @@ body[data-screen="home"] .tabbar, body[data-screen="days"] .tabbar, body[data-sc
 body[data-screen="coach"] .tabbar, body[data-screen="settings"] .tabbar { display: flex; }
 body.kb-up .tabbar { display: none !important; }
 .tabbar button {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  border: 0; background: none; padding: 6px 0 4px; color: var(--muted); opacity: .75; font-size: 11px; font-weight: 600;
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  border: 0; background: none; padding: 0; color: var(--muted); opacity: .7;
 }
-.tabbar button .ic { width: 24px; height: 24px; stroke-width: 1.8; }
+.tabbar button .ic { width: 26px; height: 26px; stroke-width: 1.8; }
 .tabbar button.on { color: var(--text); opacity: 1; }
 .tabbar button.on .ic { stroke-width: 2.2; }
 .tabbar button:active .ic { transform: scale(.92); }
