@@ -226,10 +226,27 @@ const cacheMark = { type: 'ephemeral' };
 export const claudeContent = r => (r.parts
   ? r.parts.filter(p => p.text).map(p => (p.cache ? { type: 'text', text: p.text, cache_control: cacheMark } : { type: 'text', text: p.text }))
   : r.user);
+// ---------- 받는 대로 보여 주기 (스트리밍) ----------
+// r.onText가 있으면 답을 한 번에 받지 않고 조각조각 받으며, 지금까지 온 글 전체를 onText로 넘김 (코치와 이야기하기)
+// 세 회사 모두 'data: {JSON}' 줄로 보냄(SSE). 한 줄씩 읽어 JSON으로
+async function* sseData(res) {
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = '';
+  const parse = line => { const d = line.replace(/\r$/, ''); if (!d.startsWith('data:')) return null; const v = d.slice(5).trim(); if (!v || v === '[DONE]') return null; try { return JSON.parse(v); } catch { return null; } };
+  for (;;) {
+    const { value, done } = await reader.read();
+    buf += done ? dec.decode() : dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) { const ev = parse(buf.slice(0, i)); buf = buf.slice(i + 1); if (ev) yield ev; }
+    if (done) { const ev = parse(buf); if (ev) yield ev; return; }
+  }
+}
+
 async function askClaude(c, r, signal) {
   const res = await fetch(`${CLAUDE_API}/messages`, {
     method: 'POST', headers: claudeHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
+      ...(r.onText ? { stream: true } : {}),
       model: c.model || CLAUDE_MODEL,
       max_tokens: r.maxTokens || 2048,
       system: [{ type: 'text', text: r.system, cache_control: cacheMark }],
@@ -239,6 +256,16 @@ async function askClaude(c, r, signal) {
     }),
   });
   if (!res.ok) { lastErr = String(res.status); return null; }
+  if (r.onText) {
+    let text = '', stop = '';
+    for await (const ev of sseData(res)) {
+      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { text += ev.delta.text; r.onText(text); }
+      else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+      else if (ev.type === 'error') { lastErr = ev.error && ev.error.type === 'overloaded_error' ? '529' : 'cut'; return null; } // 도중에 몰림 → 다른 모델로
+    }
+    if (stop !== 'end_turn') { lastErr = 'cut'; return null; }
+    return text;
+  }
   const msg = await res.json();
   if (msg.stop_reason !== 'end_turn') { lastErr = 'cut'; return null; } // refusal·max_tokens 등
   return (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
@@ -249,7 +276,8 @@ async function askClaude(c, r, signal) {
 export const geminiThinking = model => (/gemini-3/.test(model || '') ? { thinkingLevel: 'low' } : { thinkingBudget: 512 });
 async function askGemini(c, r, signal) {
   const model = c.model || GEMINI_MODEL;
-  const url = c.provider === 'vertex' ? `${VERTEX_API}/${model}:generateContent` : `${GEMINI_API}/models/${model}:generateContent`;
+  const how = r.onText ? 'streamGenerateContent?alt=sse' : 'generateContent';
+  const url = c.provider === 'vertex' ? `${VERTEX_API}/${model}:${how}` : `${GEMINI_API}/models/${model}:${how}`;
   const call = thinking => fetch(url, {
     method: 'POST', headers: geminiHeaders(c.key), cache: 'no-store', signal,
     body: JSON.stringify({
@@ -265,6 +293,18 @@ async function askGemini(c, r, signal) {
   let res = await call(geminiThinking(model));
   if (res.status === 400) res = await call(null); // 생각 설정을 안 받는 모델(2.0 등)이면 빼고 다시
   if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
+  if (r.onText) {
+    let text = '', fin = '';
+    for await (const d of sseData(res)) {
+      const cd = (d.candidates || [])[0];
+      if (!cd) continue;
+      const add = ((cd.content && cd.content.parts) || []).filter(p => !p.thought && p.text).map(p => p.text).join('');
+      if (add) { text += add; r.onText(text); }
+      if (cd.finishReason) fin = cd.finishReason;
+    }
+    if (fin !== 'STOP') { lastErr = 'cut'; return null; }
+    return text;
+  }
   const data = await res.json();
   const cand = (data.candidates || [])[0];
   if (!cand || cand.finishReason !== 'STOP') { lastErr = 'cut'; return null; }
@@ -280,8 +320,21 @@ async function askOpenAILike(c, r, signal) {
   };
   if (r.json && json) body.response_format = { type: 'json_object' };
   if (/gpt-oss/.test(c.model)) body.reasoning_effort = 'low'; // 생각을 짧게 → 빠르게
+  if (r.onText) body.stream = true;
   const res = await fetch(`${api}/chat/completions`, { method: 'POST', headers: bearer(c.key), cache: 'no-store', signal, body: JSON.stringify(body) });
   if (!res.ok) { lastErr = String(res.status); return null; } // 429(무료 한도 초과) 등
+  if (r.onText) {
+    let text = '', fin = '';
+    for await (const d of sseData(res)) {
+      if (d.error) { lastErr = 'cut'; return null; }
+      const ch = (d.choices || [])[0];
+      if (!ch) continue;
+      if (ch.delta && ch.delta.content) { text += ch.delta.content; r.onText(text); }
+      if (ch.finish_reason) fin = ch.finish_reason;
+    }
+    if (fin !== 'stop') { lastErr = 'cut'; return null; }
+    return text;
+  }
   const data = await res.json();
   const ch = (data.choices || [])[0];
   if (!ch || ch.finish_reason !== 'stop') { lastErr = 'cut'; return null; }
@@ -338,6 +391,7 @@ async function askCoach(r) {
     // Claude를 effort high·medium으로 부르면 생각하느라 더 걸려서, 예비 모델로 넘어가기 전 기다리는 시간도 길게
     const spare = models.slice(i + 1).some(m => m !== models[i] && !tried.includes(m));
     const wait = r.chat ? (c.provider === 'claude' && r.effort && r.effort !== 'low' ? 75000 : 30000) : 15000;
+    if (r.onText && i) r.onText(''); // 다른 모델로 처음부터 다시 받음
     const out = await ask({ ...r, timeout: spare ? Math.min(r.timeout || TIMEOUT_MS, wait) : r.timeout }, { ...c, model: models[i] });
     if (out) return out;
     if (out === '') lastErr = 'bad';
@@ -751,6 +805,27 @@ export async function aiCoachSummary({ summary = '', history = [] }) {
   return text.length > SUM_MAX ? text.slice(0, text.lastIndexOf('\n', SUM_MAX) > 200 ? text.lastIndexOf('\n', SUM_MAX) : SUM_MAX) : text;
 }
 
+// 코치 말에서 마크다운 기호 빼기 (받는 중에도, 다 받은 뒤에도 똑같이)
+// 모델이 줄바꿈을 두 번 이스케이프해서 역슬래시+n 두 글자로 오면 진짜 줄바꿈으로
+const tidyChat = t => String(t).replace(/\\n/g, '\n').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|`|^#+\s*/gm, '').replace(/^\s*\*\s+/gm, '- ');
+// 받는 중인 답(JSON 조각)에서 지금까지 온 "text" 값. 아직 text까지 안 왔으면 ''
+// JSON이 아니라 글로 오면 그 글 그대로 (looseChat처럼)
+export function streamedText(raw) {
+  const s = String(raw || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '');
+  const m = s.match(/"text"\s*:\s*"/);
+  if (!m) return !s.trim() || /^\s*(?:[{[]|`|json\b)/i.test(s) ? '' : s.trim();
+  let out = '', i = m.index + m[0].length;
+  while (i < s.length && s[i] !== '"') {
+    if (s[i] !== '\\') { out += s[i++]; continue; }
+    const n = s[i + 1];
+    if (n == null) break; // 이스케이프가 반만 옴
+    if (n === 'u') { const hex = s.slice(i + 2, i + 6); if (!/^[0-9a-f]{4}$/i.test(hex)) break; out += String.fromCharCode(parseInt(hex, 16)); i += 6; continue; }
+    out += { n: '\n', t: ' ', r: '', b: '', f: '' }[n] ?? n;
+    i += 2;
+  }
+  return out;
+}
+
 // JSON이 깨져 왔을 때: "text" 값만이라도 건지고, 그것도 없으면 온 글 그대로를 코치 말로
 function looseChat(raw) {
   const t = clean(raw).replace(/^json\s*/i, '');
@@ -765,7 +840,7 @@ function looseChat(raw) {
  * 반환 { mood, text, plan: { rest?, perDay?, review?, today? } | null, remember: 글자 } 또는 null(실패, aiCoachError()로 까닭)
  */
 export const NEEDS_DATA = /진도|기록|정답|설정|일정|계획|선택지|복습|DAY|데이|언제|며칠|몇|형광|어제|오늘|이번 ?주|틀린|틀렸|배운|배웠|외운|외웠|남은|남았|밀린|밀렸|얼마|많이|모드|방식|동기화|버전|주기|암기 완료|다시 볼/i;
-export async function aiCoachChat({ char, facts, data = '', lookup = '', weak = '', notes = [], summary = '', history = [], message, day = '' }) {
+export async function aiCoachChat({ char, facts, data = '', lookup = '', weak = '', notes = [], summary = '', history = [], message, day = '', onText = null }) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   const prev = chatFirst ? history.findIndex(h => itemKey(h) === chatFirst) : -1;
   const from = chatFrom(history, { ...chatWindow(coachConf().provider), prev });
@@ -797,12 +872,14 @@ ${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 
     // Claude면 충분히 생각하고 답함(effort high, low는 앱 자료를 빠뜨리거나 엉뚱하게 답함). Gemini·Groq는 이 값을 안 씀
     // 긴 설명이 잘리면(cut) 다른 모델로 처음부터 다시 물어 두 번 값을 내니, 답 길이 한도는 넉넉히 (생각한 토큰도 여기에 들어감)
     effort: 'high', maxTokens: 16000, parts, user: parts.map(p => p.text).join(''),
+    // onText: 받는 대로 지금까지 온 코치 말(text 값)을 넘김. 다른 모델로 다시 받으면 ''부터
+    ...(onText ? { onText: raw => onText(raw ? tidyChat(streamedText(raw)).trimStart().slice(0, CHAT_MAX) : '') } : {}),
   });
   if (!raw) return null;
   let out = null;
   try { out = pickJSON(raw); } catch { out = looseChat(raw); }
   if (!out || typeof out !== 'object') { lastErr = 'bad'; return null; }
-  let text = String(out.text == null ? '' : out.text).replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|`|^#+\s*/gm, '').replace(/^\s*\*\s+/gm, '- ').trim().slice(0, CHAT_MAX);
+  let text = tidyChat(out.text == null ? '' : out.text).trim().slice(0, CHAT_MAX);
   const plan = {};
   const pd = Math.round(Number(out.perDay));
   if (pd >= 1 && pd <= 500) plan.perDay = pd;

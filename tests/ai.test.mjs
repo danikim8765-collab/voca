@@ -10,7 +10,7 @@ let reply = null, calls = [];
 globalThis.fetch = async (url, opts = {}) => { calls.push({ url, opts }); return reply(url, opts); };
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, chatTranscript, chatFrom, coachModels, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError } = await import('../js/ai.js');
+const { aiGradeMeaning, aiExplainWrong, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachSay, aiCoachChat, chatTranscript, chatFrom, coachModels, numbersOk, aiCoachOnline, aiCoachName, aiName, aiCoachError, streamedText } = await import('../js/ai.js');
 const Q = { word: 'fatal', meaning: '1. 치명적인 2. 결정적인, 중대한', user: '죽음을 부르는', strict: 'mid' };
 
 beforeEach(() => { store.clear(); store.set('voca.ai.on.v1', '1'); online = true; calls = []; reply = () => json({}); });
@@ -664,4 +664,64 @@ test("'AI에게 묻기': 문제 정보·앞선 이야기를 같이 보내고, �
   calls = [];
   assert.equal(await aiAskWord({ problem, message: '또?' }), null);
   assert.equal(calls.length, 0);
+});
+
+// 조각으로 오는 답 흉내 (SSE). 줄이 조각 사이에서 끊겨도 되게 일부러 잘라서 보냄
+const sseReply = (events, cut = 7) => () => {
+  const raw = events.map(e => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join('');
+  const enc = new TextEncoder();
+  const body = new ReadableStream({ start(c) { for (let i = 0; i < raw.length; i += cut) c.enqueue(enc.encode(raw.slice(i, i + cut))); c.close(); } });
+  return { ok: true, status: 200, body, json: async () => { throw new Error('stream'); } };
+};
+const CHAT_JSON = '{"mood":"happy","text":"좋아요.\\n- \\"fatal\\"은 치명적인\\u0021","rest":"","perDay":0,"review":0,"today":-1,"remember":""}';
+const pieces = (s, n) => { const out = []; for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n)); return out; };
+
+test('받는 중인 답에서 지금까지 온 코치 말(text)만', () => {
+  assert.equal(streamedText(''), '');
+  assert.equal(streamedText('{"mood":"ha'), '');
+  assert.equal(streamedText('{"mood":"happy","text":"좋아'), '좋아');
+  assert.equal(streamedText('{"mood":"happy","text":"줄\\'), '줄'); // 이스케이프가 반만 옴
+  assert.equal(streamedText('{"text":"a\\nb \\"c\\" \\u00'), 'a\nb "c" ');
+  assert.equal(streamedText('{"text":"끝.","rest":""'), '끝.');
+  assert.equal(streamedText('<think>음 "text": "가짜"'), '');
+  assert.equal(streamedText('<think>음</think>{"text":"진짜'), '진짜');
+  assert.equal(streamedText('그냥 글로 답해요'), '그냥 글로 답해요');
+  assert.equal(streamedText('```json\n{"mo'), '');
+});
+
+test('코치와 이야기: onText를 주면 세 회사 모두 받는 대로 넘기고, 다 받은 답은 전과 같음', async () => {
+  const args = { char: 'owl', facts: '시험까지 9일', message: '안녕' };
+  const want = { mood: 'happy', text: '좋아요.\n- "fatal"은 치명적인!', plan: null, remember: '' };
+  const run = async () => { const seen = []; const r = await aiCoachChat({ ...args, onText: t => seen.push(t) }); return { r, seen }; };
+  const check = ({ r, seen }) => {
+    assert.deepEqual(r, want);
+    assert.ok(seen.length > 3);
+    assert.equal(seen.at(-1), want.text);
+    for (let i = 1; i < seen.length; i++) assert.ok(seen[i].startsWith(seen[i - 1]), `${seen[i - 1]} → ${seen[i]}`);
+  };
+  // Claude
+  store.set('voca.ai.v1', JSON.stringify({ key: 'sk-ant-x', provider: 'claude' }));
+  reply = sseReply([{ type: 'message_start' }, { type: 'content_block_start' }, ...pieces(CHAT_JSON, 9).map(t => ({ type: 'content_block_delta', delta: { type: 'text_delta', text: t } })), { type: 'message_delta', delta: { stop_reason: 'end_turn' } }, { type: 'message_stop' }]);
+  check(await run());
+  assert.equal(JSON.parse(calls.at(-1).opts.body).stream, true);
+  // Gemini (생각 조각은 빼고)
+  store.set('voca.ai.v1', JSON.stringify({ key: 'AIza-x', provider: 'gemini', model: 'gemini-flash-latest' }));
+  reply = sseReply([{ candidates: [{ content: { parts: [{ text: '생각', thought: true }] } }] }, ...pieces(CHAT_JSON, 11).map((t, i, a) => ({ candidates: [{ content: { parts: [{ text: t }] }, ...(i === a.length - 1 ? { finishReason: 'STOP' } : {}) }] }))]);
+  check(await run());
+  assert.match(calls.at(-1).url, /:streamGenerateContent\?alt=sse$/);
+  // Groq
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  reply = sseReply([...pieces(CHAT_JSON, 5).map(t => ({ choices: [{ delta: { content: t } }] })), { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
+  check(await run());
+  // 도중에 끊기면(끝 표시 없음) 실패 → 다른 모델로 다시 받을 땐 ''부터
+  store.set('voca.ai.v1', JSON.stringify({ key: 'sk-ant-x', provider: 'claude' }));
+  let n = 0;
+  const bad = sseReply([{ type: 'content_block_delta', delta: { type: 'text_delta', text: '{"mood":"normal","text":"반쯤' } }, { type: 'error', error: { type: 'overloaded_error' } }]);
+  const good = sseReply([{ type: 'content_block_delta', delta: { type: 'text_delta', text: CHAT_JSON } }, { type: 'message_delta', delta: { stop_reason: 'end_turn' } }]);
+  reply = (...a) => (n++ ? good : bad)(...a);
+  const { r, seen } = await run();
+  assert.deepEqual(r, want);
+  assert.deepEqual(seen, ['반쯤', '', want.text]);
+  const used = calls.slice(-2).map(c => JSON.parse(c.opts.body).model);
+  assert.notEqual(used[0], used[1]); // 막힌 모델 다음엔 다른 모델로 (앞 테스트에서 쉬게 된 모델은 뒤로 가서 순서는 상관없음)
 });

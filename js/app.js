@@ -1206,6 +1206,8 @@ function openCoachChat() {
   const chat = loadChat();
   const today = dateStr();
   let busy = false, card = null, mood = 'normal', open = true;
+  // 받는 중인 코치 말: 받은 글(target)을 한 번에 붙이지 않고 몇 글자씩 늘려 보여 줌 (조각이 몰려 와도 고르게)
+  const live = { target: '', n: 0, raf: 0, el: null, done: null };
   const last = chat.items[chat.items.length - 1];
   if (!last || dateStr(last.t) !== today) chat.items.push({ who: 'coach', text: coachGreeting(), t: Date.now(), mood: 'cheer' });
   $('#cc-name').textContent = `${COACH_NAMES[coachChar()]} 코치`;
@@ -1280,10 +1282,42 @@ function openCoachChat() {
       }
       log.appendChild(b);
     }
-    if (busy) { const t = el('div', 'chat-msg bot typing'); t.setAttribute('aria-label', '코치가 생각하고 있어요'); t.append(el('i'), el('i'), el('i')); log.appendChild(t); }
+    live.el = null;
+    if (busy && live.target) { live.el = el('div', 'chat-msg bot live', live.target.slice(0, live.n)); log.appendChild(live.el); }
+    else if (busy) { const t = el('div', 'chat-msg bot typing'); t.setAttribute('aria-label', '코치가 생각하고 있어요'); t.append(el('i'), el('i'), el('i')); log.appendChild(t); }
     log.scrollTop = log.scrollHeight;
     send.disabled = busy || !inp.value.trim();
   };
+  // 한 화면(1/60초)마다 남은 글의 1/14쯤, 적어도 2글자씩. 밀린 글이 많으면 빨리, 따라잡으면 받는 속도대로
+  const liveTick = () => {
+    live.raf = 0;
+    const t = live.target;
+    if (live.n < t.length) live.n = Math.min(t.length, live.n + Math.max(2, Math.ceil((t.length - live.n) / 14)));
+    if (!open) live.n = t.length;
+    if (open && (!live.el || !live.el.isConnected)) draw();
+    else if (open) {
+      const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 60; // 위로 올려 읽는 중이면 안 끌어내림
+      live.el.textContent = t.slice(0, live.n);
+      if (atEnd) log.scrollTop = log.scrollHeight;
+    }
+    if (live.n < t.length) live.raf = requestAnimationFrame(liveTick);
+    else if (live.done) { const f = live.done; live.done = null; f(); }
+  };
+  const liveSet = t => {
+    // 앞에 보여 준 글과 이어지지 않으면(다른 모델로 다시 받음, 다 받고 고친 말) 같은 데까지만 남기고 거기서부터
+    const old = live.target;
+    let k = 0;
+    while (k < old.length && k < t.length && old[k] === t[k]) k++;
+    if (live.n > k) live.n = k;
+    live.target = t;
+    if (!live.raf) live.raf = requestAnimationFrame(liveTick);
+  };
+  // 다 받은 말까지 마저 보여 주고 끝냄 (창을 닫았거나 화면이 꺼져 있으면 바로)
+  const liveEnd = t => new Promise(done => {
+    if (!open || document.hidden || !live.target) { cancelAnimationFrame(live.raf); Object.assign(live, { target: '', n: 0, raf: 0, el: null, done: null }); return done(); }
+    live.done = () => { Object.assign(live, { target: '', n: 0, el: null }); done(); };
+    liveSet(t);
+  });
   // 앱이 계산한 카드를 이야기에 붙임 (가장 최근 카드만 누를 수 있음)
   const showCard = ch => {
     const data = modeProposal(ch);
@@ -1319,7 +1353,9 @@ function openCoachChat() {
     await catchUp(history);
     // 학생 말과 바로 앞 코치 말에 나온 단어를 찾아 그 자료를 같이 (퀴즈를 내고 학생이 답할 때도 그 단어를 알게)
     const prevCoach = [...history].reverse().find(h => h.who === 'coach');
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today) });
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today), onText: liveSet });
+    // 받은 말을 끝까지 보여 준 뒤에 이야기에 넣음 (실패면 받다 만 말은 지움)
+    await liveEnd(res ? res.text : '');
     busy = false;
     if (!res) {
       chat.items.push({ who: 'coach', text: coachErrorText(), t: Date.now(), err: true, retry: msg });
