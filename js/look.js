@@ -14,14 +14,19 @@
     kb: ['s', 'm', 'l'],                   // 앱 키보드 키 높이
     days: ['grid', 'lines', 'heat'],       // 홈 DAY별 진도: 격자 · 줄 막대 · 잔디
     accent: ['navy', 'forest', 'grape', 'coral', 'ink'],
-    edge: ['shadow', 'line'],              // 카드 구분: 그림자 · 얇은 테두리
+    edge: ['flat', 'shadow', 'line'],      // 카드 구분: 평평하게(바탕색 차이만) · 그림자 · 얇은 테두리
     glow: ['warm', 'sky', 'mint', 'none'], // 퀴즈 바탕 아래쪽 빛
   };
   var HIDE = ['coach', 'plan', 'practice', 'book', 'days']; // 홈에서 숨길 수 있는 덩어리 ('오늘' 카드는 늘 보임)
   var DEFAULT = { theme: 'auto', size: 'm', font: 'sans', radius: 'round', react: 'mid', kb: 'm', days: 'grid', sound: false, buzz: false, kbSound: false, hide: [], at: 0, share: true };
-  var MODE_DEFAULT = { ex: { accent: 'navy', edge: 'shadow', glow: 'warm' }, word: { accent: 'ink', edge: 'line', glow: 'none' } };
+  var MODE_DEFAULT = { ex: { accent: 'navy', edge: 'flat', glow: 'none' }, word: { accent: 'ink', edge: 'flat', glow: 'none' } };
+  // 꾸미기 저장 형식 판: 2부터 카드 기본이 '평평하게', 예문 모드 퀴즈 바탕 기본이 '단색'.
+  // 그 전에 저장된 기본값(예문 그림자·피치 바탕 · 단어 테두리)은 새 기본으로 옮김 (일부러 고른 다른 값은 그대로)
+  var VER = 2;
+  var OLD_EDGE = { ex: 'shadow', word: 'line' };
+  var OLD_GLOW = { ex: 'warm', word: 'none' };
   // 상태 표시줄 색 = 바탕색
-  var BAR = { ex: { light: '#f3f5f9', dark: '#0e1626' }, word: { light: '#f7f6f1', dark: '#17171a' } };
+  var BAR = { ex: { light: '#f2f4f7', dark: '#0f121c' }, word: { light: '#f7f6f1', dark: '#17171a' } };
 
   var pick = function (v, list, def) { return list.indexOf(v) >= 0 ? v : def; };
   // 저장된 값을 믿지 않고 고를 수 있는 값으로만 (예전 기기·고장 난 값이면 기본값)
@@ -33,10 +38,14 @@
     out.at = typeof o.at === 'number' && o.at > 0 ? o.at : 0;
     out.share = o.share !== false;
     out.hide = HIDE.filter(function (k) { return Array.isArray(o.hide) && o.hide.indexOf(k) >= 0; });
+    var old = o.v !== VER;
     ['ex', 'word'].forEach(function (m) {
       var src = o[m] && typeof o[m] === 'object' ? o[m] : {}, d = MODE_DEFAULT[m];
-      out[m] = { accent: pick(src.accent, CHOICES.accent, d.accent), edge: pick(src.edge, CHOICES.edge, d.edge), glow: pick(src.glow, CHOICES.glow, d.glow) };
+      var edge = old && src.edge === OLD_EDGE[m] ? d.edge : src.edge;
+      var glow = old && src.glow === OLD_GLOW[m] ? d.glow : src.glow;
+      out[m] = { accent: pick(src.accent, CHOICES.accent, d.accent), edge: pick(edge, CHOICES.edge, d.edge), glow: pick(glow, CHOICES.glow, d.glow) };
     });
+    out.v = VER;
     return out;
   }
 

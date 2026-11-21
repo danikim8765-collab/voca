@@ -25,8 +25,19 @@ test('꾸미기: 고를 수 있는 값만 남김, 모드마다 색·카드·바�
   assert.deepEqual(o.hide, ['coach', 'days']); // '오늘' 카드는 못 숨김, 겹친 건 하나로
   assert.equal(o.sound, false);        // true만 켬
   assert.equal(o.buzz, true);
-  assert.deepEqual(o.ex, { accent: 'grape', edge: 'line', glow: 'warm' });
+  assert.deepEqual(o.ex, { accent: 'grape', edge: 'line', glow: MODE_DEFAULT.ex.glow }); // 없는 바탕 → 기본
   assert.deepEqual(o.word, MODE_DEFAULT.word);
+});
+
+test('꾸미기: 예전 판에 저장된 기본값(그림자·피치 바탕·테두리)은 새 기본(평평하게·단색)으로, 일부러 고른 건 그대로', () => {
+  const old = clean({ ex: { accent: 'navy', edge: 'shadow', glow: 'warm' }, word: { edge: 'line', glow: 'sky' } });
+  assert.deepEqual(old.ex, MODE_DEFAULT.ex);
+  assert.equal(old.word.edge, MODE_DEFAULT.word.edge);
+  assert.equal(old.word.glow, 'sky');
+  const now = clean({ v: 2, ex: { edge: 'shadow', glow: 'warm' } }); // 새 판에서 고른 그림자·피치는 그대로
+  assert.equal(now.ex.edge, 'shadow');
+  assert.equal(now.ex.glow, 'warm');
+  assert.equal(clean(now).ex.edge, 'shadow'); // 다시 정리해도 그대로
 });
 
 test('꾸미기 합치기: 바꾼 시각이 더 최근인 쪽, 기기마다인 share는 빼고', () => {
