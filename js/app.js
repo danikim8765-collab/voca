@@ -2,7 +2,7 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
 } from './core.js';
 import { createSync } from './sync.js';
 import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
@@ -1317,7 +1317,9 @@ function openCoachChat() {
     draw();
     const history = forAi().slice(0, -1);
     await catchUp(history);
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today) });
+    // 학생 말과 바로 앞 코치 말에 나온 단어를 찾아 그 자료를 같이 (퀴즈를 내고 학생이 답할 때도 그 단어를 알게)
+    const prevCoach = [...history].reverse().find(h => h.who === 'coach');
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today) });
     busy = false;
     if (!res) {
       chat.items.push({ who: 'coach', text: coachErrorText(), t: Date.now(), err: true, retry: msg });
@@ -1503,6 +1505,97 @@ function otherFacts() {
   if (o.coach && o.coachGoal && ex() && today < o.coachGoal) out.push(`[${OTHER_NAME}] 일정: ${fmtDay(addDays(o.coachGoal, -1))}까지 새 단어${o.coachFix ? ` (학생이 하루 ${o.coachFix}개로 고정함)` : o.coachBase ? ` (처음 계획 하루 ${o.coachBase}개)` : ''}, 그 뒤 시험 전날까지 전체 복습`);
   return out;
   function ex() { return settings.exam && settings.exam > today; }
+}
+// 코치와 이야기할 때 넘기는 자세한 자료: 앱이 아는 진도·기록·설정을 코치도 다 알게 (홈 말풍선엔 안 넘김. 길어서)
+// 모양: '- 이름: 값' 줄들. 숫자는 앱이 센 그대로라 코치가 그대로 써도 됨
+const md = d => { const [, m, dd] = String(d || '').split('-'); return m ? `${+m}/${+dd}` : ''; };
+function wordState(s) {
+  if (!s) return '안 배움';
+  if (isWrongNote(s)) return '다시 볼 단어';
+  if (isMastered(s)) return '암기 완료';
+  return `외우는 중 ${s.st || 0}단계`;
+}
+function coachData() {
+  const today = dateStr(), rw = rangeWords(), os = load(OTHER_P + 'stats.v1', {}), lines = [];
+  // 단어장 전체와 범위 밖
+  const learnedAll = words.filter(w => stats[w.id]).length;
+  lines.push(`- 단어장 전체: DAY ${days[0]}~${days[days.length - 1]}, ${words.length}단어. ${MODE_NAME}에서 배운 단어는 전체 ${learnedAll}개 (학습 범위 밖 포함)`);
+  // DAY별 진도 (학습 범위)
+  // 아직 하나도 안 배운 DAY가 이어지면 한 덩어리로 (길이 줄이기)
+  const per = [];
+  let gap = null;
+  const flush = () => { if (gap) per.push(gap[0] === gap[1] ? `DAY ${gap[0]} 아직 안 배움` : `DAY ${gap[0]}~${gap[1]} 아직 안 배움`); gap = null; };
+  for (const d of [...new Set(rw.map(w => w.day))]) {
+    const dw = dayWords(d);
+    let l = 0, m = 0, x = 0;
+    for (const w of dw) { const s = stats[w.id]; if (!s) continue; l++; if (isMastered(s)) m++; if (isWrongNote(s)) x++; }
+    if (!l) { gap = gap ? [gap[0], d] : [d, d]; continue; }
+    flush();
+    per.push(`DAY ${d} ${l}/${dw.length}·${m}·${x}`);
+  }
+  flush();
+  lines.push(`- DAY별 진도 (배운 단어/전체·암기 완료·다시 볼 단어): ${per.join(', ')}`);
+  // 정답 기록
+  let c = 0, w = 0, h = 0;
+  for (const x of rw) { const s = stats[x.id]; if (s) { c += s.c || 0; w += s.w || 0; h += s.h || 0; } }
+  if (c + w) lines.push(`- 학습 범위에서 지금까지 맞힘 ${c}번(그중 힌트 쓰고 맞힘 ${h}번), 틀림 ${w}번, 정답률 ${Math.round(100 * c / (c + w))}%`);
+  // 최근 2주 동안 새 단어를 배운 날 (복습만 한 날은 기록이 남지 않아 모름)
+  const byF = new Map();
+  for (const s of Object.values(stats)) if (s && s.f && s.f > addDays(today, -14)) byF.set(s.f, (byF.get(s.f) || 0) + 1);
+  const fl = [...byF].sort((a, b) => a[0].localeCompare(b[0])).map(([d, n]) => `${md(d)} ${n}개`);
+  lines.push(`- 최근 2주 새 단어를 배운 날: ${fl.length ? fl.join(', ') : '없음'} (복습만 한 날은 기록에 안 남음)`);
+  // 앞으로 7일 복습 예정
+  const due = new Map();
+  let late = 0;
+  for (const x of rw) { const s = stats[x.id]; if (!s || !s.due) continue; if (s.due < today) late++; else if (s.due <= addDays(today, 7)) due.set(s.due, (due.get(s.due) || 0) + 1); }
+  const dl = [...due].sort((a, b) => a[0].localeCompare(b[0])).map(([d, n]) => `${md(d)} ${n}개`);
+  lines.push(`- 복습일 예정(앞으로 7일, 주기 복습 기준): ${dl.length ? dl.join(', ') : '없음'}${late ? `. 복습일이 지났는데 아직 안 본 단어 ${late}개` : ''}`);
+  // 오늘 할 단어
+  const f = flowState();
+  if (f.plan.fresh.length) lines.push(`- 오늘 배울 새 단어: ${f.plan.fresh.slice(0, 30).map(x => x.word).join(', ')}${f.plan.fresh.length > 30 ? ' …' : ''}`);
+  if (f.rv.left.length) lines.push(`- 오늘 남은 복습 단어: ${f.rv.left.slice(0, 30).map(id => (byId.get(id) || {}).word).filter(Boolean).join(', ')}${f.rv.left.length > 30 ? ' …' : ''}`);
+  const sess = load(KEY.session, null);
+  if (sess && sess.queue && sess.date === today) lines.push(`- 중간에 멈춘 학습: '${sess.label || '학습'}' ${sess.total}문제 중 ${sess.pos}문제 품 (홈의 '이어서 학습하기')`);
+  // 형광펜 (두 모드 공용)
+  const hl = words.filter(x => isUnknown(x.id));
+  lines.push(`- 형광펜 친 단어 ${hl.length}개${hl.length ? `: ${hl.slice(0, 20).map(x => x.word).join(', ')}${hl.length > 20 ? ' …' : ''}` : ''}`);
+  // 설정
+  const ag = cleanAgain(settings.again), agName = sameAgain(ag, AGAIN_REC) ? '추천' : sameAgain(ag, AGAIN_OLD) ? '가볍게' : sameAgain(ag, AGAIN_FULL) ? '꼼꼼하게' : '직접 고름';
+  lines.push(`- 설정: 문제 방식 ${settings.kind === 'type' ? '직접 입력' : '4지선다'}${settings.reviewMix ? '(복습은 외운 단어만 4지선다)' : ''}` +
+    `, 하루 새 단어 수 ${coachActive() ? '코치가 정함' : `${settings.newPerDay}개`}, 하루 복습 수 ${settings.reviewSize}개` +
+    `, 복습 주기 ${PRESET_LABEL[settings.srsPreset] || '보통'}(${(PRESETS[settings.srsPreset] || PRESETS.m).join('·')}일 간격, ${srsOn() ? '주기 복습 켜짐' : '주기 복습 꺼짐'})` +
+    `, 틀린 단어 다시 나오기 ${agName}` + (WORD ? `, 직접 입력 채점 ${{ easy: '너그럽게', mid: '보통', hard: '엄격하게' }[settings.strict] || '보통'}` : `, 예문 해석 ${settings.showKo ? '보이기' : '가리기'}`) +
+    `, 발음 ${settings.accent === 'en-GB' ? '영국식' : '미국식'}${settings.autoSpeak ? '(자동 읽기)' : ''}, 동기화 ${sync.enabled ? '켜짐' : '꺼짐'}, 코치에 쓰는 AI ${aiCoachName()}`);
+  // 일정 선택지 (앱 계산). 학생이 '어떤 일정이 좋아?'라고 물으면 이걸로 비교
+  if (canPlanNow()) {
+    const opts = coachOptions();
+    if (opts.length) lines.push(`- 일정 선택지(앱 계산, 복습 날 수별): ${opts.map(o => `${o.name}${o.rec && !o.name.includes('추천') ? '(추천)' : ''} 복습 ${o.r}일 → ${fmtDay(addDays(o.p.goal, -1))}까지 하루 ${o.p.perDay}개`).join(' / ')}`);
+  }
+  // 다른 모드에서 다시 볼 단어
+  const ow = rw.filter(x => os[x.id] && !os[x.id].del && os[x.id].st === 0 && os[x.id].r !== today).slice(0, 15);
+  if (ow.length) lines.push(`- [${OTHER_NAME}] 다시 볼 단어: ${ow.map(x => x.word).join(', ')}`);
+  return lines.join('\n');
+}
+// 학생 말(과 바로 앞 코치 말)에 나온 단어·DAY의 자세한 자료: 단어장에 있는 뜻·유의어·반의어·파생어·예문과 두 모드의 기록
+function coachLookup(texts) {
+  const { words: hit, days: dl } = findMentioned(words, texts);
+  if (!hit.length && !dl.length) return '';
+  const os = load(OTHER_P + 'stats.v1', {});
+  const rec = s => (s && !s.del ? `${wordState(s)}, 맞힘 ${s.c || 0}번 · 틀림 ${s.w || 0}번${s.h ? ` · 힌트 ${s.h}번` : ''}${s.f ? `, 처음 배운 날 ${md(s.f)}` : ''}${s.s ? `, 마지막으로 본 날 ${md(dateStr(s.s))}` : ''}${s.due ? `, 다음 복습일 ${md(s.due)}` : ''}` : '안 배움');
+  const out = hit.map(w => [
+    `[${w.word}] DAY ${w.day}${rangeWords().includes(w) ? '' : ' (학습 범위 밖)'}${isUnknown(w.id) ? ', 형광펜' : ''}`,
+    `뜻: ${w.meaning}`,
+    ...(w.extras || []).map(([k, v]) => `${k}: ${v}`),
+    w.ex1 ? `예문: ${w.ex1}${w.ex1ko ? ` (${w.ex1ko})` : ''}` : '',
+    w.ex2 ? `예문2: ${w.ex2}${w.ex2ko ? ` (${w.ex2ko})` : ''}` : '',
+    `${MODE_NAME} 기록: ${rec(stats[w.id])}`,
+    `${OTHER_NAME} 기록: ${rec(os[w.id])}`,
+  ].filter(Boolean).join('\n'));
+  for (const d of dl) {
+    const dw = dayWords(d);
+    out.push(`[DAY ${d}] ${dw.length}단어${rangeWords().some(w => w.day === d) ? '' : ' (학습 범위 밖)'}: ` + dw.map(w => `${w.word}(${shortMeaning(w.meaning).replace(/\s*\/\s*$/, '')}${stats[w.id] ? `, ${wordState(stats[w.id])}` : ''})`).join(', '));
+  }
+  return out.join('\n\n');
 }
 // 홈 말은 상황이 바뀔 때만 새로 지음 (날짜, 할 일 단계, 일정, 캐릭터, 기본 말의 표정). 실패하면 10분 뒤에 다시
 const SAY_KEY = P + 'coachsay.v1';

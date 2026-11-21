@@ -1660,3 +1660,47 @@ export function requeue(queue, pos, id, slots, rand = Math.random) {
   if (slots.includes('end')) tail.push(id);
   return [...head, ...tail.filter((x, i) => !(x === id && tail[i - 1] === id))];
 }
+
+// ---------- 코치와 이야기하기: 학생 말에 나온 단어 찾기 ----------
+// 영단어(변화형 포함: fatally·took도)나 뜻(세 글자 이상, '치명적인이'처럼 조사가 붙어도), 'DAY 30'을 찾아 코치에게 그 단어 자료를 넘기려고.
+// 반환 { words: [단어], days: [DAY 번호] }. 앞에 나온 글(texts[0])에서 찾은 것부터, max개까지
+const mentionRe = new Map();
+function mentionRegex(w) {
+  if (mentionRe.has(w.id)) return mentionRe.get(w.id);
+  const head = answerParts(w.word)[0];
+  let re = null;
+  try { re = head && /[A-Za-z]/.test(head) ? partRegex(head) : null; } catch { re = null; }
+  mentionRe.set(w.id, re);
+  return re;
+}
+const mentionSenses = m => String(m || '').replace(/\(\([^)]*\)\)|\([^)]*\)|\[[^\]]*\]/g, ' ').split(/\s*\d+\.\s*|[,;/]/)
+  .map(x => x.replace(/[~∼〜]/g, '').trim()).filter(x => /^[가-힣 ]{3,}$/.test(x) && x.replace(/\s/g, '').length >= 3);
+// 파생어 칸의 영단어 ('fatality 명 … / fatally 부 …' → fatality, fatally)
+const derivedMemo = new Map();
+function derivedWords(w) {
+  if (derivedMemo.has(w.id)) return derivedMemo.get(w.id);
+  const src = (w.extras || []).filter(([k]) => /파생/.test(k)).map(([, v]) => v).join(' / ');
+  const out = [...src.matchAll(/(?:^|\/)\s*([A-Za-z][A-Za-z-]{2,})\s+(?:명|형|부|동|전|접)/g)].map(m => m[1].toLowerCase());
+  derivedMemo.set(w.id, out);
+  return out;
+}
+export function findMentioned(words, texts, { max = 6, maxDays = 2 } = {}) {
+  const out = [], seen = new Set(), dayList = [];
+  const all = new Set(words.map(w => w.day));
+  for (const raw of [].concat(texts || [])) {
+    const t = String(raw || '');
+    if (!t) continue;
+    for (const m of t.matchAll(/day\s*(\d{1,3})/gi)) { const d = +m[1]; if (all.has(d) && !dayList.includes(d) && dayList.length < maxDays) dayList.push(d); }
+    for (const w of words) {
+      if (out.length >= max) break;
+      if (seen.has(w.word.toLowerCase())) continue;
+      const re = mentionRegex(w);
+      let hit = false;
+      if (re) { re.lastIndex = 0; hit = re.test(t); }
+      if (!hit && /[A-Za-z]/.test(t)) hit = derivedWords(w).some(d => new RegExp(`(^|[^A-Za-z])${d}(?![A-Za-z])`, 'i').test(t));
+      if (!hit && /[가-힣]/.test(t)) hit = mentionSenses(w.meaning).some(s => t.includes(s));
+      if (hit) { out.push(w); seen.add(w.word.toLowerCase()); }
+    }
+  }
+  return { words: out, days: dayList };
+}

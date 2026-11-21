@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, buildPlan, pickReview, normalizeStat, addDays, daysBetween, pickDistractors, displayAnswer, questionKind, MIX_CHOICE_STAGE } from '../js/core.js';
+import { parseCSV, mapColumns, rowsToWords, answerParts, makeBlanks, isTypedCorrect, splitSentence, applyResult, buildPlan, pickReview, normalizeStat, addDays, daysBetween, pickDistractors, displayAnswer, questionKind, MIX_CHOICE_STAGE, findMentioned } from '../js/core.js';
 
 const show = r => r.segs.map(s => (s.t === 'blank' ? `[${s.v}]` : s.v)).join('');
 
@@ -1005,4 +1005,18 @@ test('복습은 외운 단어만 4지선다: 복습에서 두 번 맞힌 단어�
   assert.equal(questionKind('choice', s, mix), 'type');
   s = applyResult(s, 'ok', { today: s.due, now: Date.parse(s.due + 'T12:00:00') });
   assert.equal(questionKind('choice', s, mix), 'choice');
+});
+
+test('코치와 이야기: 학생 말에 나온 단어(변화형·파생어·뜻)와 DAY를 찾음', () => {
+  const csv = 'DAY,단어,뜻,파생어\n26,fatal,"1. 치명적인 2. 결정적인, 중대한","fatality 명 사망자 / fatally 부 치명적으로"\n26,take A for B,A를 B로 여기다,-\n27,definite,"명확한, 확고한",-\n';
+  const ws = rowsToWords([{ name: 'a', text: csv }]);
+  const f = t => findMentioned(ws, [t]).words.map(w => w.word);
+  assert.deepEqual(f('fatal이 뭐야?'), ['fatal']);
+  assert.deepEqual(f('Fatally는?'), ['fatal']);
+  assert.deepEqual(f('치명적인이 영어로 뭐였지'), ['fatal']);
+  assert.deepEqual(f('took 이랑 definite 차이'), ['take A for B', 'definite']);
+  assert.deepEqual(f('오늘 공부 하기 싫어요'), []);
+  assert.deepEqual(f('fatalism'), []);
+  assert.deepEqual(findMentioned(ws, ['DAY 27이랑 day26, DAY 99']).days, [27, 26]);
+  assert.equal(findMentioned(ws, ['fatal definite'], { max: 1 }).words.length, 1);
 });

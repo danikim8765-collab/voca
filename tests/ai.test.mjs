@@ -239,6 +239,27 @@ test('코치와 이야기: AI는 한 번만 부르고, 학생이 원하는 값(�
   assert.deepEqual((await aiCoachChat(args)).plan, { perDay: 30, rest: [] });
 });
 
+test('코치와 이야기: 앱 자료(<data>)와 학생 말에 나온 단어 자료(<lookup>)를 넘기고, 목표일·시험일 설명도 지시에 있음', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  const args = { char: 'cat', facts: '시험일(시험 보는 날): 12월 12일', data: '- DAY별 진도: DAY 26 10/40·0·4', lookup: '[fatal] DAY 26\n뜻: 치명적인', message: '잘 지내?' };
+  reply = claudeText('{"mood":"normal","text":"그럭저럭요.","review":0,"perDay":0,"rest":"","today":-1,"remember":""}');
+  await aiCoachChat(args);
+  let body = JSON.parse(calls[calls.length - 1].opts.body);
+  assert.match(sysText(body), /목표일: 새 단어를 다 배우는 마지막 날/);
+  assert.match(userText(body), /<data>\n- DAY별 진도: DAY 26 10\/40·0·4\n<\/data>/);
+  assert.match(userText(body), /<lookup>\n\[fatal\] DAY 26/);
+  // Groq(분당 토큰이 적음)는 기록을 묻는 듯할 때만 <data>
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k', provider: 'groq', model: 'm' }));
+  reply = () => json({ choices: [{ message: { content: '{"mood":"normal","text":"그럭저럭요.","review":0,"perDay":0,"rest":"","today":-1,"remember":""}' } }] });
+  await aiCoachChat(args);
+  body = JSON.parse(calls[calls.length - 1].opts.body);
+  const lastUser = b => b.messages[b.messages.length - 1].content;
+  assert.doesNotMatch(lastUser(body), /<data>/);
+  assert.match(lastUser(body), /<lookup>/);
+  await aiCoachChat({ ...args, message: 'DAY 26 진도 어때?' });
+  assert.match(lastUser(JSON.parse(calls[calls.length - 1].opts.body)), /<data>/);
+});
+
 test('코치와 이야기: 숫자·길이·형식으로 말을 버리지 않고, 하루 횟수도 세지 않음', async () => {
   store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
   const args = { char: 'owl', facts: '시험까지 23일', message: '요령 좀' };
