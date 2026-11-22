@@ -62,7 +62,7 @@ const ICON = {
   tabHome: svgIcon('<path d="M3.5 10.2 12 3.5l8.5 6.7V19a1.5 1.5 0 0 1-1.5 1.5h-4.2v-6h-5.6v6H5A1.5 1.5 0 0 1 3.5 19z"/>'),
   tabDays: svgIcon('<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>'),
   tabBook: svgIcon('<path d="M4.5 5.5A2.5 2.5 0 0 1 7 3h12.5v15H7a2.5 2.5 0 0 0-2.5 2.5z"/><path d="M4.5 20.5V5.5M19.5 18v3H7"/>'),
-  send: svgIcon('<path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/>'),
+  send: svgIcon('<path d="M21 3 10.5 13.5"/><path d="M21 3 14.5 21l-4-7.5L3 9.5z"/>'), // 종이비행기
   memo: svgIcon('<path d="M6 3.5h9.5L19 7v13.5H6z"/><path d="M9.5 10h6M9.5 13.5h6M9.5 17h3.5"/>'),
   trash: svgIcon('<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/>'),
   retry: svgIcon('<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4.5V11h-6.5"/>'),
@@ -1572,7 +1572,14 @@ function openCoachChat() {
   };
   mem.hidden = true;
   inp.value = '';
-  const grow = () => { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 120) + 'px'; send.disabled = busy || !inp.value.trim(); };
+  // 높이 = 글 높이 + 테두리 (scrollHeight엔 테두리가 빠져 있어서 그대로 쓰면 몇 px 모자라 스크롤 막대가 생김)
+  const grow = () => {
+    inp.style.height = 'auto';
+    const h = inp.scrollHeight + inp.offsetHeight - inp.clientHeight;
+    inp.style.height = Math.min(h, 120) + 'px';
+    inp.style.overflowY = h > 120 ? 'auto' : 'hidden';
+    send.disabled = busy || !inp.value.trim();
+  };
   inp.oninput = grow;
   const submit = () => { const v = inp.value; inp.value = ''; grow(); talk(v); };
   send.onclick = () => { submit(); if (DESK) inp.focus(); };
@@ -2488,9 +2495,8 @@ function renderQuestion() {
     if (!b || !b.segs.length) return;
     box.appendChild(sentenceCard(b, ko, i + 1, false, false, w, i ? w.ex2src : w.ex1src));
   });
-  document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요'
-    : { same: '빈칸에 공통으로 들어갈 말은?', single: '빈칸에 들어갈 말은?',
-      diff: q.kind === 'type' ? '빈칸에 들어갈 단어는? (원형으로 써도 돼요)' : '빈칸에 들어갈 단어는? (문장에 맞게 형태가 바뀌어요)' }[blankForms(b1, b2, answerWordCount(w.blank))];
+  // 빈칸 문제는 위에 질문 줄을 안 씀 (빈칸만 봐도 앎). 빈칸을 못 만든 문제만 안내
+  document.querySelector('.q-prompt').textContent = noBlank ? '뜻에 맞는 말을 고르세요' : '';
   if (noBlank) box.innerHTML = ''; // 빈칸을 못 만든 예문은 정답이 보이므로 숨김
 
   const mEl = $('#q-meaning');
@@ -2639,7 +2645,7 @@ function renderWordQuestion(w) {
   $('#fb-head').hidden = true;
   const prompt = document.querySelector('.q-prompt');
   prompt.classList.remove('my-answer');
-  prompt.textContent = q.kind === 'type' ? '이 단어의 뜻을 써 보세요' : '이 단어의 뜻은?';
+  prompt.textContent = ''; // 단어만 봐도 뜻 묻는 문제인 걸 앎
   $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = dayTag(w);
@@ -3344,7 +3350,7 @@ function showFeedback(correct, given, kind, label) {
   head.className = 'tag fb-head ' + state;
   head.textContent = label;
   const prompt = document.querySelector('.q-prompt');
-  prompt.textContent = !correct && given ? `내 답: ${given}` : '\u00a0';
+  prompt.textContent = !correct && given ? `내 답: ${given}` : ''; // 비면 줄을 숨김 (style.css .q-prompt:empty)
   prompt.classList.toggle('my-answer', !correct && !!given);
   // 문장 카드에 정답 채우기
   const box = $('#q-sentences');
@@ -3560,8 +3566,11 @@ function askBox(cur) {
   const form = el('form', 'ask-form');
   const inp = el('input');
   Object.assign(inp, { type: 'text', placeholder: `${cur.w.word}에 대해 물어보기`, maxLength: 300, enterKeyHint: 'send', autocomplete: 'off' });
-  const send = el('button', 'btn primary small', '보내기');
+  const send = el('button', 'chat-send');
   send.type = 'submit';
+  send.innerHTML = ICON.send;
+  send.setAttribute('aria-label', '보내기');
+  send.title = '보내기';
   form.append(inp, send);
   const log = el('div', 'ask-log');
   box.append(chips, form, log);
