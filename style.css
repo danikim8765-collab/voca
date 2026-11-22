@@ -320,16 +320,55 @@ button { cursor: pointer; }
 .desk .quiz-actions.fit .choice { margin: 0; padding: 11px 14px; }
 .desk #quiz.active > .quiz-actions.fit { padding-bottom: 8px; }
 /* 설정: 카드 제목은 크게 */
-#settings .card { scroll-margin-top: 64px; }
-#settings .card > .label:first-child { font-size: 17px; font-weight: 800; color: var(--text); margin: 0 0 12px; }
-#settings .card .seg + .label, #settings .card .switch-row + div > .label:first-child { margin-top: 16px; }
+/* 설정: 묶음 제목은 카드 바깥 위에 작은 회색, 카드 안은 '이름 ─ 값' 줄 (app.js settingsRows) */
+#settings .card { scroll-margin-top: 64px; position: relative; margin-top: 34px; padding: 6px 20px; }
+#settings .card > .label:first-child { position: absolute; top: -25px; left: 6px; margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+#settings .card .label:not(:first-child) { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
+.set-row, #settings .switch-row, #settings .opt-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap;
+  min-height: 52px; padding: 8px 0; margin: 0; font-size: 16px; font-weight: 500; color: var(--text);
+}
+#settings .opt-row > span { font-size: 16px; font-weight: 500; color: var(--text); }
+.set-row .t { flex: 1 1 auto; min-width: 0; word-break: keep-all; }
+.set-row .d, #settings .switch-row .muted, #settings .switch-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
+#settings .set-row .seg { flex: none; margin: 0 0 0 auto; padding: 3px; gap: 2px; background: var(--fill); border-radius: 10px; }
+#settings .set-row .seg button { flex: none; padding: 6px 11px; font-size: 13px; white-space: nowrap; }
+#settings .set-row .seg button.on { background: var(--card); color: var(--text); box-shadow: none; }
+.set-row .seg.as-pick { display: none; }
+.set-val { flex: none; margin-left: auto; border: 0; background: none; padding: 8px 0; color: var(--muted); font-size: 15px; font-weight: 500; }
+.set-val::after { content: '›'; margin-left: 6px; font-size: 18px; opacity: .7; }
+/* 설정 카드 안의 작은 글자 버튼(처음대로·연결 끊기 등)은 줄처럼 */
+#settings .card .btn.ghost.small { display: flex; justify-content: flex-start; width: 100%; min-height: 48px; margin: 0; padding: 0; border-radius: 0; font-size: 15px; font-weight: 500; color: var(--text2); background: none; }
+#settings .card .btn.ghost.small:active { opacity: .6; transform: none; }
+/* 고르기 시트 */
+.dialog.pick-sheet { align-items: flex-end; padding: 0; }
+#settings .in-sheet { display: none !important; } /* 시트를 열 때만 시트 안으로 옮겨서 보임 */
+.pick-card {
+  width: 100%; max-width: 560px; max-height: 82dvh; overflow-y: auto; background: var(--card); color: var(--text);
+  border-radius: var(--r-2xl) var(--r-2xl) 0 0; padding: 10px 20px calc(env(safe-area-inset-bottom) + 20px);
+  box-shadow: var(--shadow-pop); animation: up .35s cubic-bezier(.22, 1, .36, 1);
+}
+.pick-card .grab { width: 36px; height: 4px; border-radius: 9px; background: var(--line); margin: 0 auto 16px; }
+.ps-title { font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
+.ps-desc { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.ps-body { margin-top: 12px; }
+.ps-opt { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 54px; padding: 0 4px; border: 0; background: none; color: var(--text); font-size: 16px; font-weight: 500; text-align: left; }
+.ps-opt::after { content: ''; width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--line); flex: none; }
+.ps-opt.on { font-weight: 700; }
+.ps-opt.on::after { border: 7px solid var(--primary); }
+.ps-opt:active { opacity: .6; }
+.ps-body .seg { margin: 4px 0 12px; }
+@media (min-width: 640px) { .dialog.pick-sheet { align-items: center; padding: 24px; } .pick-card { border-radius: var(--r-2xl); max-width: 440px; } }
 /* 설정: 위에 붙는 탭. 누른 탭의 카드만 보임 (app.js setTab) */
 .set-tabs {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; margin: 0 0 12px;
   box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg); /* 뒤로 지나가는 카드 가림 */
 }
 #settings .card.tab-off { display: none; }
-.set-tabs button { flex: 1 1 auto; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
+/* 탭은 밑줄 글자 */
+#settings .set-tabs { gap: 20px; padding: 0 4px; border-radius: 0; background: var(--bg); box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg), inset 0 -1px 0 var(--line); }
+#settings .set-tabs button { flex: none; white-space: nowrap; padding: 10px 0 11px; border-radius: 0; font-size: 16px; font-weight: 700; color: var(--muted); background: none; }
+#settings .set-tabs button.on { background: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
 /* 홈 맨 아래 고급 기능 스위치 */
 #home-adv { margin-top: 28px; }
 .desk #home-adv { grid-column: 1 / -1; }

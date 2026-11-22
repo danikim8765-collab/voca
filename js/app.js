@@ -145,6 +145,7 @@ function applyHomeLayout() {
   sum.hidden = pc.hidden = !ui.simpleHome;
 }
 applyHomeLayout();
+settingsRows();
 let session = null;
 let planFrom = null; // 학습 계획 화면을 설정에서 열었으면 ←가 설정으로
 let soloDay = null; // DAY 박스를 누르면 그 DAY만 따로 학습 (정규 카드 자리에 간단히)
@@ -1954,6 +1955,92 @@ async function editReviewToday() {
   save(KEY.day, day);
   viewStage = 'review';
   renderPlan();
+}
+
+// ---------- 설정 줄: 이름(왼쪽) ─ 값(오른쪽) ----------
+// 설정의 고르기 버튼(.seg)은 그대로 두고(기능 코드는 그대로) 모양만 줄로 바꿈.
+// 선택지가 둘셋이고 짧으면 줄 오른쪽에 작은 버튼으로, 많거나 길면 '값 ›' → 아래 시트에서 고름(시트에서 누르면 원래 버튼이 눌림).
+// 다시 나오기 표·단축키처럼 복잡한 건 '값 ›' → 시트 안으로 잠깐 옮겨서 보여 줌
+function openPickSheet(title, desc, fill) {
+  const d = $('#pick-sheet'), body = $('#ps-body');
+  $('#ps-title').textContent = title;
+  $('#ps-desc').textContent = desc || '';
+  $('#ps-desc').hidden = !desc;
+  body.innerHTML = '';
+  let restore = null;
+  const key = e => { if (e.key === 'Escape' && !document.querySelector('.key-chip.listening')) { e.preventDefault(); e.stopPropagation(); done(); } };
+  const close = () => {
+    d.hidden = true; d.onclick = null;
+    document.removeEventListener('keydown', key, true);
+    stopKeyCapture();
+    if (restore) { const r = restore; restore = null; r(); }
+  };
+  const done = () => { close(); modalDone(() => {}); };
+  restore = fill(body, done) || null;
+  d.hidden = false;
+  modalOpen(close);
+  d.onclick = e => { if (e.target === d) done(); };
+  document.addEventListener('keydown', key, true);
+}
+function settingsRows() {
+  const txt = n => n.textContent.replace(/\s+/g, ' ').trim();
+  // 값 글자가 바뀌면(설정을 다시 그리거나 다른 기기에서 맞춰질 때) 따라 바꿈
+  const watch = (node, upd) => { new MutationObserver(upd).observe(node, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'hidden'] }); upd(); };
+  const valBtn = () => { const v = el('button', 'set-val'); v.type = 'button'; return v; };
+  // 이름표에서 이름과 설명(괄호 속 흐린 글자)을 나눔
+  const split = lab => {
+    const m = lab.querySelector('.muted, small');
+    const name = [...lab.childNodes].filter(n => n !== m).map(n => n.textContent).join('').replace(/\s+/g, ' ').trim();
+    return { name, desc: m ? txt(m).replace(/^\((.*)\)$/, '$1') : '' };
+  };
+  const nameBox = ({ name, desc }) => { const t = el('span', 't', name); if (desc) t.appendChild(el('small', 'd', desc)); return t; };
+  // 1) 복잡한 덩어리 → 한 줄 + 시트
+  const detail = (name, nodes, value) => {
+    const row = el('div', 'set-row'), v = valBtn();
+    row.append(nameBox({ name, desc: '' }), v);
+    const home = nodes.map(n => [n, n.parentNode, n.nextSibling]);
+    nodes[0].before(row);
+    for (const n of nodes) n.classList.add('in-sheet');
+    v.addEventListener('click', () => openPickSheet(name, '', body => {
+      for (const n of nodes) body.appendChild(n);
+      return () => { for (const [n, p, next] of home) p.insertBefore(n, next && next.parentNode === p ? next : null); };
+    }));
+    watch(nodes[0], () => { const x = value(); if (v.textContent !== x) v.textContent = x; });
+  };
+  detail('다시 나올 때', [$('#again-preset'), $('#again-rows')], () => { const on = $('#again-preset button.on'); return on ? txt(on) : '직접 고름'; });
+  detail('단축키 바꾸기', [$('#key-rows'), $('#btn-keys-reset')], () => '');
+  // 2) 이름표 + 고르기 버튼 → 한 줄
+  for (const seg of document.querySelectorAll('#settings .card .seg')) {
+    if (seg.closest('.in-sheet') || seg.id === 'again-preset') continue;
+    const opt = seg.parentElement.classList.contains('opt-row') ? seg.parentElement : null;
+    const lab = opt ? opt.firstElementChild : seg.previousElementSibling;
+    if (!lab || (!opt && !lab.classList.contains('label'))) continue;
+    if (!opt && lab === lab.parentElement.firstElementChild && lab.parentElement.classList.contains('card')) continue; // 카드 제목
+    const info = split(lab);
+    const row = el('div', 'set-row');
+    const btns = [...seg.querySelectorAll('button')];
+    const chars = btns.reduce((n, b) => n + txt(b).length, 0);
+    if (btns.length >= 4 || chars > 11) {
+      const v = valBtn();
+      row.append(nameBox(info), v, seg);
+      seg.classList.add('as-pick');
+      watch(seg, () => { const on = seg.querySelector('button.on'), x = on ? txt(on) : '고르기'; if (v.textContent !== x) v.textContent = x; });
+      v.addEventListener('click', () => openPickSheet(info.name, info.desc, (body, done) => {
+        for (const b of seg.querySelectorAll('button')) {
+          if (b.hidden) continue;
+          const on = b.classList.contains('on');
+          const o = el('button', 'ps-opt' + (on ? ' on' : ''), txt(b));
+          o.type = 'button';
+          o.setAttribute('aria-pressed', on);
+          o.addEventListener('click', () => { b.click(); done(); });
+          body.appendChild(o);
+        }
+      }));
+    } else {
+      row.append(nameBox(info), seg);
+    }
+    (opt || lab).replaceWith(row);
+  }
 }
 
 function setSeg(sel, v) {

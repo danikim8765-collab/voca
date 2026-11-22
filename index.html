@@ -359,7 +359,7 @@
       <div data-only="ex">
         <div class="label">4지선다 선지 배치</div>
         <div class="seg" id="seg-layout">
-          <button data-v="grid">격자 (2×2)</button>
+          <button data-v="grid">격자</button>
           <button data-v="list">한 줄씩</button>
         </div>
       </div>
@@ -482,6 +482,7 @@
     </div>
     <div class="card" id="set-voice" data-tab="sound">
       <div class="label">발음</div>
+      <div class="label">억양</div>
       <div class="seg" id="seg-accent">
         <button data-v="en-US">미국식</button>
         <button data-v="en-GB">영국식</button>
@@ -580,6 +581,16 @@
     <button type="button" data-tab="settings" data-icon="gear" aria-label="설정" title="설정"><span class="tab-name" aria-hidden="true">설정</span></button>
   </nav>
 
+
+  <!-- 고르기 시트: 설정의 '값 ›'을 누르면 아래에서 올라옴 (app.js openPickSheet) -->
+  <div class="dialog pick-sheet" id="pick-sheet" role="dialog" aria-modal="true" aria-labelledby="ps-title" hidden>
+    <div class="pick-card">
+      <div class="grab"></div>
+      <div class="ps-title" id="ps-title"></div>
+      <p class="ps-desc" id="ps-desc"></p>
+      <div class="ps-body" id="ps-body"></div>
+    </div>
+  </div>
 
   <!-- 확인 창 (지우기 등) -->
   <!-- 숫자 키패드: 맨 위 카드의 새 단어·복습 수를 누르면. 폰·패드는 시스템 키보드 대신 이 키패드, 컴퓨터는 키패드 없이 숫자 치고 Enter -->
