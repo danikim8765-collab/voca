@@ -156,8 +156,8 @@ button { cursor: pointer; }
 
 .range { display: flex; align-items: center; gap: 8px; }
 .range select {
-  flex: 1; padding: 12px; border-radius: var(--r-md); border: 0;
-  background: var(--fill); font-size: 17px; font-weight: 700; appearance: none; text-align: center;
+  flex: 1; padding: 10px 12px; border-radius: var(--r-md); border: 0;
+  background: var(--fill); font-size: 16px; font-weight: 700; appearance: none; text-align: center;
 }
 .chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 /* 알약 버튼 한 모양: 칩 · 설정 바로가기 · 단어장 DAY 고르기 · 코치 대화 위 버튼. 고른 것(.on)은 테두리+옅은 바탕 */
@@ -178,7 +178,7 @@ button { cursor: pointer; }
 .seg { display: flex; background: var(--bg); border-radius: var(--r-md); padding: 4px; gap: 4px; margin-bottom: 12px; }
 .seg button { flex: 1; border: 0; background: transparent; padding: 8px 4px; border-radius: var(--r-sm); font-weight: 600; color: var(--muted); }
 .seg button.on { background: var(--card); color: var(--primary); box-shadow: var(--shadow); }
-.kind-note { margin: -2px 2px 12px; font-size: 13px; line-height: 1.45; }
+.kind-note { line-height: 1.45; }
 #settings .seg, #list .seg { background: var(--card); }
 #settings .seg button.on, #list .seg button.on { background: var(--primary-soft); }
 
@@ -229,7 +229,14 @@ button { cursor: pointer; }
 :root:not(.desk) .q-meta .tag.fb-head { flex: 0 1 auto; min-width: 0; white-space: normal; word-break: keep-all; overflow-wrap: anywhere; }
 .tag { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--primary-soft); border-radius: var(--r-sm); padding: 2px 8px; }
 .tag.warn { color: var(--warn); background: var(--warn-soft); }
-.q-prompt { font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+.q-prompt { font-size: 20px; font-weight: 800; letter-spacing: -.4px; line-height: 1.35; color: var(--text); margin: 2px 0 14px; }
+/* DAY·문제 종류는 작은 글자로 조용하게 (채점 결과·다시 나온 단어 표시는 그대로 색 띠) */
+.q-meta #q-day, .q-meta .kind-tag:not(.syn):not(.ant) { background: none; padding: 2px 0; color: var(--muted); font-weight: 600; font-size: 13px; }
+.q-meta #q-day + .kind-tag:not([hidden]):not(.syn):not(.ant)::before { content: '· '; }
+/* 힌트·모르겠어요: 보기 위 오른쪽 아이콘 */
+.quiz-body > .q-tools { justify-content: flex-end; margin: 4px 0 2px; }
+/* 폰·패드: 보기 번호는 빼고 (컴퓨터는 숫자 키로 고르니 그대로) */
+:root:not(.desk) .choice .n { display: none; }
 .sent { background: var(--card); border-radius: var(--r-xl); padding: 16px 18px; margin-bottom: 10px; box-shadow: var(--shadow); }
 .sent .en { font-size: calc(19px * var(--fz)); line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere; }
 .sent .ko { font-size: calc(15px * var(--fz)); color: var(--muted); margin-top: 8px; }
@@ -297,7 +304,7 @@ button { cursor: pointer; }
 @media (max-width: 699px) and (max-height: 640px) {
   .quiz-top { margin-bottom: 6px; }
   .q-meta { margin-bottom: 6px; }
-  .q-prompt { font-size: 13px; margin-bottom: 8px; }
+  .q-prompt { font-size: 17px; margin-bottom: 8px; }
   .sent { padding: 12px 14px; margin-bottom: 8px; border-radius: var(--r-lg); }
   .sent .en { font-size: calc(17px * var(--fz)); line-height: 1.6; }
   .sent .ko { font-size: calc(13.5px * var(--fz)); margin-top: 6px; }
@@ -313,16 +320,58 @@ button { cursor: pointer; }
 .desk .quiz-actions.fit .choice { margin: 0; padding: 11px 14px; }
 .desk #quiz.active > .quiz-actions.fit { padding-bottom: 8px; }
 /* 설정: 카드 제목은 크게 */
+/* 설정: 묶음 제목은 카드 바깥 위에 작은 회색, 카드 안은 '이름 ─ 값' 줄 (app.js settingsRows) */
 #settings .card { scroll-margin-top: 64px; }
-#settings .card > .label:first-child { font-size: 17px; font-weight: 800; color: var(--text); margin: 0 0 12px; }
-#settings .card .seg + .label, #settings .card .switch-row + div > .label:first-child { margin-top: 16px; }
+:is(#settings, #plan) .card { position: relative; margin-top: 34px; padding: 6px 20px; }
+:is(#settings, #plan) .card > .label:first-child { position: absolute; top: -25px; left: 6px; margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+:is(#settings, #plan) .card .label:not(:first-child) { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
+#plan #card-range { padding: 16px 20px 18px; }
+.set-row, :is(#settings, #plan) .switch-row, #settings .opt-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap;
+  min-height: 52px; padding: 8px 0; margin: 0; font-size: 16px; font-weight: 500; color: var(--text);
+}
+#settings .opt-row > span { font-size: 16px; font-weight: 500; color: var(--text); }
+.set-row .t { flex: 1 1 auto; min-width: 0; word-break: keep-all; }
+:is(#settings, #plan) .switch-row > span { flex: 1 1 0; min-width: 0; word-break: keep-all; } /* 설명이 길어도 스위치는 오른쪽에 */
+.set-row .d, :is(#settings, #plan) .switch-row .muted, :is(#settings, #plan) .switch-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
+:is(#settings, #plan, #home) .set-row .seg { flex: none; margin: 0 0 0 auto; padding: 3px; gap: 2px; background: var(--fill); border-radius: 10px; }
+:is(#settings, #plan, #home) .set-row .seg button { flex: none; padding: 6px 11px; font-size: 13px; white-space: nowrap; }
+:is(#settings, #plan, #home) .set-row .seg button.on { background: var(--card); color: var(--text); box-shadow: none; }
+.set-row .seg.as-pick { display: none; }
+.set-val { flex: none; margin-left: auto; border: 0; background: none; padding: 8px 0; color: var(--muted); font-size: 15px; font-weight: 500; }
+.set-val::after { content: '›'; margin-left: 6px; font-size: 18px; opacity: .7; }
+/* 설정 카드 안의 작은 글자 버튼(처음대로·연결 끊기 등)은 줄처럼 */
+#settings .card .btn.ghost.small { display: flex; justify-content: flex-start; width: 100%; min-height: 48px; margin: 0; padding: 0; border-radius: 0; font-size: 15px; font-weight: 500; color: var(--text2); background: none; }
+#settings .card .btn.ghost.small:active { opacity: .6; transform: none; }
+/* 고르기 시트 */
+.dialog.pick-sheet { align-items: flex-end; padding: 0; }
+#settings .in-sheet { display: none !important; } /* 시트를 열 때만 시트 안으로 옮겨서 보임 */
+.pick-card {
+  width: 100%; max-width: 560px; max-height: 82dvh; overflow-y: auto; background: var(--card); color: var(--text);
+  border-radius: var(--r-2xl) var(--r-2xl) 0 0; padding: 10px 20px calc(env(safe-area-inset-bottom) + 20px);
+  box-shadow: var(--shadow-pop); animation: up .35s cubic-bezier(.22, 1, .36, 1);
+}
+.pick-card .grab { width: 36px; height: 4px; border-radius: 9px; background: var(--line); margin: 0 auto 16px; }
+.ps-title { font-size: 20px; font-weight: 800; letter-spacing: -.3px; }
+.ps-desc { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.ps-body { margin-top: 12px; }
+.ps-opt { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 54px; padding: 0 4px; border: 0; background: none; color: var(--text); font-size: 16px; font-weight: 500; text-align: left; }
+.ps-opt::after { content: ''; width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--line); flex: none; }
+.ps-opt.on { font-weight: 700; }
+.ps-opt.on::after { border: 7px solid var(--primary); }
+.ps-opt:active { opacity: .6; }
+.ps-body .seg { margin: 4px 0 12px; }
+@media (min-width: 640px) { .dialog.pick-sheet { align-items: center; padding: 24px; } .pick-card { border-radius: var(--r-2xl); max-width: 440px; } }
 /* 설정: 위에 붙는 탭. 누른 탭의 카드만 보임 (app.js setTab) */
 .set-tabs {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4; margin: 0 0 12px;
   box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg); /* 뒤로 지나가는 카드 가림 */
 }
 #settings .card.tab-off { display: none; }
-.set-tabs button { flex: 1 1 auto; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
+/* 탭은 밑줄 글자 */
+#settings .set-tabs { gap: 20px; padding: 0 4px; border-radius: 0; background: var(--bg); box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg), inset 0 -1px 0 var(--line); }
+#settings .set-tabs button { flex: none; white-space: nowrap; padding: 10px 0 11px; border-radius: 0; font-size: 16px; font-weight: 700; color: var(--muted); background: none; }
+#settings .set-tabs button.on { background: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
 /* 홈 맨 아래 고급 기능 스위치 */
 #home-adv { margin-top: 28px; }
 .desk #home-adv { grid-column: 1 / -1; }
@@ -401,11 +450,40 @@ button { cursor: pointer; }
 
 /* 결과/단어장 */
 .cheer { font-size: 22px; font-weight: 800; letter-spacing: -.3px; color: var(--text); margin-bottom: 4px; }
-.res-cheer { padding: 24px 16px; }
+.res-cheer { padding: 24px 16px 22px; }
+.res-stats { display: flex; margin-top: 18px; }
+.res-stats > div { flex: 1; min-width: 0; }
+.res-stats b { display: block; font-size: 30px; font-weight: 800; letter-spacing: -.6px; line-height: 1.2; }
+.res-stats span { font-size: 13px; color: var(--muted); }
+.res-stats .ok b { color: var(--ok); }
+.res-stats .bad b { color: var(--bad); }
+#res-detail:empty { display: none; }
+#res-detail { margin-top: 12px; }
+#res-wrong-label { margin: 22px 8px 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+#res-wrong .item:not(.open) .rel { display: none; }
 .list { margin-bottom: 90px; }
 .item { background: var(--card); border-radius: var(--r-lg); padding: 12px 14px; margin-bottom: 8px; box-shadow: var(--shadow); }
 /* 단어장은 1000줄이라 화면 밖 줄은 그리기를 건너뜀 (스크롤이 가벼워짐) */
-#word-list > .item { content-visibility: auto; contain-intrinsic-size: auto 92px; }
+#word-list .day-group > .item { content-visibility: auto; contain-intrinsic-size: auto 74px; }
+/* 단어장: DAY 하나 = 카드 하나, 단어는 줄 (사이에 아주 옅은 줄) */
+.day-group { background: var(--card); border-radius: var(--r-xl); overflow: hidden; box-shadow: var(--shadow); }
+:root[data-edge="line"] .day-group { border: 1px solid var(--line); }
+.day-group > .item { background: none; border: 0 !important; border-radius: 0; margin: 0; padding: 14px 18px; box-shadow: none; }
+.day-group > .item + .item { box-shadow: inset 0 1px 0 var(--line); }
+#word-list .item:not(.open) .rel { display: none; } /* 유의어·반의어는 펼쳤을 때만 */
+/* 거르기 한 줄: DAY ▾ + 칩 */
+.book-filters { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px 6px; padding: 2px 16px 4px; }
+.book-filters::-webkit-scrollbar { display: none; }
+.book-day-btn { flex: none; background: var(--primary-soft) !important; color: var(--primary); font-weight: 700; }
+.book-day-btn::after { content: ''; width: 0; height: 0; margin-left: 2px; border: 4px solid transparent; border-top: 5px solid currentColor; border-bottom: 0; }
+.book-day-btn.dim { opacity: .45; }
+#list .book-filters .seg { flex: none; display: flex; gap: 6px; margin: 0; padding: 0; background: none; box-shadow: none; }
+#list .book-filters .seg button { flex: none; min-height: var(--chip-h); padding: 0 14px; border-radius: var(--r-pill); background: var(--card); color: var(--text2); font-size: 14px; font-weight: 600; box-shadow: none; }
+#list .book-filters .seg button.on { background: var(--text); color: var(--bg); }
+#list > #book-days { display: none; } /* DAY는 시트에서 고름 (app.js openBookDays) */
+.ps-body .day-pick { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 4px 0 0; padding: 0; overflow: visible; }
+.ps-body .dp { min-width: 0; min-height: 44px; border-radius: var(--r-md); background: var(--fill); color: var(--text); font-size: 15px; }
+.ps-body .dp.on { background: var(--primary); color: var(--on-primary); }
 .item-head { display: flex; align-items: center; gap: 10px; }
 .item-main { flex: 1; min-width: 0; }
 .item .w { font-weight: 800; font-size: 17px; }
@@ -414,10 +492,10 @@ button { cursor: pointer; }
 .item .detail { margin-top: 10px; font-size: 15px; }
 .item .detail .sent { background: var(--bg); box-shadow: none; padding: 10px 12px; }
 .item .detail .sent .en { font-size: calc(15px * var(--fz)); }
-.dots { display: flex; gap: 3px; margin-top: 4px; }
-.dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
-.dots i.on { background: var(--primary); }
-.badge-wrong { font-size: 12px; color: var(--bad); font-weight: 700; }
+/* 단어 상태 (새 단어 · 틀림 n · 암기 완료 · n단계) */
+.w-state { flex: none; font-size: 12px; font-weight: 700; color: var(--muted); background: var(--fill); padding: 3px 8px; border-radius: var(--r-pill); white-space: nowrap; }
+.w-state.bad { color: var(--bad); background: var(--bad-soft); }
+.w-state.ok { color: var(--ok); background: var(--ok-soft); }
 .mark { color: var(--primary); font-weight: 800; }
 .sticky-bottom {
   position: fixed; left: 0; right: 0; bottom: 0; max-width: none;
@@ -474,7 +552,7 @@ input[type=range] { width: 100%; accent-color: var(--primary); margin-bottom: 8p
   .sent { padding: 20px 24px; }
   .sent .en { font-size: calc(24px * var(--fz)); }
   .sent .ko { font-size: calc(17px * var(--fz)); }
-  .q-prompt { font-size: 16px; }
+  .q-prompt { font-size: 24px; }
   .choice { font-size: calc(20px * var(--fz)); padding: 16px 18px; }
   .btn.big { font-size: 20px; padding: 19px; }
   .key { height: calc(58px * var(--key-k)); font-size: 24px; border-radius: var(--r-md); }
@@ -537,7 +615,7 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .tag.fb-head.ok { color: var(--on-ok); background: var(--ok); }
 .tag.fb-head.bad { color: var(--on-bad); background: var(--bad); }
 .tag.fb-head.copied, .tag.fb-head.hint { color: var(--on-warn); background: var(--warn); }
-.q-prompt.my-answer { color: var(--bad); font-weight: 700; }
+.q-prompt.my-answer { color: var(--bad); font-weight: 700; font-size: 15px; letter-spacing: 0; }
 /* 단어·탭·계속하기는 고정, 뜻/예문 내용만 스크롤 */
 .sheet-inner > * { flex: none; }
 .sheet-inner > .fb-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -548,8 +626,8 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .fb-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 12px 0 14px; }
 .fb-tabs button { border: 0; background: none; padding: 8px 2px; font-size: 16px; font-weight: 700; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
 .fb-tabs button.on { color: var(--text); border-bottom-color: var(--text); }
-.fb-card { background: var(--bg); border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 10px; }
-.fb-meaning { font-size: calc(18px * var(--fz)); font-weight: 700; margin: 6px 0 4px; white-space: pre-line; }
+.fb-card { background: var(--fill); border-radius: var(--r-lg); padding: 14px 16px; margin-bottom: 10px; }
+.fb-meaning { font-size: calc(20px * var(--fz)); font-weight: 700; line-height: 1.5; letter-spacing: -.2px; margin: 6px 0 4px; white-space: pre-line; }
 .fb-tags { display: flex; gap: 6px; justify-content: flex-end; }
 .fb-pane .sent { background: var(--bg); box-shadow: none; }
 .fb-pane .sent .en { font-size: calc(17px * var(--fz)); }
@@ -559,11 +637,11 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 #q-sentences.answered.bad .blank.filled { background: rgba(250, 82, 82, .16); }
 
 /* 정답 화면 아래: 🔊 + 계속하기 */
-.fb-actions { display: flex; gap: 10px; margin: 6px 0 4px; }
+.fb-actions { display: flex; gap: 10px; margin: 10px 0 4px; }
+.mark-btn.speak-ic { background: var(--primary-soft); color: var(--primary); }
+.mark-btn.speak-ic .ic { position: relative; z-index: 1; width: 19px; height: 19px; }
+.mark-btn.speak-ic:active { transform: scale(.92); }
 .fb-actions .next-btn { flex: 1; margin: 0; }
-.speak-btn { flex: none; width: 64px; border: 0; border-radius: var(--r-lg); background: var(--primary-soft); color: var(--primary); display: grid; place-items: center; padding: 0; }
-.speak-btn .ic { width: 24px; height: 24px; }
-.speak-btn:active { transform: scale(.95); }
 
 /* 오늘의 학습 */
 .today { padding: 22px 20px 20px; }
@@ -797,11 +875,20 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .srs-dates { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: end; }
 .srs-dates label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
 /* iPad·아이폰 사파리의 날짜 칸은 자체 최소 너비가 있어서 옆 칸·카드 밖으로 삐져나감 → 기본 모양을 끄고 칸 너비에 맞춤 */
-.srs-dates .date-input, .exam-row .date-input {
+.srs-dates .date-input {
   display: block; width: 100%; max-width: 100%; min-width: 0; overflow: hidden;
   -webkit-appearance: none; appearance: none; color: var(--text); text-align: left; min-height: 46px;
 }
 .date-input::-webkit-date-and-time-value { text-align: left; }
+/* 학습 계획의 날짜 줄: 이름(왼쪽) ─ 날짜 칸(오른쪽) */
+.date-row .row-date {
+  flex: 0 0 auto; width: 9.5em; min-width: 0; max-width: 60%; margin-left: auto; min-height: 40px; padding: 8px 12px;
+  -webkit-appearance: none; appearance: none; color: var(--text); font-size: 15px; text-align: left; overflow: hidden;
+}
+.date-row .t { cursor: pointer; }
+.date-row .mark-btn { width: 34px; height: 34px; }
+.date-row .mark-btn .ic { width: 16px; height: 16px; position: relative; z-index: 1; }
+#exam-dn { color: var(--primary); font-weight: 700; }
 .srs-warn { font-size: 13px; color: var(--warn); margin: 8px 0 0; }
 .key-err { white-space: pre-line; overflow-wrap: anywhere; margin: 0 0 8px; }
 .srs-graph svg { width: 100%; max-width: 520px; height: auto; display: block; margin: 0 auto 8px; } /* 넓은 화면에서 글자가 커지지 않게 */
@@ -913,7 +1000,7 @@ html:not(.desk) .desk-only { display: none; }
 /* AI 탭: 빠른 질문·입력칸은 위에 고정, 이야기만 스크롤. 계속하기 줄은 낮게 */
 .sheet-inner > #fb-ai:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
 #feedback[data-tab="ai"] .fb-tabs { margin-bottom: 10px; }
-#feedback[data-tab="ai"] .fb-actions .speak-btn, #feedback[data-tab="ai"] .fb-actions .next-btn { height: 46px; padding-top: 0; padding-bottom: 0; font-size: 16px; }
+#feedback[data-tab="ai"] .fb-actions .next-btn { height: 46px; padding-top: 0; padding-bottom: 0; font-size: 16px; }
 #feedback[data-tab="ai"] .fb-actions { margin-top: 10px; }
 /* 폰에서 AI 칸에 쓰는 중: 키보드 위로 시트를 채우고, 단어 머리는 작게, 아래 버튼 줄은 숨김 */
 #feedback.typing .sheet-inner { animation: none; border-radius: var(--r-xl) var(--r-xl) 0 0; }
@@ -1041,7 +1128,7 @@ body[data-tint] {
 .talk-opts { margin-top: 4px; text-align: left; }
 .rest-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
 .rest-chip { min-width: 38px; justify-content: center; }
-.res-say { position: relative; max-width: 420px; margin: 4px auto 10px; padding: 10px 14px; background: var(--bg); border-radius: var(--r-lg); font-size: 15px; line-height: 1.55; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
+.res-say { position: relative; max-width: 420px; margin: 4px auto 10px; padding: 10px 14px; background: var(--fill); border-radius: var(--r-lg); font-size: 15px; line-height: 1.55; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
 .res-say.wait { text-align: center; color: var(--muted); }
 .talk-opts .preset { padding: 10px 2px; }
 .talk-opts .p-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1103,7 +1190,6 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 .mem-del { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 6px; }
 #cc-wipe { align-self: flex-start; margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .chat-msg.typing i { animation: none; } }
-.coach-row { margin-bottom: 6px; }
 #btn-coach-replan { margin: 0 0 8px; }
 /* 다시 나오기: 상황(줄) × 때(칸) 표. 칸은 코치 고르기처럼 테두리로 고름 */
 .again-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 6px; align-items: center; background: var(--bg); border-radius: var(--r-md); padding: 10px 8px; margin-bottom: 8px; }

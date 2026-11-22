@@ -142,9 +142,11 @@ function applyHomeLayout() {
     range.appendChild(prog);
   }
   range.after(kind);
+  kind.after($('#regular-opts')); // 하루 분량도 문제 카드 바로 아래에 같이 다님
   sum.hidden = pc.hidden = !ui.simpleHome;
 }
 applyHomeLayout();
+settingsRows();
 let session = null;
 let planFrom = null; // 학습 계획 화면을 설정에서 열었으면 ←가 설정으로
 let soloDay = null; // DAY 박스를 누르면 그 DAY만 따로 학습 (정규 카드 자리에 간단히)
@@ -568,8 +570,13 @@ function renderHome() {
   $('#opt-review-mix').checked = !!settings.reviewMix;
   setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
-  setSeg('#seg-rev', String(settings.reviewSize));
   $('#exam-date').value = settings.exam || '';
+  // 시험일 옆 D-n, 목표일(코치가 꺼져 있을 때만 직접 정함 — 설정 > 복습의 목표일과 같은 값)
+  const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
+  $('#exam-dn').textContent = dn == null ? '' : dn > 0 ? `D-${dn}` : dn === 0 ? 'D-day' : '지났어요';
+  $('#exam-dn').hidden = dn == null;
+  $('#plan-goal-row').hidden = !!settings.coach;
+  $('#plan-goal-date').value = settings.goal || '';
   renderPlan();
 
   const rw = rangeWords();
@@ -596,7 +603,7 @@ function renderHome() {
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     ...(coachActive()
       ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 전체 복습 중'])
-      : [`새 단어 ${settings.newPerDay}`, srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`]),
+      : [`새 단어 ${settings.newPerDay}`, ...(srsOn() ? ['주기 복습'] : [])]),
   ].join(' · ')));
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
@@ -1954,6 +1961,92 @@ async function editReviewToday() {
   save(KEY.day, day);
   viewStage = 'review';
   renderPlan();
+}
+
+// ---------- 설정 줄: 이름(왼쪽) ─ 값(오른쪽) ----------
+// 설정의 고르기 버튼(.seg)은 그대로 두고(기능 코드는 그대로) 모양만 줄로 바꿈.
+// 선택지가 둘셋이고 짧으면 줄 오른쪽에 작은 버튼으로, 많거나 길면 '값 ›' → 아래 시트에서 고름(시트에서 누르면 원래 버튼이 눌림).
+// 다시 나오기 표·단축키처럼 복잡한 건 '값 ›' → 시트 안으로 잠깐 옮겨서 보여 줌
+function openPickSheet(title, desc, fill) {
+  const d = $('#pick-sheet'), body = $('#ps-body');
+  $('#ps-title').textContent = title;
+  $('#ps-desc').textContent = desc || '';
+  $('#ps-desc').hidden = !desc;
+  body.innerHTML = '';
+  let restore = null;
+  const key = e => { if (e.key === 'Escape' && !document.querySelector('.key-chip.listening')) { e.preventDefault(); e.stopPropagation(); done(); } };
+  const close = () => {
+    d.hidden = true; d.onclick = null;
+    document.removeEventListener('keydown', key, true);
+    stopKeyCapture();
+    if (restore) { const r = restore; restore = null; r(); }
+  };
+  const done = () => { close(); modalDone(() => {}); };
+  restore = fill(body, done) || null;
+  d.hidden = false;
+  modalOpen(close);
+  d.onclick = e => { if (e.target === d) done(); };
+  document.addEventListener('keydown', key, true);
+}
+function settingsRows() {
+  const txt = n => n.textContent.replace(/\s+/g, ' ').trim();
+  // 값 글자가 바뀌면(설정을 다시 그리거나 다른 기기에서 맞춰질 때) 따라 바꿈
+  const watch = (node, upd) => { new MutationObserver(upd).observe(node, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'hidden'] }); upd(); };
+  const valBtn = () => { const v = el('button', 'set-val'); v.type = 'button'; return v; };
+  // 이름표에서 이름과 설명(괄호 속 흐린 글자)을 나눔
+  const split = lab => {
+    const m = lab.querySelector('.muted, small');
+    const name = [...lab.childNodes].filter(n => n !== m).map(n => n.textContent).join('').replace(/\s+/g, ' ').trim();
+    return { name, desc: m ? txt(m).replace(/^\((.*)\)$/, '$1') : '' };
+  };
+  const nameBox = ({ name, desc }) => { const t = el('span', 't', name); if (desc) t.appendChild(el('small', 'd', desc)); return t; };
+  // 1) 복잡한 덩어리 → 한 줄 + 시트
+  const detail = (name, nodes, value) => {
+    const row = el('div', 'set-row'), v = valBtn();
+    row.append(nameBox({ name, desc: '' }), v);
+    const home = nodes.map(n => [n, n.parentNode, n.nextSibling]);
+    nodes[0].before(row);
+    for (const n of nodes) n.classList.add('in-sheet');
+    v.addEventListener('click', () => openPickSheet(name, '', body => {
+      for (const n of nodes) body.appendChild(n);
+      return () => { for (const [n, p, next] of home) p.insertBefore(n, next && next.parentNode === p ? next : null); };
+    }));
+    watch(nodes[0], () => { const x = value(); if (v.textContent !== x) v.textContent = x; });
+  };
+  detail('다시 나올 때', [$('#again-preset'), $('#again-rows')], () => { const on = $('#again-preset button.on'); return on ? txt(on) : '직접 고름'; });
+  detail('단축키 바꾸기', [$('#key-rows'), $('#btn-keys-reset')], () => '');
+  // 2) 이름표 + 고르기 버튼 → 한 줄
+  for (const seg of document.querySelectorAll('#settings .card .seg')) {
+    if (seg.closest('.in-sheet') || seg.id === 'again-preset') continue;
+    const opt = seg.parentElement.classList.contains('opt-row') ? seg.parentElement : null;
+    const lab = opt ? opt.firstElementChild : seg.previousElementSibling;
+    if (!lab || (!opt && !lab.classList.contains('label'))) continue;
+    if (!opt && lab === lab.parentElement.firstElementChild && lab.parentElement.classList.contains('card')) continue; // 카드 제목
+    const info = split(lab);
+    const row = el('div', 'set-row');
+    const btns = [...seg.querySelectorAll('button')];
+    const chars = btns.reduce((n, b) => n + txt(b).length, 0);
+    if (btns.length >= 4 || chars > 11) {
+      const v = valBtn();
+      row.append(nameBox(info), v, seg);
+      seg.classList.add('as-pick');
+      watch(seg, () => { const on = seg.querySelector('button.on'), x = on ? txt(on) : '고르기'; if (v.textContent !== x) v.textContent = x; });
+      v.addEventListener('click', () => openPickSheet(info.name, info.desc, (body, done) => {
+        for (const b of seg.querySelectorAll('button')) {
+          if (b.hidden) continue;
+          const on = b.classList.contains('on');
+          const o = el('button', 'ps-opt' + (on ? ' on' : ''), txt(b));
+          o.type = 'button';
+          o.setAttribute('aria-pressed', on);
+          o.addEventListener('click', () => { b.click(); done(); });
+          body.appendChild(o);
+        }
+      }));
+    } else {
+      row.append(nameBox(info), seg);
+    }
+    (opt || lab).replaceWith(row);
+  }
 }
 
 function setSeg(sel, v) {
@@ -3582,17 +3675,23 @@ function finishSession() {
   $('#feedback').hidden = true;
   const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
   $('#res-title').textContent = `${s.label} 끝`;
-  $('#res-detail').textContent = `${s.total}단어를 다 봤어요.`;
+  $('#res-detail').textContent = '';
+  $('#res-total').textContent = s.total;
+  $('#res-ok').textContent = Math.max(0, s.total - wrong.length);
+  $('#res-bad').textContent = wrong.length;
   const rk = $('#res-buddy');
   rk.hidden = !settings.coach;
   if (settings.coach) rk.innerHTML = coachSvg(wrong.length ? 'normal' : 'cheer');
   resultComment(s, wrong);
-  $('#res-wrong-label').textContent = wrong.length ? `틀렸거나 헷갈린 단어 ${wrong.length}개 · 한 번씩만 더 보고 가요` : '';
+  $('#res-wrong-label').textContent = wrong.length ? '한 번씩만 더 보고 가요' : '';
   const list = $('#res-wrong');
   list.innerHTML = '';
   if (!wrong.length) list.appendChild(el('div', 'card center muted', '틀린 단어 없이 다 맞혔어요 👏'));
   const view = bookView();
-  for (const id of wrong) list.appendChild(wordItem(byId.get(id), view));
+  // 단어장처럼 카드 하나에 줄로 (누르면 예문이 펼쳐짐)
+  const group = el('div', 'day-group');
+  for (const id of wrong) group.appendChild(wordItem(byId.get(id), view));
+  if (wrong.length) list.appendChild(group);
   // 틀린 게 있으면 그 단어만 한 번 더, 없으면 다음 할 일(오늘의 복습 · 더 하기)로
   const again = $('#btn-res-again');
   const f = flowState();
@@ -3657,7 +3756,6 @@ function wordItem(w, view = bookView(), onMark) {
   const main = el('div', 'item-main');
   const top = el('div');
   top.appendChild(el('span', 'w', w.word));
-  if (s.w) top.append(' ', el('span', 'badge-wrong', `✕${s.w}`));
   main.append(top, el('div', 'm', [w.pos, w.meaning].filter(Boolean).join(' ')));
   // 유의어(초록) · 반의어(빨강)
   if (syn || ant) {
@@ -3666,10 +3764,11 @@ function wordItem(w, view = bookView(), onMark) {
     if (ant) { const x = el('span', 'ant'); x.append(el('b', null, '반'), ant); rel.appendChild(x); }
     main.appendChild(rel);
   }
-  const dots = el('div', 'dots');
-  for (let i = 1; i <= maxStage(); i++) dots.appendChild(el('i', s.st >= i ? 'on' : ''));
-  main.appendChild(dots);
-  head.append(main, markBtn(w.id, onMark), speakBtn(w.word));
+  // 상태: 새 단어 · 틀림 n(다시 볼 단어) · 암기 완료 · n단계 (예전의 점 네 개 대신 글자로)
+  const [stTxt, stCls] = !s.seen ? ['새 단어', ''] : s.wrong ? [`틀림 ${s.w || 1}`, 'bad'] : s.st >= maxStage() ? ['암기 완료', 'ok'] : [`${s.st}단계`, ''];
+  const stEl = el('span', 'w-state' + (stCls ? ' ' + stCls : ''), stTxt);
+  if (s.seen) stEl.title = `복습 단계 ${s.st}/${maxStage()}` + (s.w ? ` · 틀린 횟수 ${s.w}` : '');
+  head.append(main, stEl, markBtn(w.id, onMark), speakBtn(w.word));
   item.appendChild(head);
   item.addEventListener('click', () => {
     if (!ui.bookOpened) { ui.bookOpened = true; save(UI_KEY, ui); const tip = $('#list-tip'); if (tip) tip.hidden = true; }
@@ -3742,9 +3841,26 @@ function setBookDays(set) {
   renderList();
 }
 
+// 'DAY ▾' 버튼 글자: 전체 · DAY 26 · DAY 26~37(이어진 범위) · DAY 3개
+function bookDayLabel(sel) {
+  const list = days.filter(d => sel.has(d));
+  if (!list.length) return 'DAY 고르기';
+  if (list.length === days.length && days.length > 1) return '전체 DAY';
+  if (list.length === 1) return `DAY ${list[0]}`;
+  const i0 = days.indexOf(list[0]);
+  return list.every((d, k) => days[i0 + k] === d) ? `DAY ${list[0]}~${list[list.length - 1]}` : `DAY ${list.length}개`;
+}
+function openBookDays() {
+  const box = $('#book-days'), home = [box.parentNode, box.nextSibling];
+  openPickSheet('볼 DAY', '여러 개 고를 수 있어요', body => {
+    body.appendChild(box);
+    return () => home[0].insertBefore(box, home[1]);
+  });
+}
 function renderBookDays(scrollToSel) {
   const box = $('#book-days');
   const sel = bookDays();
+  $('#book-day-btn').textContent = bookDayLabel(sel);
   const keep = box.scrollLeft;
   box.innerHTML = '';
   const all = el('button', 'dp all' + (sel.size === days.length ? ' on' : ''), '전체');
@@ -3781,6 +3897,7 @@ function renderList(scrollToSel) {
   const qy = bookQuery.trim().toLowerCase();
   const hit = w => w.word.toLowerCase().includes(qy) || w.meaning.toLowerCase().includes(qy) || w.extras.some(([, v]) => String(v).toLowerCase().includes(qy));
   $('#book-days').classList.toggle('dim', !!qy);
+  $('#book-day-btn').classList.toggle('dim', !!qy);
   const filtered = (qy ? words.filter(hit) : bw).filter(w => {
     const s = view(w.id);
     if (listFilter === 'wrong') return s.wrong;
@@ -3812,7 +3929,7 @@ function renderList(scrollToSel) {
   const count = {};
   for (const w of filtered) count[w.day] = (count[w.day] || 0) + 1;
   const hasRec = new Set(words.filter(w => view(w.id).seen).map(w => w.day));
-  let lastDay = null;
+  let lastDay = null, group = null;
   const add = w => {
     if (w.day !== lastDay) {
       const h = el('div', 'day-head');
@@ -3823,10 +3940,11 @@ function renderList(scrollToSel) {
         del.addEventListener('click', () => deleteDayRecords(d));
         h.appendChild(del);
       }
-      box.appendChild(h);
+      group = el('div', 'day-group');
+      box.append(h, group);
       lastDay = w.day;
     }
-    box.appendChild(wordItem(w, view, updateTest));
+    group.appendChild(wordItem(w, view, updateTest));
   };
   let i = 0;
   const step = n => {
@@ -4300,7 +4418,6 @@ function bind() {
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
-  onSeg('#seg-rev', v => { settings.reviewSize = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
   $('#today-flow').addEventListener('click', e => {
     const sp = e.target.closest('span[data-s]');
@@ -4349,6 +4466,7 @@ function bind() {
     else goHome();
   });
   onSeg('#seg-filter', v => { listFilter = v; renderList(); });
+  $('#book-day-btn').addEventListener('click', openBookDays);
 
   $('#btn-quit').addEventListener('click', quitQuiz);
   $('#btn-hint').addEventListener('click', useHint);
@@ -4507,6 +4625,7 @@ function bind() {
   const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
   $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); });
   $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
+  $('#plan-goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); renderHome(); });
   $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); if (coachActive()) planCoach(true); coachMoved = false; srsChanged(); });
   // 단어 코치: 설정과 학습 계획 화면의 스위치, 일정 다시 짜기, 캐릭터를 누르면 폴짝
   $('#opt-coach').addEventListener('change', e => toggleCoach(e.target.checked));
