@@ -214,7 +214,7 @@
           <button data-v="type">직접 입력</button>
         </div>
       </div>
-      <label class="switch-row"><span>복습은 외운 단어만 4지선다<small class="x-desc kind-note">두 번 넘게 맞힌 단어는 4지선다로 빨리 떠올리고, 덜 외운 단어·틀린 단어는 직접 입력으로 써 봐요. 새 단어는 위 방식대로.</small></span><input type="checkbox" role="switch" class="switch" id="opt-review-mix"></label>
+      <label class="switch-row"><span>복습은 외운 단어만 4지선다<small class="x-desc kind-note">직접 입력을 한 번에 맞힌 단어는 다음 복습부터 4지선다로 뜻만 떠올리고, 틀리거나 힌트를 쓴 단어는 한 번에 맞힐 때까지 직접 입력. 맞히면 졸업하는 문제는 직접 입력. 새 단어는 위 방식대로.</small></span><input type="checkbox" role="switch" class="switch" id="opt-review-mix"></label>
       <div class="set-row" data-only="ex"><span class="t">예문 해석</span>
         <div class="seg" id="seg-ko">
           <button data-v="show">보이기</button>
@@ -321,7 +321,7 @@
     <header class="top">
       <button class="icon-btn" id="btn-list-back" aria-label="뒤로" data-icon="back"></button>
       <h1 id="list-title">단어장</h1>
-      <span></span>
+      <button class="icon-btn" id="btn-list-my" aria-label="내 단어 올리기" title="내 단어 올리기" data-icon="plus"></button>
     </header>
     <input type="search" id="book-search" class="type-input book-search" placeholder="단어·뜻 검색 (전체 DAY에서)" aria-label="단어장 검색" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
     <!-- 거르기 한 줄: DAY ▾(누르면 시트에서 고름) + 전체·오답·미학습·암기 완료·형광펜 -->
@@ -333,6 +333,8 @@
       <button data-v="new">미학습</button>
       <button data-v="done">암기 완료</button>
       <button data-v="unknown">형광펜</button>
+      <button data-v="read">독해</button>
+      <button data-v="grad">졸업</button>
       </div>
     </div>
     <div class="day-pick" id="book-days" aria-label="볼 DAY 고르기"></div>
@@ -345,6 +347,38 @@
         <button class="btn study-btn" id="btn-day-study">이 DAY 학습</button>
       </div>
       <button class="btn primary" id="btn-unknown-test">형광펜 친 단어만 테스트</button>
+    </div>
+  </section>
+
+  <!-- 내 단어 올리기: Claude가 노트 사진을 정리해 준 글을 붙여넣거나 파일로 → 단어책과 맞춰 본 걸 확인 → 저장 (app.js openMyImport) -->
+  <section id="myimport" class="screen">
+    <header class="top">
+      <button class="icon-btn" id="btn-my-back" aria-label="뒤로" data-icon="back"></button>
+      <h1>내 단어 올리기</h1>
+      <span></span>
+    </header>
+    <div class="card" id="my-step-input">
+      <div class="label">1. Claude에게 정리 부탁하기</div>
+      <p class="muted">노트 사진과 같이 이 문구를 Claude 채팅에 보내면 올릴 수 있는 형식으로 정리해 줘요.</p>
+      <button class="btn secondary" id="btn-my-prompt">부탁 문구 복사</button>
+      <div class="label mt">2. 받은 글 붙여넣기</div>
+      <textarea id="my-text" class="type-input my-text" rows="7" placeholder="Claude가 준 코드 블록을 그대로 붙여넣어요" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+      <div class="row two">
+        <button class="btn secondary" id="btn-my-file">파일 고르기</button>
+        <button class="btn primary" id="btn-my-check">확인하기</button>
+      </div>
+      <input type="file" id="my-file" accept=".csv,.txt,text/csv,text/plain" hidden>
+      <p class="muted my-tip">단어책에 이미 있는 단어(studied → study처럼 형태만 달라도)는 새로 만들지 않고, 그 카드를 처음부터 다시 복습해요.</p>
+    </div>
+    <div id="my-preview" hidden>
+      <p class="muted list-note" id="my-sum"></p>
+      <div id="my-rows" class="list"></div>
+      <div class="sticky-bottom">
+        <div class="row two">
+          <button class="btn secondary" id="btn-my-redo">다시 붙여넣기</button>
+          <button class="btn primary" id="btn-my-save">저장</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -449,6 +483,22 @@
           <button data-v="1" id="limit-n">20개까지</button>
         </div>
       </div>
+    </div>
+    <!-- 내 단어: 두 모드가 같이 쓰고 기기끼리 맞춰짐 (app.js renderMySettings) -->
+    <div class="card" id="set-my" data-tab="srs">
+      <div class="label">내 단어</div>
+      <p class="muted" id="my-info"></p>
+      <div class="opt-row"><span>하루 새 내 단어 <small>(복습이 많은 날엔 줄여도 5개는)</small></span>
+        <div class="seg" id="seg-my-per"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="30">30</button></div></div>
+      <div class="opt-row"><span>하루 복습 상한 <small>(넘으면 까먹었을 가능성이 큰 것부터)</small></span>
+        <div class="seg" id="seg-cap"><button data-v="60">60</button><button data-v="100">100</button><button data-v="150">150</button><button data-v="0">제한 없음</button></div></div>
+      <div class="opt-row"><span>단어책 배우는 동안 <small>(범위에 새 단어가 남아 있을 때)</small></span>
+        <div class="seg" id="seg-cap-busy"><button data-v="100">100</button><button data-v="160">160</button><button data-v="200">200</button><button data-v="0">제한 없음</button></div></div>
+      <div class="row two">
+        <button class="btn primary" id="btn-my-open">내 단어 올리기</button>
+        <button class="btn secondary" id="btn-my-prompt2">부탁 문구 복사</button>
+      </div>
+      <button class="btn ghost small" id="btn-my-export">내 단어 내보내기 (CSV)</button>
     </div>
     <!-- 화면 꾸미기: js/look.js (이 기기에만. 강조 색·카드·퀴즈 바탕은 예문·단어 모드마다 따로) -->
     <div class="card" id="set-screen" data-tab="look">
@@ -569,6 +619,7 @@
         <button class="btn secondary" id="btn-import">백업 불러오기</button>
       </div>
       <input type="file" id="import-file" accept=".json,application/json" hidden>
+      <button class="btn danger small" id="btn-book-restart">단어책 새로 시작</button>
       <button class="btn danger small" id="btn-reset"><span data-only="ex">예문</span><span data-only="word">단어</span> 모드 진도 초기화</button>
       <div class="label mt">단어 데이터</div>
       <p class="muted" id="data-info"></p>
