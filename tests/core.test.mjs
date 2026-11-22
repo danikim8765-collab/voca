@@ -817,6 +817,11 @@ test('해석 강조: 명사는 통째로만, 한 글자는 동사 어간만 (엉
   const resort = '((~ to)) (부득이하게) 의지하다 / 1. 휴양지, 리조트 2. 수단, 방편 3. 의지, 호소';
   assert.equal(senseOf('경찰은 폭력에 의존하지 않고 위험한 상황을 처리하는 다양한 방법을 배운다.', resort, '의존하지'), 0);
   assert.equal(senseOf('그들은 바닷가 휴양지에서 휴가를 보냈다.', resort), 2);
+  // highlights.json: 뜻 '피하다'가 '회피하려고' 가운데에 붙던 evade (신고 시트 9행)
+  const fs = await import('node:fs');
+  const marks = JSON.parse(fs.readFileSync(new URL('../highlights.json', import.meta.url), 'utf8'));
+  assert.equal(hl('그 남자아이는 가능한 한 오래 자신의 책임을 회피하려고 했다.', '피하다, 모면하다', marks.evade),
+    '그 남자아이는 가능한 한 오래 자신의 책임을 [회피하려고] 했다.');
 });
 
 test('4지선다 보기: 정답의 유의어는 빈칸에도 맞으니 보기로 내지 않음 · 단어 모드 뜻 보기도 품사를 맞춤', async () => {
