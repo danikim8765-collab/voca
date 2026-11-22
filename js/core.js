@@ -495,29 +495,69 @@ export function spreadDue(today, i, { load = null, rest = [] } = {}) {
  *    목표일부터는 범위 전체를 한 번씩 훑으니 그 앞날에 몰아 둘 까닭도 없음 (예전엔 목표일·시험 전날에 한꺼번에 몰렸음)
  * load, rest: 날짜 고르기(spreadDue)에 씀
  */
-export function applyResult(stat, outcome, { today = dateStr(), exam = '', scheduled = true, now = Date.now(), intervals = PRESETS.m, load = null, rest = [] } = {}) {
+// 졸업: 암기 완료 뒤 간격이 이만큼(일) 이상인 복습을 힌트 없이 맞히면 더는 복습에 안 나옴 (g = 졸업한 날).
+// 단어책은 학교 시험·시험 전 전체 훑기·방학마다 새로 시작하기로 또 보게 돼서 짧게, 내 단어(독해에서 막힌 단어)는 한 번 더
+export const GRAD_BOOK = 28;
+export const GRAD_MY = 56;
+// 다음에 맞히면 졸업하는 복습인지 (그 문제는 4지선다 차례여도 직접 입력으로 냄. 찍어서 졸업하지 않게)
+export function willGraduate(stat, { grad = 0, intervals = PRESETS.m, today = dateStr() } = {}) {
+  const s = normalizeStat(stat);
+  const n = intervals.length;
+  if (!grad || !s || s.g || (s.st || 0) < n || !s.due || s.due > today) return false;
+  const last = s.s ? dateStr(s.s) : '';
+  const gap = last && last < today && s.due < today ? daysBetween(last, today) : 0;
+  return Math.max(s.iv || intervals[n - 1], gap) >= grad;
+}
+
+/**
+ * kind: 이번에 낸 문제 방식('type' 직접 입력 · 'choice' 4지선다), retry: 이번 학습에서 이미 틀렸거나 힌트를 쓰고 다시 나온 것
+ *  → q(다음 복습에 4지선다로 내도 되는지): 직접 입력을 한 번에(힌트 없이, 처음 나왔을 때) 맞히면 1, 직접 입력에서 틀리거나 힌트를 쓰면 0,
+ *    4지선다에서 틀리거나 힌트를 쓰면 0, 4지선다로 처음 배우면 0(첫 복습은 직접 입력). 다시 나온 문제는 바꾸지 않음
+ * grad: 졸업 간격(일, 0 = 졸업 없음). 졸업한 단어(g)는 맞히면 그대로, 틀리거나 힌트를 쓰면 졸업이 풀림
+ */
+export function applyResult(stat, outcome, { today = dateStr(), exam = '', scheduled = true, now = Date.now(), intervals = PRESETS.m, load = null, rest = [], kind = '', retry = false, grad = 0 } = {}) {
   const prev = normalizeStat(stat) || {};
   const s = { st: 0, due: '', c: 0, w: 0, ...prev };
   const last = prev.s ? dateStr(prev.s) : ''; // 지난번에 본 날
   s.s = now;
   if (!s.f) s.f = today; // 처음 배운 날 (하루 새 단어 수 계산용)
+  if (kind && !retry) {
+    if (outcome !== 'ok') s.q = 0;
+    else if (kind === 'type') s.q = 1;
+    else if (s.q == null) s.q = 0;
+  }
   if (outcome === 'wrong') {
     s.w++;
     const k = Math.max(0, (s.st || s.k || 0) - LAPSE_DROP); // 0단계에서 또 틀리면 더 내려감
     if (k) s.k = k; else delete s.k;
     s.st = 0;
     delete s.iv;
+    delete s.g;
     s.due = addDays(today, 1);
     return s;
   }
   s.c++;
   if (outcome === 'hint') s.h = (s.h || 0) + 1;
+  if (prev.g) {
+    // 졸업한 단어를 (시험 전 훑기·연습에서) 다시 봄: 맞히면 그대로 졸업, 힌트를 썼으면 졸업을 풀고 내일 다시
+    if (outcome === 'ok') return s;
+    delete s.g;
+    s.due = addDays(today, 1);
+    return s;
+  }
   if (!scheduled) return s;
   if (outcome === 'ok') {
     const n = intervals.length;
     let st = Math.min((s.st || s.k || 0) + 1, n);
     // 복습일이 지나서 맞혔을 때만: 지난번에 본 날부터 버틴 날 수만큼은 이미 기억이 감
     const gap = last && last < today && prev.due && prev.due < today ? daysBetween(last, today) : 0;
+    if (grad && (prev.st || 0) === n && Math.max(prev.iv || intervals[n - 1], gap) >= grad) {
+      s.st = n;
+      s.g = today;
+      s.due = '';
+      delete s.iv; delete s.k;
+      return s;
+    }
     while (st < n && intervals[st - 1] <= gap) st++;
     // 암기 완료(마지막 단계)한 단어를 또 맞히면 간격을 MASTER_GROW배씩 늘림(14 → 28 → 56일 …, MAX_INTERVAL까지).
     // 마지막 간격으로 끝없이 돌면 배운 단어가 늘수록 복습이 계속 쌓여서
@@ -552,18 +592,34 @@ export function examDue(today, i, exam, opt = {}) {
   return best;
 }
 
-export const isDue = (s, today) => !!(s && s.due && s.due <= today);
+export const isDue = (s, today) => !!(s && s.due && !s.g && s.due <= today);
 
 // 문제 방식: kind = 설정의 4지선다('choice') · 직접 입력('type').
-// mix = '복습은 외운 단어만 4지선다'를 켜고 복습 중일 때: 복습에서 두 번 넘게 맞힌 단어(MIX_CHOICE_STAGE단계 이상 — 배울 때 1단계,
-// 복습에서 맞힐 때마다 +1)는 4지선다로 떠올리기만, 그 밖(아직 덜 굳은 단어 · 틀려서 내려간 단어)은 직접 입력으로 써 보며 외움.
-// again = 이번 학습에서 틀렸거나 힌트를 쓰고 다시 나온 단어 → 직접 입력
+// mix = '복습은 외운 단어만 4지선다'를 켜고 복습 중일 때: 직접 입력을 한 번에 맞힌 단어(q = 1, applyResult)는 4지선다로 뜻만 떠올리고,
+// 직접 입력에서 틀렸거나 힌트를 쓴 단어 · 4지선다에서 틀린 단어(q = 0)는 한 번에 맞힐 때까지 직접 입력.
+// q가 없는 예전 기록은 예전 규칙대로(복습에서 두 번 넘게 맞힌 MIX_CHOICE_STAGE단계 이상이면 4지선다)
+// again = 이번 학습에서 틀렸거나 힌트를 쓰고 다시 나온 단어, final = 맞히면 졸업하는 문제 → 직접 입력
 export const MIX_CHOICE_STAGE = 3;
-export function questionKind(kind, stat, { mix = false, again = false } = {}) {
+export function questionKind(kind, stat, { mix = false, again = false, final = false } = {}) {
   if (!mix) return kind === 'type' ? 'type' : 'choice';
-  if (again) return 'type';
+  if (again || final) return 'type';
   const s = normalizeStat(stat);
+  if (s && s.q != null) return s.q ? 'choice' : 'type';
   return s && (s.st || 0) >= MIX_CHOICE_STAGE ? 'choice' : 'type';
+}
+// 복습 묶음 안에서 4지선다를 먼저, 직접 입력을 나중에 (키보드가 한 번만 올라오게). 같은 방식끼리는 순서 그대로
+export function choicesFirst(ids, kindOf) {
+  const c = [], t = [];
+  for (const id of ids) (kindOf(id) === 'choice' ? c : t).push(id);
+  return [...c, ...t];
+}
+
+// 오늘 넣을 새 내 단어 수 ('복습 100 지키기'): 앞으로 7일 중 복습이 가장 많이 잡힌 날(peak)이 상한(cap)에 가까우면 줄임.
+// 새 단어 하나는 다음 두 주 동안 하루 복습 perWord개쯤을 더함. 그래도 하루 min개는 넣음(독해에서 막힌 단어가 몇 주씩 기다리지 않게). perDay가 min보다 적으면 perDay
+export const MY_MIN = 5;
+export function myNewQuota({ perDay = 20, min = MY_MIN, cap = 100, peak = 0, perWord = 3 } = {}) {
+  if (perDay <= min) return Math.max(0, perDay);
+  return Math.max(min, Math.min(perDay, Math.floor((cap - peak) / perWord)));
 }
 
 /**
@@ -616,7 +672,8 @@ export function reviewPace(words, stats, { today = dateStr(), newPerDay = 0, cap
  * review(복습일이 된 단어)는 개수 표시용으로만 같이 돌려줌. 복습은 pickReview로 따로 '오늘의 복습'에서
  * allWords: 전체 단어(복습은 범위와 상관없이), rangeWords: 학습 범위(새 단어·시험 범위)
  */
-export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newPerDay = 20, exam = '', srs = null } = {}) {
+// newToday: 오늘 이미 배운 새 단어 수(주지 않으면 stats에서 셈. 앱은 내 단어를 빼고 셈 — 내 단어는 단어책 하루 몫과 따로)
+export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newPerDay = 20, exam = '', srs = null, newToday: given = null } = {}) {
   const st = id => normalizeStat(stats[id]);
   const review = allWords.filter(w => isDue(st(w.id), today)).sort(byRisk(today, st));
   const taken = new Set();
@@ -626,7 +683,7 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
   // 주기 복습(srs = { goal, exam })이면 시험 3일 전 몫은 없고, 목표일부터 시험 전날까진 새 단어 없이 복습만
   if (srs) {
     const finalPhase = srs.goal && srs.exam && today >= srs.goal && today < srs.exam;
-    const newToday = Object.values(stats).filter(s => s && s.f === today).length;
+    const newToday = given != null ? given : Object.values(stats).filter(s => s && s.f === today).length;
     const fresh = finalPhase ? [] : rangeWords.filter(w => !stats[w.id]).slice(0, Math.max(0, newPerDay - newToday));
     return { review, final: [], fresh, examInfo: null };
   }
@@ -647,7 +704,7 @@ export function buildPlan(allWords, rangeWords, stats, { today = dateStr(), newP
     }
   }
 
-  const newToday = Object.values(stats).filter(s => s && s.f === today).length;
+  const newToday = given != null ? given : Object.values(stats).filter(s => s && s.f === today).length;
   const quota = Math.max(0, newPerDay - newToday);
   const fresh = rangeWords.filter(w => !stats[w.id] && !taken.has(w.id)).slice(0, quota);
   return { review, final, fresh, examInfo };
@@ -795,7 +852,7 @@ export function pickReview(allWords, stats, { today = dateStr(), n = REVIEW_SIZE
   const pool = [];
   for (const w of allWords) {
     const s = normalizeStat(stats[w.id]);
-    if (!s) continue;
+    if (!s || s.g) continue; // 졸업한 단어는 복습에 안 나옴
     const todays = s.f === today || !!(s.s && dateStr(s.s) === today);
     if (todays && !again) continue;
     pool.push({ w, s, todays, due: !todays && isDue(s, today) });
@@ -986,12 +1043,19 @@ export function highlightMeaning(ko, meaning, mark) {
 
 // ---------- 기기 간 진도 합치기 ----------
 // 단어별로 마지막 학습 시각(s)이 더 최근인 기록을 남긴다. resetAt 이전 기록은 버린다(진도 초기화).
-export function mergeProgress(a, b) {
+// bookResetAt('단어책 새로 시작') 이전 기록은 단어책 단어만 버린다(내 단어 my|…는 그대로).
+// 지운 표시({ del })는 pruneBefore(시각)보다 오래되면 버린다. 동기화는 TOMB_KEEP(90일) 전으로 줌 (그동안 다른 기기도 다 맞춰졌을 테니, 쌓이지 않게)
+export const TOMB_KEEP = 90 * 864e5;
+export const isMyId = id => String(id).startsWith('my|');
+export function mergeProgress(a, b, { pruneBefore = 0 } = {}) {
   const resetAt = Math.max((a && a.resetAt) || 0, (b && b.resetAt) || 0);
+  const bookResetAt = Math.max((a && a.bookResetAt) || 0, (b && b.bookResetAt) || 0);
   const out = {};
   for (const src of [(a && a.stats) || {}, (b && b.stats) || {}]) {
     for (const [id, s] of Object.entries(src)) {
       if (!s || (s.s || 0) < resetAt) continue;
+      if (!isMyId(id) && (s.s || 0) < bookResetAt) continue;
+      if (s.del && (s.s || 0) < pruneBefore) continue;
       // 지운 기록은 { del: 1, s: 지운 시각 }로 남겨서 다른 기기의 예전 기록이 되살아나지 않게
       if (!out[id] || (s.s || 0) > (out[id].s || 0)) out[id] = s.del ? { del: 1, s: s.s } : normalizeStat(s);
     }
@@ -1014,7 +1078,7 @@ export function mergeProgress(a, b) {
   // 하던 학습(이어하기)도 기기끼리: 더 최근에 바꾼 쪽(at). data가 null이면 끝냈거나 지운 것
   const sa = a && a.sess, sb = b && b.sess;
   const sess = !sa ? sb : !sb ? sa : (sa.at || 0) >= (sb.at || 0) ? sa : sb;
-  return { v: 2, resetAt, stats: out, ...(prefs ? { prefs } : {}), ...(sess ? { sess } : {}) };
+  return { v: 2, resetAt, ...(bookResetAt ? { bookResetAt } : {}), stats: out, ...(prefs ? { prefs } : {}), ...(sess ? { sess } : {}) };
 }
 
 // 시험일을 바꾼 시각. examAt이 없던 예전 기록은 설정 전체를 바꾼 시각(at)으로 봄
@@ -1049,7 +1113,7 @@ export function sameStats(x, y) {
   if (kx.length !== ky.length) return false;
   return kx.every(k => {
     const a = x[k], b = y[k];
-    return b && a.s === b.s && a.st === b.st && a.due === b.due && a.c === b.c && a.w === b.w && a.f === b.f && a.h === b.h;
+    return b && a.s === b.s && a.st === b.st && a.due === b.due && a.c === b.c && a.w === b.w && a.f === b.f && a.h === b.h && a.q === b.q && a.g === b.g && !!a.del === !!b.del;
   });
 }
 
@@ -1289,13 +1353,13 @@ export function synAnt(extras) {
 const POS_KO = { 명: '명사', 형: '형용사', 부: '부사', 동: '동사', 전: '전치사', 접: '접속사' };
 
 // 단어(숙어)의 모든 변화형과 통째로 맞는지: outlaws ↔ outlaw, took ↔ take, convinced of ↔ convince A of B
-function formRegex(text) {
+export function formRegex(text) {
   const parts = answerParts(text);
   if (!parts.length) return null;
   const body = parts.join(' ').split(/\s+/).filter(Boolean).map((w, i) => wordPattern(w, i === 0)).join('\\s+');
   return new RegExp(`^(?:${body})$`, 'i');
 }
-const isFormOf = (typed, text) => { const re = formRegex(text); return !!(re && re.test(typed)); };
+export const isFormOf = (typed, text) => { const re = formRegex(text); return !!(re && re.test(String(typed || '').trim())); };
 
 // "1. obey, follow, comply with / 2. tolerate" → ['obey', 'follow', 'comply with', 'tolerate']
 function listWords(s) {

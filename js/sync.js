@@ -1,10 +1,11 @@
 // 기기 간 진도 동기화: 내 GitHub 계정의 비밀 Gist 하나(voca-progress.json)에 진도를 저장하고 합친다.
-import { mergeProgress, sameStats, samePrefs, mergeMarks, sameMarks, mergeCoach, sameCoach } from './core.js';
+import { mergeProgress, sameStats, samePrefs, mergeMarks, sameMarks, mergeCoach, sameCoach, TOMB_KEEP } from './core.js';
 
 const API = 'https://api.github.com';
 // 예문 모드 진도는 voca-progress.json, 단어 모드는 같은 Gist의 voca-word-progress.json
 const FILES = ['voca-progress.json', 'voca-word-progress.json'];
 const MARKS = 'voca-marks.json'; // 단어장 '모름' 표시, 고른 코치 캐릭터, 화면 꾸미기: 두 모드가 같이 씀
+const MY = 'voca-mywords.json'; // 내 단어(노트에서 올린 단어)·독해에서 막힌 단어책 단어·단어책 바퀴: 두 모드가 같이 씀 (js/mywords.js)
 const KEY = 'voca.sync.v1'; // 토큰·Gist는 두 모드가 같이 씀
 
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
@@ -25,8 +26,9 @@ export function isLimited(status, headers = {}, message = '') {
 }
 
 // look: { get, set, merge, same } 화면 꾸미기 (get이 null이면 이 기기는 꾸미기를 주고받지 않음, js/look.js).
+// mine: { get, set, merge, same } 내 단어 묶음 (js/mywords.js).
 // marks: { get, set } 모름 표시. coach: { get, set } 고른 코치 캐릭터 { char, at } (토큰을 넣어 동기화할 때만 다른 기기와 맞춰짐). other: { get, set } 다른 모드 진도(단어장에서 두 모드 기록을 합쳐 보여 주려고 받아만 둠)
-export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, look = null, other = null }) {
+export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, look = null, other = null, mine = null }) {
   const FILE = file;
   const OTHER = FILES.find(f => f !== FILE);
   let conf = load(); // { token, gistId, login, last }
@@ -62,7 +64,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
   async function findOrCreateGist() {
     for (let page = 1; page <= 10; page++) {
       const list = await gh(`/gists?per_page=100&page=${page}`);
-      const g = list.find(x => x.files && [...FILES, MARKS].some(f => x.files[f]));
+      const g = list.find(x => x.files && [...FILES, MARKS, MY].some(f => x.files[f]));
       if (g) return g.id;
       if (list.length < 100) break;
     }
@@ -94,8 +96,9 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       const g = await getGist();
       const remote = await readFile(g, FILE);
       const local = getLocal();
-      const merged = mergeProgress(local, remote);
-      const differs = x => !sameStats(merged.stats, x.stats || {}) || merged.resetAt !== (x.resetAt || 0) || !samePrefs(merged.prefs, x.prefs) || !samePrefs(merged.sess, x.sess);
+      const prune = { pruneBefore: Date.now() - TOMB_KEEP };
+      const merged = mergeProgress(local, remote, prune);
+      const differs = x => !sameStats(merged.stats, x.stats || {}) || merged.resetAt !== (x.resetAt || 0) || (merged.bookResetAt || 0) !== (x.bookResetAt || 0) || !samePrefs(merged.prefs, x.prefs) || !samePrefs(merged.sess, x.sess);
       const files = {};
       if (differs(local)) applyMerged(merged);
       if (differs(remote)) files[FILE] = { content: JSON.stringify(merged) };
@@ -125,13 +128,20 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
           files[MARKS] = { content: JSON.stringify({ ...rf, v: 1, marks: mm, ...(mc ? { coach: mc } : {}), ...(ml ? { look: ml } : {}) }) };
         }
       }
+      if (mine) {
+        const lm = mine.get();
+        const rm = await readFile(g, MY);
+        const mm = mine.merge(lm, rm);
+        if (!mine.same(mm, lm)) mine.set(mm);
+        if (!mine.same(mm, rm)) files[MY] = { content: JSON.stringify(mm) };
+      }
       if (other && g.files && g.files[OTHER]) {
         const lo = other.get();
         const ro = await readFile(g, OTHER);
-        const mo = mergeProgress(lo, ro);
-        if (!sameStats(mo.stats, lo.stats || {})) other.set(mo.stats);
-        // 이 기기에서 다른 모드 기록을 지웠으면(DAY 기록 지우기) 그 파일에도 바로 올림
-        if (!sameStats(mo.stats, ro.stats || {})) files[OTHER] = { content: JSON.stringify(mo) };
+        const mo = mergeProgress(lo, ro, prune);
+        if (!sameStats(mo.stats, lo.stats || {}) || (mo.bookResetAt || 0) !== (lo.bookResetAt || 0)) other.set(mo.stats, mo);
+        // 이 기기에서 다른 모드 기록을 지웠으면(DAY 기록 지우기 · 독해에서 막혀 처음부터 · 단어책 새로 시작) 그 파일에도 바로 올림
+        if (!sameStats(mo.stats, ro.stats || {}) || (mo.bookResetAt || 0) !== (ro.bookResetAt || 0)) files[OTHER] = { content: JSON.stringify(mo) };
       }
       if (Object.keys(files).length) await gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) });
       conf.last = Date.now();

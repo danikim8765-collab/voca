@@ -1377,3 +1377,19 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
   #card-today.go .today-go { font-size: 18px; }
   #home-adv { margin-top: 16px; }
 }
+
+/* ---------- 내 단어 (app.js openMyImport · wordItem) ---------- */
+/* 단어 옆 작은 표시: 내 단어 · 독해 ×n · OO의 파생어 · 지난 바퀴 n번 틀림 */
+.w-tag { display: inline-block; margin-left: 6px; vertical-align: 2px; font-size: 11px; font-weight: 700; color: var(--warn); background: var(--warn-soft); padding: 1px 7px; border-radius: var(--r-pill); white-space: nowrap; }
+.dp.my { color: var(--warn); }
+.dp.my.on { background: var(--warn-soft); color: var(--warn); }
+.my-text { font-size: 14px; line-height: 1.45; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; min-height: 140px; text-align: left; }
+.my-tip { margin-top: 10px; font-size: 13px; }
+.my-row .my-form { font-size: 13px; color: var(--muted); }
+.my-row .my-ex { margin-top: 4px; font-size: 13px; color: var(--muted); font-style: italic; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.my-row .my-note { margin-top: 4px; font-size: 12px; color: var(--warn); }
+.my-row .seg.my-act { margin-top: 8px; }
+.my-row .seg.my-act button { font-size: 13px; }
+.my-bad { margin-top: 10px; font-size: 13px; }
+.my-acts { margin-top: 10px; }
+.btn.danger-text { color: var(--bad); }
