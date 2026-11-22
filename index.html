@@ -207,41 +207,41 @@
     </div>
 
     <div class="card" id="card-kind">
-      <div class="label">문제 방식</div>
-      <div class="seg" id="seg-kind">
-        <button data-v="choice">4지선다</button>
-        <button data-v="type">직접 입력</button>
+      <div class="label">문제</div>
+      <div class="set-row"><span class="t">문제 방식</span>
+        <div class="seg" id="seg-kind">
+          <button data-v="choice">4지선다</button>
+          <button data-v="type">직접 입력</button>
+        </div>
       </div>
-      <label class="switch-row"><span>복습은 외운 단어만 4지선다</span><input type="checkbox" role="switch" class="switch" id="opt-review-mix"></label>
-      <div class="muted kind-note">복습할 때 두 번 넘게 맞힌 단어는 4지선다로 빨리 떠올리고, 덜 외운 단어·틀린 단어는 직접 입력으로 써 봐요. 새 단어는 위 방식대로.</div>
-      <div data-only="ex">
-        <div class="label">예문 해석</div>
+      <label class="switch-row"><span>복습은 외운 단어만 4지선다<small class="x-desc kind-note">두 번 넘게 맞힌 단어는 4지선다로 빨리 떠올리고, 덜 외운 단어·틀린 단어는 직접 입력으로 써 봐요. 새 단어는 위 방식대로.</small></span><input type="checkbox" role="switch" class="switch" id="opt-review-mix"></label>
+      <div class="set-row" data-only="ex"><span class="t">예문 해석</span>
         <div class="seg" id="seg-ko">
           <button data-v="show">보이기</button>
           <button data-v="hide">가리기</button>
         </div>
       </div>
-      <div id="regular-opts">
-      <label class="switch-row coach-row"><span>단어 코치</span><input type="checkbox" role="switch" class="switch" id="opt-coach-plan"></label>
-      <div class="label">하루 새 단어 수 <span class="muted" id="coach-new-note" hidden></span></div>
-      <div class="seg" id="seg-new">
-        <button data-v="10">10</button>
-        <button data-v="20">20</button>
-        <button data-v="30">30</button>
-        <button data-v="40">40</button>
+    </div>
+
+    <!-- 하루 분량: DAY 단독 학습 중엔 회색 (app.js renderPlan) -->
+    <div class="card" id="regular-opts">
+      <div class="label">하루 분량</div>
+      <label class="switch-row coach-row"><span>단어 코치<small class="x-desc">시험일에 맞춰 오늘 분량을 정해 줘요</small></span><input type="checkbox" role="switch" class="switch" id="opt-coach-plan"></label>
+      <div class="set-row"><span class="t">하루 새 단어<small class="d" id="coach-new-note" hidden></small></span>
+        <div class="seg" id="seg-new">
+          <button data-v="10">10</button>
+          <button data-v="20">20</button>
+          <button data-v="30">30</button>
+          <button data-v="40">40</button>
+        </div>
       </div>
-      <div class="label">하루 복습 수</div>
-      <div class="seg" id="seg-rev">
-        <button data-v="10">10</button>
-        <button data-v="20">20</button>
-        <button data-v="30">30</button>
-        <button data-v="40">40</button>
-      </div>
-      <div class="label">시험일</div>
-      <div class="row exam-row">
-        <input type="date" id="exam-date" class="date-input">
-        <button class="btn ghost small" id="btn-exam-clear">지우기</button>
-      </div>
+      <!-- 목표일(새 단어 끝): 코치를 켜면 코치가 정하니 숨김. 설정 > 복습의 목표일과 같은 값 -->
+      <label class="set-row date-row" id="plan-goal-row"><span class="t">목표일<small class="d">새 단어를 다 배울 날</small></span>
+        <input type="date" id="plan-goal-date" class="date-input row-date">
+      </label>
+      <div class="set-row date-row exam-row"><label class="t" for="exam-date">시험일<small class="d" id="exam-dn"></small></label>
+        <input type="date" id="exam-date" class="date-input row-date">
+        <button class="mark-btn" id="btn-exam-clear" type="button" data-icon="close" aria-label="시험일 지우기" title="시험일 지우기"></button>
       </div>
     </div>
   </section>
@@ -300,6 +300,12 @@
       <div class="res-buddy" id="res-buddy" hidden></div>
       <div class="res-say" id="res-say" role="status" hidden></div>
       <div class="cheer">공부하느라 수고하셨어요</div>
+      <!-- 숫자 셋: 본 단어 · 바로 맞힘 · 틀렸거나 헷갈림 -->
+      <div class="res-stats">
+        <div><b id="res-total"></b><span>본 단어</span></div>
+        <div class="ok"><b id="res-ok"></b><span>바로 맞힘</span></div>
+        <div class="bad"><b id="res-bad"></b><span>틀렸거나 헷갈림</span></div>
+      </div>
       <div class="muted" id="res-detail"></div>
     </div>
     <div class="label" id="res-wrong-label"></div>

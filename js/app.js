@@ -142,6 +142,7 @@ function applyHomeLayout() {
     range.appendChild(prog);
   }
   range.after(kind);
+  kind.after($('#regular-opts')); // 하루 분량도 문제 카드 바로 아래에 같이 다님
   sum.hidden = pc.hidden = !ui.simpleHome;
 }
 applyHomeLayout();
@@ -569,8 +570,13 @@ function renderHome() {
   $('#opt-review-mix').checked = !!settings.reviewMix;
   setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
-  setSeg('#seg-rev', String(settings.reviewSize));
   $('#exam-date').value = settings.exam || '';
+  // 시험일 옆 D-n, 목표일(코치가 꺼져 있을 때만 직접 정함 — 설정 > 복습의 목표일과 같은 값)
+  const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
+  $('#exam-dn').textContent = dn == null ? '' : dn > 0 ? `D-${dn}` : dn === 0 ? 'D-day' : '지났어요';
+  $('#exam-dn').hidden = dn == null;
+  $('#plan-goal-row').hidden = !!settings.coach;
+  $('#plan-goal-date').value = settings.goal || '';
   renderPlan();
 
   const rw = rangeWords();
@@ -597,7 +603,7 @@ function renderHome() {
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     ...(coachActive()
       ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 전체 복습 중'])
-      : [`새 단어 ${settings.newPerDay}`, srsOn() ? '주기 복습' : `복습 ${settings.reviewSize}`]),
+      : [`새 단어 ${settings.newPerDay}`, ...(srsOn() ? ['주기 복습'] : [])]),
   ].join(' · ')));
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
@@ -3669,17 +3675,23 @@ function finishSession() {
   $('#feedback').hidden = true;
   const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
   $('#res-title').textContent = `${s.label} 끝`;
-  $('#res-detail').textContent = `${s.total}단어를 다 봤어요.`;
+  $('#res-detail').textContent = '';
+  $('#res-total').textContent = s.total;
+  $('#res-ok').textContent = Math.max(0, s.total - wrong.length);
+  $('#res-bad').textContent = wrong.length;
   const rk = $('#res-buddy');
   rk.hidden = !settings.coach;
   if (settings.coach) rk.innerHTML = coachSvg(wrong.length ? 'normal' : 'cheer');
   resultComment(s, wrong);
-  $('#res-wrong-label').textContent = wrong.length ? `틀렸거나 헷갈린 단어 ${wrong.length}개 · 한 번씩만 더 보고 가요` : '';
+  $('#res-wrong-label').textContent = wrong.length ? '한 번씩만 더 보고 가요' : '';
   const list = $('#res-wrong');
   list.innerHTML = '';
   if (!wrong.length) list.appendChild(el('div', 'card center muted', '틀린 단어 없이 다 맞혔어요 👏'));
   const view = bookView();
-  for (const id of wrong) list.appendChild(wordItem(byId.get(id), view));
+  // 단어장처럼 카드 하나에 줄로 (누르면 예문이 펼쳐짐)
+  const group = el('div', 'day-group');
+  for (const id of wrong) group.appendChild(wordItem(byId.get(id), view));
+  if (wrong.length) list.appendChild(group);
   // 틀린 게 있으면 그 단어만 한 번 더, 없으면 다음 할 일(오늘의 복습 · 더 하기)로
   const again = $('#btn-res-again');
   const f = flowState();
@@ -4406,7 +4418,6 @@ function bind() {
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
-  onSeg('#seg-rev', v => { settings.reviewSize = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
   $('#today-flow').addEventListener('click', e => {
     const sp = e.target.closest('span[data-s]');
@@ -4614,6 +4625,7 @@ function bind() {
   const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
   $('#opt-srs').addEventListener('change', e => { settings.srs = e.target.checked; srsChanged(); });
   $('#goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); });
+  $('#plan-goal-date').addEventListener('change', e => { settings.goal = e.target.value; srsChanged(); renderHome(); });
   $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); if (coachActive()) planCoach(true); coachMoved = false; srsChanged(); });
   // 단어 코치: 설정과 학습 계획 화면의 스위치, 일정 다시 짜기, 캐릭터를 누르면 폴짝
   $('#opt-coach').addEventListener('change', e => toggleCoach(e.target.checked));

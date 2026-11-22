@@ -156,8 +156,8 @@ button { cursor: pointer; }
 
 .range { display: flex; align-items: center; gap: 8px; }
 .range select {
-  flex: 1; padding: 12px; border-radius: var(--r-md); border: 0;
-  background: var(--fill); font-size: 17px; font-weight: 700; appearance: none; text-align: center;
+  flex: 1; padding: 10px 12px; border-radius: var(--r-md); border: 0;
+  background: var(--fill); font-size: 16px; font-weight: 700; appearance: none; text-align: center;
 }
 .chips { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 /* 알약 버튼 한 모양: 칩 · 설정 바로가기 · 단어장 DAY 고르기 · 코치 대화 위 버튼. 고른 것(.on)은 테두리+옅은 바탕 */
@@ -178,7 +178,7 @@ button { cursor: pointer; }
 .seg { display: flex; background: var(--bg); border-radius: var(--r-md); padding: 4px; gap: 4px; margin-bottom: 12px; }
 .seg button { flex: 1; border: 0; background: transparent; padding: 8px 4px; border-radius: var(--r-sm); font-weight: 600; color: var(--muted); }
 .seg button.on { background: var(--card); color: var(--primary); box-shadow: var(--shadow); }
-.kind-note { margin: -2px 2px 12px; font-size: 13px; line-height: 1.45; }
+.kind-note { line-height: 1.45; }
 #settings .seg, #list .seg { background: var(--card); }
 #settings .seg button.on, #list .seg button.on { background: var(--primary-soft); }
 
@@ -321,19 +321,22 @@ button { cursor: pointer; }
 .desk #quiz.active > .quiz-actions.fit { padding-bottom: 8px; }
 /* 설정: 카드 제목은 크게 */
 /* 설정: 묶음 제목은 카드 바깥 위에 작은 회색, 카드 안은 '이름 ─ 값' 줄 (app.js settingsRows) */
-#settings .card { scroll-margin-top: 64px; position: relative; margin-top: 34px; padding: 6px 20px; }
-#settings .card > .label:first-child { position: absolute; top: -25px; left: 6px; margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
-#settings .card .label:not(:first-child) { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
-.set-row, #settings .switch-row, #settings .opt-row {
+#settings .card { scroll-margin-top: 64px; }
+:is(#settings, #plan) .card { position: relative; margin-top: 34px; padding: 6px 20px; }
+:is(#settings, #plan) .card > .label:first-child { position: absolute; top: -25px; left: 6px; margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+:is(#settings, #plan) .card .label:not(:first-child) { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
+#plan #card-range { padding: 16px 20px 18px; }
+.set-row, :is(#settings, #plan) .switch-row, #settings .opt-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap;
   min-height: 52px; padding: 8px 0; margin: 0; font-size: 16px; font-weight: 500; color: var(--text);
 }
 #settings .opt-row > span { font-size: 16px; font-weight: 500; color: var(--text); }
 .set-row .t { flex: 1 1 auto; min-width: 0; word-break: keep-all; }
-.set-row .d, #settings .switch-row .muted, #settings .switch-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
-#settings .set-row .seg { flex: none; margin: 0 0 0 auto; padding: 3px; gap: 2px; background: var(--fill); border-radius: 10px; }
-#settings .set-row .seg button { flex: none; padding: 6px 11px; font-size: 13px; white-space: nowrap; }
-#settings .set-row .seg button.on { background: var(--card); color: var(--text); box-shadow: none; }
+:is(#settings, #plan) .switch-row > span { flex: 1 1 0; min-width: 0; word-break: keep-all; } /* 설명이 길어도 스위치는 오른쪽에 */
+.set-row .d, :is(#settings, #plan) .switch-row .muted, :is(#settings, #plan) .switch-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
+:is(#settings, #plan, #home) .set-row .seg { flex: none; margin: 0 0 0 auto; padding: 3px; gap: 2px; background: var(--fill); border-radius: 10px; }
+:is(#settings, #plan, #home) .set-row .seg button { flex: none; padding: 6px 11px; font-size: 13px; white-space: nowrap; }
+:is(#settings, #plan, #home) .set-row .seg button.on { background: var(--card); color: var(--text); box-shadow: none; }
 .set-row .seg.as-pick { display: none; }
 .set-val { flex: none; margin-left: auto; border: 0; background: none; padding: 8px 0; color: var(--muted); font-size: 15px; font-weight: 500; }
 .set-val::after { content: '›'; margin-left: 6px; font-size: 18px; opacity: .7; }
@@ -447,7 +450,17 @@ button { cursor: pointer; }
 
 /* 결과/단어장 */
 .cheer { font-size: 22px; font-weight: 800; letter-spacing: -.3px; color: var(--text); margin-bottom: 4px; }
-.res-cheer { padding: 24px 16px; }
+.res-cheer { padding: 24px 16px 22px; }
+.res-stats { display: flex; margin-top: 18px; }
+.res-stats > div { flex: 1; min-width: 0; }
+.res-stats b { display: block; font-size: 30px; font-weight: 800; letter-spacing: -.6px; line-height: 1.2; }
+.res-stats span { font-size: 13px; color: var(--muted); }
+.res-stats .ok b { color: var(--ok); }
+.res-stats .bad b { color: var(--bad); }
+#res-detail:empty { display: none; }
+#res-detail { margin-top: 12px; }
+#res-wrong-label { margin: 22px 8px 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+#res-wrong .item:not(.open) .rel { display: none; }
 .list { margin-bottom: 90px; }
 .item { background: var(--card); border-radius: var(--r-lg); padding: 12px 14px; margin-bottom: 8px; box-shadow: var(--shadow); }
 /* 단어장은 1000줄이라 화면 밖 줄은 그리기를 건너뜀 (스크롤이 가벼워짐) */
@@ -862,11 +875,20 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .srs-dates { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: end; }
 .srs-dates label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; color: var(--muted); min-width: 0; }
 /* iPad·아이폰 사파리의 날짜 칸은 자체 최소 너비가 있어서 옆 칸·카드 밖으로 삐져나감 → 기본 모양을 끄고 칸 너비에 맞춤 */
-.srs-dates .date-input, .exam-row .date-input {
+.srs-dates .date-input {
   display: block; width: 100%; max-width: 100%; min-width: 0; overflow: hidden;
   -webkit-appearance: none; appearance: none; color: var(--text); text-align: left; min-height: 46px;
 }
 .date-input::-webkit-date-and-time-value { text-align: left; }
+/* 학습 계획의 날짜 줄: 이름(왼쪽) ─ 날짜 칸(오른쪽) */
+.date-row .row-date {
+  flex: 0 0 auto; width: 9.5em; min-width: 0; max-width: 60%; margin-left: auto; min-height: 40px; padding: 8px 12px;
+  -webkit-appearance: none; appearance: none; color: var(--text); font-size: 15px; text-align: left; overflow: hidden;
+}
+.date-row .t { cursor: pointer; }
+.date-row .mark-btn { width: 34px; height: 34px; }
+.date-row .mark-btn .ic { width: 16px; height: 16px; position: relative; z-index: 1; }
+#exam-dn { color: var(--primary); font-weight: 700; }
 .srs-warn { font-size: 13px; color: var(--warn); margin: 8px 0 0; }
 .key-err { white-space: pre-line; overflow-wrap: anywhere; margin: 0 0 8px; }
 .srs-graph svg { width: 100%; max-width: 520px; height: auto; display: block; margin: 0 auto 8px; } /* 넓은 화면에서 글자가 커지지 않게 */
@@ -1106,7 +1128,7 @@ body[data-tint] {
 .talk-opts { margin-top: 4px; text-align: left; }
 .rest-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
 .rest-chip { min-width: 38px; justify-content: center; }
-.res-say { position: relative; max-width: 420px; margin: 4px auto 10px; padding: 10px 14px; background: var(--bg); border-radius: var(--r-lg); font-size: 15px; line-height: 1.55; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
+.res-say { position: relative; max-width: 420px; margin: 4px auto 10px; padding: 10px 14px; background: var(--fill); border-radius: var(--r-lg); font-size: 15px; line-height: 1.55; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
 .res-say.wait { text-align: center; color: var(--muted); }
 .talk-opts .preset { padding: 10px 2px; }
 .talk-opts .p-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1168,7 +1190,6 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 .mem-del { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 6px; }
 #cc-wipe { align-self: flex-start; margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .chat-msg.typing i { animation: none; } }
-.coach-row { margin-bottom: 6px; }
 #btn-coach-replan { margin: 0 0 8px; }
 /* 다시 나오기: 상황(줄) × 때(칸) 표. 칸은 코치 고르기처럼 테두리로 고름 */
 .again-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(4, minmax(0, 1fr)); gap: 6px; align-items: center; background: var(--bg); border-radius: var(--r-md); padding: 10px 8px; margin-bottom: 8px; }
