@@ -318,14 +318,18 @@
       <span></span>
     </header>
     <input type="search" id="book-search" class="type-input book-search" placeholder="단어·뜻 검색 (전체 DAY에서)" aria-label="단어장 검색" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
-    <div class="day-pick" id="book-days" aria-label="볼 DAY 고르기"></div>
-    <div class="seg" id="seg-filter">
+    <!-- 거르기 한 줄: DAY ▾(누르면 시트에서 고름) + 전체·오답·미학습·암기 완료·형광펜 -->
+    <div class="book-filters">
+      <button class="chip book-day-btn" id="book-day-btn" type="button" aria-haspopup="dialog"></button>
+      <div class="seg" id="seg-filter">
       <button data-v="all">전체</button>
       <button data-v="wrong">오답</button>
       <button data-v="new">미학습</button>
       <button data-v="done">암기 완료</button>
       <button data-v="unknown">형광펜</button>
+      </div>
     </div>
+    <div class="day-pick" id="book-days" aria-label="볼 DAY 고르기"></div>
     <p class="muted list-note"><span id="list-tip">단어를 누르면 예문이 펼쳐져요</span></p>
     <div id="word-list" class="list"></div>
     <div class="sticky-bottom">

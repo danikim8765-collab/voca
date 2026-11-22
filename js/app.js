@@ -3744,7 +3744,6 @@ function wordItem(w, view = bookView(), onMark) {
   const main = el('div', 'item-main');
   const top = el('div');
   top.appendChild(el('span', 'w', w.word));
-  if (s.w) top.append(' ', el('span', 'badge-wrong', `✕${s.w}`));
   main.append(top, el('div', 'm', [w.pos, w.meaning].filter(Boolean).join(' ')));
   // 유의어(초록) · 반의어(빨강)
   if (syn || ant) {
@@ -3753,10 +3752,11 @@ function wordItem(w, view = bookView(), onMark) {
     if (ant) { const x = el('span', 'ant'); x.append(el('b', null, '반'), ant); rel.appendChild(x); }
     main.appendChild(rel);
   }
-  const dots = el('div', 'dots');
-  for (let i = 1; i <= maxStage(); i++) dots.appendChild(el('i', s.st >= i ? 'on' : ''));
-  main.appendChild(dots);
-  head.append(main, markBtn(w.id, onMark), speakBtn(w.word));
+  // 상태: 새 단어 · 틀림 n(다시 볼 단어) · 암기 완료 · n단계 (예전의 점 네 개 대신 글자로)
+  const [stTxt, stCls] = !s.seen ? ['새 단어', ''] : s.wrong ? [`틀림 ${s.w || 1}`, 'bad'] : s.st >= maxStage() ? ['암기 완료', 'ok'] : [`${s.st}단계`, ''];
+  const stEl = el('span', 'w-state' + (stCls ? ' ' + stCls : ''), stTxt);
+  if (s.seen) stEl.title = `복습 단계 ${s.st}/${maxStage()}` + (s.w ? ` · 틀린 횟수 ${s.w}` : '');
+  head.append(main, stEl, markBtn(w.id, onMark), speakBtn(w.word));
   item.appendChild(head);
   item.addEventListener('click', () => {
     if (!ui.bookOpened) { ui.bookOpened = true; save(UI_KEY, ui); const tip = $('#list-tip'); if (tip) tip.hidden = true; }
@@ -3829,9 +3829,26 @@ function setBookDays(set) {
   renderList();
 }
 
+// 'DAY ▾' 버튼 글자: 전체 · DAY 26 · DAY 26~37(이어진 범위) · DAY 3개
+function bookDayLabel(sel) {
+  const list = days.filter(d => sel.has(d));
+  if (!list.length) return 'DAY 고르기';
+  if (list.length === days.length && days.length > 1) return '전체 DAY';
+  if (list.length === 1) return `DAY ${list[0]}`;
+  const i0 = days.indexOf(list[0]);
+  return list.every((d, k) => days[i0 + k] === d) ? `DAY ${list[0]}~${list[list.length - 1]}` : `DAY ${list.length}개`;
+}
+function openBookDays() {
+  const box = $('#book-days'), home = [box.parentNode, box.nextSibling];
+  openPickSheet('볼 DAY', '여러 개 고를 수 있어요', body => {
+    body.appendChild(box);
+    return () => home[0].insertBefore(box, home[1]);
+  });
+}
 function renderBookDays(scrollToSel) {
   const box = $('#book-days');
   const sel = bookDays();
+  $('#book-day-btn').textContent = bookDayLabel(sel);
   const keep = box.scrollLeft;
   box.innerHTML = '';
   const all = el('button', 'dp all' + (sel.size === days.length ? ' on' : ''), '전체');
@@ -3868,6 +3885,7 @@ function renderList(scrollToSel) {
   const qy = bookQuery.trim().toLowerCase();
   const hit = w => w.word.toLowerCase().includes(qy) || w.meaning.toLowerCase().includes(qy) || w.extras.some(([, v]) => String(v).toLowerCase().includes(qy));
   $('#book-days').classList.toggle('dim', !!qy);
+  $('#book-day-btn').classList.toggle('dim', !!qy);
   const filtered = (qy ? words.filter(hit) : bw).filter(w => {
     const s = view(w.id);
     if (listFilter === 'wrong') return s.wrong;
@@ -3899,7 +3917,7 @@ function renderList(scrollToSel) {
   const count = {};
   for (const w of filtered) count[w.day] = (count[w.day] || 0) + 1;
   const hasRec = new Set(words.filter(w => view(w.id).seen).map(w => w.day));
-  let lastDay = null;
+  let lastDay = null, group = null;
   const add = w => {
     if (w.day !== lastDay) {
       const h = el('div', 'day-head');
@@ -3910,10 +3928,11 @@ function renderList(scrollToSel) {
         del.addEventListener('click', () => deleteDayRecords(d));
         h.appendChild(del);
       }
-      box.appendChild(h);
+      group = el('div', 'day-group');
+      box.append(h, group);
       lastDay = w.day;
     }
-    box.appendChild(wordItem(w, view, updateTest));
+    group.appendChild(wordItem(w, view, updateTest));
   };
   let i = 0;
   const step = n => {
@@ -4436,6 +4455,7 @@ function bind() {
     else goHome();
   });
   onSeg('#seg-filter', v => { listFilter = v; renderList(); });
+  $('#book-day-btn').addEventListener('click', openBookDays);
 
   $('#btn-quit').addEventListener('click', quitQuiz);
   $('#btn-hint').addEventListener('click', useHint);
