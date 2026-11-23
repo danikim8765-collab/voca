@@ -661,7 +661,7 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .flow span.on { color: var(--primary); font-weight: 700; }
 #today-note { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 #today-note:empty { display: none; }
-.exam-row { gap: 8px; }
+.exam-row, #plan-goal-row { gap: 8px; }
 .date-input { flex: 1; padding: 11px 12px; border-radius: var(--r-md); border: 0; background: var(--fill); font-size: 16px; min-width: 0; }
 .tag.dday { color: var(--on-bad); background: var(--bad); }
 
@@ -887,7 +887,7 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
   flex: 0 0 auto; width: 9.5em; min-width: 0; max-width: 60%; margin-left: auto; min-height: 40px; padding: 8px 12px;
   -webkit-appearance: none; appearance: none; color: var(--text); font-size: 15px; text-align: left; overflow: hidden;
 }
-.date-row .t { cursor: pointer; }
+.date-row .t { cursor: pointer; flex-basis: 0; } /* 설명이 길면 글자가 줄바꿈되고 날짜 칸은 오른쪽에 */
 .date-row .mark-btn { width: 34px; height: 34px; }
 .date-row .mark-btn .ic { width: 16px; height: 16px; position: relative; z-index: 1; }
 #exam-dn { color: var(--primary); font-weight: 700; }
