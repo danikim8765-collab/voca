@@ -609,9 +609,10 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 @keyframes blank-in { from { background: var(--primary-soft); border-bottom-color: var(--primary); color: var(--primary); } }
 .tag.fb-head:not([hidden]) { animation: tag-in .35s ease-out; }
 @keyframes tag-in { from { opacity: 0; transform: translateY(4px); } }
-#q-sentences.answered.ok .sent { background: var(--ok-soft); }
-#q-sentences.answered.bad .sent { background: var(--bad-soft); }
-#q-sentences.answered.copied .sent, #q-sentences.answered.hint .sent { background: var(--warn-soft); }
+/* 채점한 예문: 색 바탕 + 색 테두리 (맞힘 초록 · 틀림 빨강 · 힌트 노랑) */
+#q-sentences.answered.ok .sent { background: var(--ok-soft); box-shadow: 0 0 0 3px var(--ok); }
+#q-sentences.answered.bad .sent { background: var(--bad-soft); box-shadow: 0 0 0 3px var(--bad); }
+#q-sentences.answered.copied .sent, #q-sentences.answered.hint .sent { background: var(--warn-soft); box-shadow: 0 0 0 3px var(--warn); }
 .tag.fb-head { font-size: 13px; font-weight: 800; padding: 3px 10px; margin: 0; }
 .tag.fb-head.ok { color: var(--on-ok); background: var(--ok); }
 .tag.fb-head.bad { color: var(--on-bad); background: var(--bad); }
@@ -1254,7 +1255,7 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 /* 정답 반응: 차분하게(움직임 없이 색만) · 보통(기본) · 신나게(톡 튀고 반짝) */
 :root[data-react="calm"] #q-sentences.answered .sent, :root[data-react="calm"] #q-sentences.answered .blank.filled,
 :root[data-react="calm"] .tag.fb-head, :root[data-react="calm"] .fb-coach .buddy-svg { animation: none !important; }
-:root[data-react="fun"] #q-sentences.answered.ok .sent { animation: card-in .45s ease-out, fun-pop .5s cubic-bezier(.3, 1.6, .5, 1); box-shadow: 0 0 26px 6px rgba(var(--ok-glow), .35); }
+:root[data-react="fun"] #q-sentences.answered.ok .sent { animation: card-in .45s ease-out, fun-pop .5s cubic-bezier(.3, 1.6, .5, 1); box-shadow: 0 0 0 3px var(--ok), 0 0 26px 6px rgba(var(--ok-glow), .45); }
 :root[data-react="fun"] .tag.fb-head.ok:not([hidden]) { animation: fun-tag .5s cubic-bezier(.3, 1.8, .5, 1); }
 @keyframes fun-pop { 40% { transform: scale(1.035); } }
 @keyframes fun-tag { 0% { transform: scale(.6); opacity: 0; } 60% { transform: scale(1.15); } }
