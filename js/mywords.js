@@ -6,18 +6,16 @@
 //              e2·e2ko Claude가 지은 예문, of 파생어면 단어책 단어 id, n 노트에 적은 횟수, d 처음 올린 날, t 올린 시각, u 고친 시각 }
 //  hit[단어책 id] = 단어책에 있는 단어를 또 적은 것 { w 단어, m 그 지문에서의 뜻, x: [지문 문장], n 횟수, d 마지막으로 적은 날, t 그 시각, u }
 //  지운 것은 { del: 1, u } (TOMB_KEEP 지나면 버림). round = '단어책 새로 시작' { n 몇 바퀴째, at, w: { 단어책 id: 지난 바퀴에 틀린 횟수 } }
-//  cfg = 두 모드가 같이 쓰는 설정 { per 하루 새 내 단어, cap 하루 복습 상한, busy 단어책 배우는 동안의 상한 (0 = 제한 없음), at 바꾼 시각 }
+//  cfg = 두 모드가 같이 쓰는 설정 { per 하루 새 내 단어, at 바꾼 시각 }
 import { parseCSV, mapColumns, formRegex, sameSense, makeBlanks, TOMB_KEEP } from './core.js';
 
 export const MY_KEY = 'voca.mywords.v1';
 export const MY_HEADER = '# VOCA 내 단어 v1';
 export const MY_COLS = ['날짜', '단어', '빈칸형태', '뜻', '품사', '예문', '예문해석', '예문2', '예문2해석', '출처'];
 export const MAX_SENT = 3; // 단어 하나에 남기는 지문 문장 (새것부터)
-export const MY_PER_DAY = 20; // 하루에 오늘의 학습에 넣는 새 내 단어 (기본, 설정에서 바꿈. '복습 100 지키기'가 줄일 수 있음)
+export const MY_PER_DAY = 20; // 하루에 오늘의 학습에 넣는 새 내 단어 (기본, 설정에서 바꿈)
 
-export const REVIEW_CAP = 100; // 하루 복습 상한 (오늘의 복습이 이보다 많으면 까먹었을 가능성이 큰 것부터 이만큼)
-export const REVIEW_CAP_BUSY = 160; // 단어책을 배우는 동안(학습 범위에 새 단어가 남아 있을 때)의 상한
-export const myCfg = store => ({ per: MY_PER_DAY, cap: REVIEW_CAP, busy: REVIEW_CAP_BUSY, at: 0, ...((store && store.cfg) || {}) });
+export const myCfg = store => ({ per: MY_PER_DAY, at: 0, ...((store && store.cfg) || {}) });
 export const emptyMy = () => ({ v: 1, my: {}, hit: {}, round: null });
 export const myKey = w => String(w || '').toLowerCase().replace(/[’‘`]/g, "'").replace(/\s+/g, ' ').trim();
 export const myId = key => 'my|' + key;

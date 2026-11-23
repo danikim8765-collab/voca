@@ -614,14 +614,6 @@ export function choicesFirst(ids, kindOf) {
   return [...c, ...t];
 }
 
-// 오늘 넣을 새 내 단어 수 ('복습 100 지키기'): 앞으로 7일 중 복습이 가장 많이 잡힌 날(peak)이 상한(cap)에 가까우면 줄임.
-// 새 단어 하나는 다음 두 주 동안 하루 복습 perWord개쯤을 더함. 그래도 하루 min개는 넣음(독해에서 막힌 단어가 몇 주씩 기다리지 않게). perDay가 min보다 적으면 perDay
-export const MY_MIN = 5;
-export function myNewQuota({ perDay = 20, min = MY_MIN, cap = 100, peak = 0, perWord = 3 } = {}) {
-  if (perDay <= min) return Math.max(0, perDay);
-  return Math.max(min, Math.min(perDay, Math.floor((cap - peak) / perWord)));
-}
-
 /**
  * 밀린 복습의 위험도: 지난번에 본 뒤 지난 날 ÷ 원래 잡혀 있던 간격. 클수록 까먹었을 가능성이 큼
  * (간격 1일짜리가 사흘 밀린 것(3) > 14일짜리가 사흘 밀린 것(17/14)). 밀린 게 많아 다 못 할 때 이 순서로 먼저

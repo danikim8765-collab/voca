@@ -3,7 +3,7 @@ import {
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
-  willGraduate, choicesFirst, myNewQuota, GRAD_BOOK, GRAD_MY, isMyId,
+  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId,
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
@@ -547,17 +547,8 @@ function dueLoad() {
   for (const w of reviewPool()) { const s = stats[w.id]; if (s && s.due && !s.del && !s.g) m.set(s.due, (m.get(s.due) || 0) + 1); }
   return d => m.get(d) || 0;
 }
-// 하루 복습 상한: 단어책을 배우는 동안(학습 범위에 새 단어가 남았고 시험 전 전체 훑기 전)은 busy, 그 밖엔 cap. 0 = 제한 없음
-const capBusy = () => leftNew() > 0 && !inSweep();
-const reviewCap = () => { const c = cfg(); return capBusy() ? c.busy : c.cap; };
-// 오늘 넣을 새 내 단어: 하루 개수(설정)를 앞으로 7일 복습 예정과 상한에 맞춰 줄임 (그래도 5개는). 오늘 이미 배운 내 단어는 뺌
-function myQuotaLeft() {
-  const c = cfg(), cap = reviewCap();
-  let peak = 0;
-  if (cap) { const L = dueLoad(), t = dateStr(); for (let i = 1; i <= 7; i++) peak = Math.max(peak, L(addDays(t, i))); }
-  const quota = cap ? myNewQuota({ perDay: c.per, cap, peak }) : c.per;
-  return Math.max(0, quota - myNewToday());
-}
+// 오늘 넣을 새 내 단어: 하루 개수(설정)에서 오늘 이미 배운 내 단어를 뺌
+const myQuotaLeft = () => Math.max(0, cfg().per - myNewToday());
 // 새 내 단어 대기열: 독해에서 또 막힌 안 배운 단어책 단어(적은 순) → 내 단어(올린 순)
 const myQueue = () => [
   ...words.filter(w => !stats[w.id] && hitNew(w.id)).sort((a, b) => hitOf(a.id).t - hitOf(b.id).t),
@@ -582,9 +573,10 @@ function todayPlan() {
   plan.mine = myQueue().slice(0, myQuotaLeft());
   return plan;
 }
-// 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서). 하루 상한(reviewCap)까지
-const srsPick = () => pickSrsReview(reviewPool(), rangeWords(), stats, { today: dateStr(), goal: goalDate(), exam: settings.exam, limit: settings.reviewLimit ? settings.reviewSize : reviewCap(), rest: restNow() });
-const pickToday = () => (srsOn() ? srsPick().words : pickReview(reviewPool(), stats, { n: reviewCap() ? Math.min(settings.reviewSize, reviewCap()) : settings.reviewSize }));
+// 오늘의 복습 고르기: 기본은 전에 한 단어 20개, 주기 복습이면 알고리즘(복습일 된 단어 / 목표일부터 범위 전부를 나눠서). 주기 복습은 '20개까지'를 골랐을 때만 개수 제한
+const srsLimit = () => (settings.reviewLimit ? settings.reviewSize : 0);
+const srsPick = () => pickSrsReview(reviewPool(), rangeWords(), stats, { today: dateStr(), goal: goalDate(), exam: settings.exam, limit: srsLimit(), rest: restNow() });
+const pickToday = () => (srsOn() ? srsPick().words : pickReview(reviewPool(), stats, { n: settings.reviewSize }));
 const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
 
@@ -1648,7 +1640,7 @@ function coachFacts(both = false) {
     }
     const fresh = f.plan.fresh.length, rv = f.rv.left.length, mine = f.plan.mine.length;
     lines.push(!f.learnLeft && f.rv.done ? '오늘 몫(새 단어·복습)을 다 끝냄' : `오늘 남은 할 일: 새 단어 ${fresh}개, ${mine ? `내 단어(독해 노트에서 올린 단어) ${mine}개, ` : ''}복습 ${rv}개`);
-    if (myWords.length) lines.push(`내 단어: 영어 문제를 풀다 모르는 단어를 노트에 적어 올린 것 ${myWords.length}개 (졸업 ${myWords.filter(w => stats[w.id] && stats[w.id].g).length}개). 하루 복습 상한 ${reviewCap() || '없음'}`);
+    if (myWords.length) lines.push(`내 단어: 영어 문제를 풀다 모르는 단어를 노트에 적어 올린 것 ${myWords.length}개 (졸업 ${myWords.filter(w => stats[w.id] && stats[w.id].g).length}개)`);
     lines.push(`오늘 배운 새 단어 ${newToday()}개`);
   }
   let wrong = 0, mastered = 0, last = 0;
@@ -1920,17 +1912,11 @@ function renderPlan() {
     $('#btn-review').disabled = !shown;
     if (srsOn()) {
       const sp = srsPick();
-      const cap = settings.reviewLimit ? settings.reviewSize : reviewCap();
+      const cap = srsLimit();
       note = sp.phase === 'final' ? `목표일부터 시험 전까지 학습 범위 ${rangeWords().length}단어를 ${sp.days}일에 나눠 전부 복습해요 (하루 ${sp.size}개쯤).`
-        : cap && due > cap ? `복습일이 된 단어가 ${due}개라 까먹었을 가능성이 큰 것부터 ${cap}개만 해요.` + (settings.reviewLimit ? " 설정에서 '제한 없음'으로 바꿀 수 있어요." : '')
+        : cap && due > cap ? `복습일이 된 단어가 ${due}개라 까먹었을 가능성이 큰 것부터 ${cap}개만 해요. 설정에서 '제한 없음'으로 바꿀 수 있어요.`
           : '주기 복습: 오늘 복습일이 된 단어예요.';
     } else note = due > dueIn ? `복습일이 된 단어가 ${due}개라 오늘은 밀린 것부터 ${shown}개 해요. 나머지는 추가 복습에서 나와요.` : '';
-    // 단어책을 배우는 동안은 상한이 높아요 (끝날 때까지 며칠 남았는지)
-    const c = cfg();
-    if (!settings.reviewLimit && capBusy() && c.busy && c.busy !== c.cap && shown > c.cap) {
-      const per = Math.max(1, todayNewTarget() || settings.newPerDay || 1), left = Math.ceil(leftNew() / per);
-      note = `단어책을 배우는 동안이라 복습이 많은 때예요 · 하루 ${c.busy}개까지, 단어책을 다 배우면 ${c.cap ? `${c.cap}개로` : '다시 줄어요'} (${left}일쯤 남음)`;
-    }
     const pace = paceNote();
     if (pace) note = pace;
   } else if (stage === 'extra') {
@@ -1962,7 +1948,7 @@ function renderPlan() {
 // 복습이 평소보다 많이 밀렸을 때 왜 쌓이는지와 맞는 페이스를 숫자로 (새 단어 하나는 하루 복습 5개쯤으로 돌아옴)
 function paceNote() {
   const N = todayNewTarget();
-  const cap = srsOn() ? (settings.reviewLimit ? settings.reviewSize : reviewCap()) : settings.reviewSize;
+  const cap = srsOn() ? srsLimit() : settings.reviewSize;
   const p = reviewPace(reviewPool(), stats, { today: dateStr(), newPerDay: N, capacity: cap });
   if (!p.heavy) return '';
   const head = `밀린 복습 ${p.backlog}개 · 까먹었을 가능성이 큰 것부터 나오니 할 수 있는 만큼만 해도 돼요.`;
@@ -4656,8 +4642,6 @@ function exportMy() {
 function renderMySettings() {
   const c = cfg();
   setSeg('#seg-my-per', String(c.per));
-  setSeg('#seg-cap', String(c.cap));
-  setSeg('#seg-cap-busy', String(c.busy));
   const live = myWords.length, hits = Object.values(myStore.hit || {}).filter(h => h && !h.del).length;
   const grad = myWords.filter(w => stats[w.id] && stats[w.id].g).length, wait = myQueue().length;
   $('#my-info').textContent = live || hits
@@ -4824,8 +4808,6 @@ function bind() {
   $('#btn-my-save').addEventListener('click', saveMyDraft);
   $('#btn-my-export').addEventListener('click', () => { if (!myWords.length && !Object.keys(myStore.hit || {}).length) { toast('내보낼 내 단어가 없어요'); return; } exportMy(); });
   onSeg('#seg-my-per', v => setMyCfg({ per: +v }));
-  onSeg('#seg-cap', v => setMyCfg({ cap: +v }));
-  onSeg('#seg-cap-busy', v => setMyCfg({ busy: +v }));
   $('#btn-book-restart').addEventListener('click', restartBook);
   $('#plan-sum-card').addEventListener('click', () => { planFrom = null; show('plan'); });
   $('#btn-plan-back').addEventListener('click', () => {
