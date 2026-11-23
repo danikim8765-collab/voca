@@ -235,10 +235,11 @@
           <button data-v="40">40</button>
         </div>
       </div>
-      <!-- 목표일(새 단어 끝): 코치를 켜면 코치가 정하니 숨김. 설정 > 복습의 목표일과 같은 값 -->
-      <label class="set-row date-row" id="plan-goal-row"><span class="t">목표일<small class="d">새 단어를 다 배울 날</small></span>
+      <!-- 목표일(새 단어를 보는 마지막 날): 설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일 (app.js setGoal) -->
+      <div class="set-row date-row" id="plan-goal-row"><label class="t" for="plan-goal-date">목표일<small class="d" id="plan-goal-d">새 단어를 다 배울 날</small></label>
         <input type="date" id="plan-goal-date" class="date-input row-date">
-      </label>
+        <button class="mark-btn" id="btn-goal-clear" type="button" data-icon="close" aria-label="목표일 지우기" title="목표일 지우기"></button>
+      </div>
       <div class="set-row date-row exam-row"><label class="t" for="exam-date">시험일<small class="d" id="exam-dn"></small></label>
         <input type="date" id="exam-date" class="date-input row-date">
         <button class="mark-btn" id="btn-exam-clear" type="button" data-icon="close" aria-label="시험일 지우기" title="시험일 지우기"></button>
@@ -469,31 +470,19 @@
       <div class="coach-choices" id="coach-chars" role="radiogroup" aria-label="코치 캐릭터" hidden></div>
       <div class="label" id="coach-rest-label" hidden>쉬는 요일</div>
       <div class="rest-chips" id="coach-rest" hidden></div>
-      <div id="srs-manual">
-      <label class="switch-row"><span>주기 복습</span><input type="checkbox" role="switch" class="switch" id="opt-srs"></label>
-      </div>
       <div id="srs-opts">
         <div class="label mt">기억 유지 그래프</div>
         <div class="srs-graph" id="srs-graph"></div>
         <div class="label">복습 주기</div>
         <div class="srs-presets" id="srs-presets" role="radiogroup" aria-label="복습 주기"></div>
-        <div class="label mt">오늘의 복습 개수</div>
-        <div class="seg" id="seg-limit">
-          <button data-v="0">제한 없음</button>
-          <button data-v="1" id="limit-n">20개까지</button>
-        </div>
       </div>
     </div>
     <!-- 내 단어: 두 모드가 같이 쓰고 기기끼리 맞춰짐 (app.js renderMySettings) -->
     <div class="card" id="set-my" data-tab="srs">
       <div class="label">내 단어</div>
       <p class="muted" id="my-info"></p>
-      <div class="opt-row"><span>하루 새 내 단어 <small>(복습이 많은 날엔 줄여도 5개는)</small></span>
+      <div class="opt-row"><span>하루 새 내 단어</span>
         <div class="seg" id="seg-my-per"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="30">30</button></div></div>
-      <div class="opt-row"><span>하루 복습 상한 <small>(넘으면 까먹었을 가능성이 큰 것부터)</small></span>
-        <div class="seg" id="seg-cap"><button data-v="60">60</button><button data-v="100">100</button><button data-v="150">150</button><button data-v="0">제한 없음</button></div></div>
-      <div class="opt-row"><span>단어책 배우는 동안 <small>(범위에 새 단어가 남아 있을 때)</small></span>
-        <div class="seg" id="seg-cap-busy"><button data-v="100">100</button><button data-v="160">160</button><button data-v="200">200</button><button data-v="0">제한 없음</button></div></div>
       <div class="row two">
         <button class="btn primary" id="btn-my-open">내 단어 올리기</button>
         <button class="btn secondary" id="btn-my-prompt2">부탁 문구 복사</button>

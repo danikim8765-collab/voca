@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rowsToWords, applyResult, questionKind, willGraduate, choicesFirst, myNewQuota, mergeProgress, pickReview, isDue, buildPlan, GRAD_BOOK, GRAD_MY, addDays } from '../js/core.js';
+import { rowsToWords, applyResult, questionKind, willGraduate, choicesFirst, mergeProgress, pickReview, isDue, buildPlan, GRAD_BOOK, GRAD_MY, addDays } from '../js/core.js';
 import { parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, emptyMy, MY_HEADER, MY_COLS, CLAUDE_PROMPT, myId } from '../js/mywords.js';
 
 const BOOK = rowsToWords([{ name: 'b.csv', text: `DAY,단어,뜻,파생어,예문,예문해석,예문2
@@ -203,13 +203,6 @@ test('문제 방식: 직접 입력을 한 번에 맞히면 다음부터 4지선�
 test('복습 묶음은 4지선다 먼저', () => {
   const k = { a: 'type', b: 'choice', c: 'type', d: 'choice' };
   assert.deepEqual(choicesFirst(['a', 'b', 'c', 'd'], id => k[id]), ['b', 'd', 'a', 'c']);
-});
-
-test('복습 100 지키기: 복습이 많으면 새 내 단어를 줄이되 하루 5개는 넣음', () => {
-  assert.equal(myNewQuota({ perDay: 20, cap: 100, peak: 30 }), 20);
-  assert.equal(myNewQuota({ perDay: 20, cap: 100, peak: 70 }), 10);
-  assert.equal(myNewQuota({ perDay: 20, cap: 100, peak: 120 }), 5);
-  assert.equal(myNewQuota({ perDay: 3, cap: 100, peak: 120 }), 3);
 });
 
 test('단어책 새로 시작: 단어책 기록만 버리고 내 단어는 그대로 (기기끼리도)', () => {
