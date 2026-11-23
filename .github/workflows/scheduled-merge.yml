@@ -40,8 +40,10 @@ jobs:
         run: |
           merged=0
           failed=""
-          prs=$(gh pr list --state open --base main --label "머지 대기" --json number,isDraft \
-                --jq 'sort_by(.number) | .[] | select(.isDraft | not) | .number')
+          # 열린 PR 목록을 직접 읽어서 라벨로 거름. (gh pr list --label은 GitHub 검색을 거쳐서
+          # 방금 붙인 라벨이 몇십 초 늦게 잡힘 → 라벨을 붙이고 바로 손으로 돌리면 못 찾고 그냥 끝났음)
+          prs=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=open&base=main&per_page=100" --paginate \
+                --jq '.[] | select(.draft | not) | select(any(.labels[]; .name == "머지 대기")) | .number' | sort -n)
           for n in $prs; do
             # 그 PR을 main에 합친 모습(pull/N/merge)으로 테스트. 실패하면 머지하지 않고 남김
             # (merge ref가 없으면 충돌이 있는 것이라 아래 머지도 실패함)
