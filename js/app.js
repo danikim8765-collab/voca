@@ -2320,6 +2320,7 @@ function renderSynQuestion(w) {
   const actions = $('#q-actions');
   unpinChoices();
   actions.innerHTML = '';
+  hideCoach(); // 넓은 컴퓨터 화면에선 말풍선이 #q-actions 밖(오른쪽 칸)에 있음
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
@@ -2483,6 +2484,7 @@ function renderQuestion() {
   const actions = $('#q-actions');
   unpinChoices();
   actions.innerHTML = '';
+  hideCoach(); // 넓은 컴퓨터 화면에선 말풍선이 #q-actions 밖(오른쪽 칸)에 있음
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
@@ -2638,6 +2640,7 @@ function renderWordQuestion(w) {
   const actions = $('#q-actions');
   unpinChoices();
   actions.innerHTML = '';
+  hideCoach(); // 넓은 컴퓨터 화면에선 말풍선이 #q-actions 밖(오른쪽 칸)에 있음
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
@@ -2878,6 +2881,7 @@ function renderChoices(actions) {
 }
 
 // 오답 풀이 말풍선: 키보드 바로 위(앱 키보드) 또는 입력칸 위(폰 키보드).
+// 컴퓨터는 예문 박스를 가리지 않게: 넓은 화면은 오른쪽 빈 칸(정답 풀이 자리), 좁은 화면은 안내 줄 아래
 // 문제 푸는 걸 막지 않게: 잠깐(글 길이에 따라 2.5~4.5초) 보였다가 저절로 사라지고, 다시 쓰기 시작해도 바로 사라짐. 눌러도 아래가 그대로 눌림
 const COACH_ICON = { spell: '✏️', near: '🌱', off: '🤔', wait: '💭' }; // off(빨강)는 AI 풀이일 때만
 function showCoach(actions, f, { stay = false } = {}) {
@@ -2891,7 +2895,9 @@ function showCoach(actions, f, { stay = false } = {}) {
     msg.append(d, ` · ${f.text}`);
   } else msg.textContent = f.text;
   box.append(el('span', 'coach-ic', COACH_ICON[f.kind] || '💬'), msg);
-  actions.prepend(box);
+  if (wideDesk()) $('#quiz').appendChild(box);
+  else if (DESK) actions.appendChild(box);
+  else actions.prepend(box);
   if (stay) return; // 'AI가 살펴보는 중…'은 결과가 올 때까지
   const ms = Math.min(6000, 2500 + f.text.length * 35);
   hideCoach.timer = setTimeout(() => { box.classList.add('out'); setTimeout(() => box.remove(), 300); }, ms);

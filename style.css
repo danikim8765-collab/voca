@@ -851,6 +851,7 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
   pointer-events: none; transition: opacity .3s ease, transform .3s ease; /* 눌러도 아래(키보드·문장)가 그대로 눌림 */
 }
 .kb-mode .coach { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); margin: 0; }
+.desk .kb-mode .coach { position: static; margin: 10px 0 0; } /* 컴퓨터: 예문 박스를 가리지 않게 안내 줄 아래로 */
 .coach.spell { background: var(--spell-soft); border-color: var(--spell); }
 .coach.near { background: var(--ok-soft); border-color: var(--ok); }
 .coach.off { background: var(--bad-soft); border-color: var(--bad); } /* AI 풀이일 때만 */
@@ -943,6 +944,7 @@ html:not(.desk) .desk-only { display: none; }
   .desk #quiz > .sheet { grid-column: 2; grid-row: 3 / span 2; align-self: center; position: relative; left: auto; right: auto; bottom: auto; z-index: 1; display: block; }
   .desk .sheet-inner { max-width: none; max-height: calc(100dvh - 120px); border-radius: var(--r-xl); padding: 18px 18px 16px; box-shadow: 0 8px 28px rgba(15, 30, 60, .12); animation: fb-in .25s ease-out; }
   .desk .grab { display: none; }
+  .desk #quiz > .coach { grid-column: 2; grid-row: 3 / span 2; align-self: center; margin: 0; } /* 오답 풀이 말풍선은 오른쪽 빈 칸(정답 풀이 자리)에 */
   .desk .quiz-actions { max-width: none; }
 }
 @keyframes fb-in { from { opacity: 0; transform: translateX(12px); } }
