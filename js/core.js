@@ -1424,8 +1424,7 @@ export function coachFeedback(input, w, { cands = [], find = () => null } = {}) 
   // 뜻이 겹치는 단어장의 다른 단어: 그것도 좋은데 다른 단어는? (첫 글자)
   const other = find(typed);
   if (other && sameSense(other.meaning, w.meaning)) {
-    const first = (answerParts(w.blank)[0] || w.word).trim()[0] || '';
-    return { kind: 'near', text: `'${other.word}'도 좋아요. 그런데 다른 단어는 없을까요? 첫 글자는 '${first.toLowerCase()}'예요.` };
+    return { kind: 'near', text: `'${other.word}'도 좋아요. 그런데 다른 단어는 없을까요?` }; // 앞 글자는 앱이 붙임 (nearLetters)
   }
   // 철자 비교는 정답 중 가장 가까운 것과
   // 이웃한 두 글자의 순서를 바꿔 친 건 한 번 틀린 걸로 셈 (nrom → norm). 짧은 단어는 한 번까지만 봐줘서
@@ -1443,6 +1442,21 @@ export function coachFeedback(input, w, { cands = [], find = () => null } = {}) 
     return { kind: 'spell', diff: best.segs, text };
   }
   return null;
+}
+
+// 초록 말풍선(뜻은 통하는 다른 말을 씀)에 붙이는 앞 글자 힌트. 뜻은 안다는 거라 힌트로 치지 않음.
+// 짧은 단어는 1글자, 긴 단어(NEAR_LONG 글자 이상)는 2글자부터. 다른 비슷한 말을 또 쓸 때마다 한 글자씩 더
+// (끝 두 글자는 남김). target = 예문 속 정답 꼴(typingHintTarget), nth = 이 문제에서 몇 번째로 쓴 비슷한 말인지
+export const NEAR_LONG = 7;
+export function nearLetters(target, nth = 1) {
+  const t = String(target || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const letters = t.replace(/ /g, '').length;
+  if (!letters) return null;
+  const want = (letters >= NEAR_LONG ? 2 : 1) + Math.max(0, nth - 1);
+  const n = Math.max(1, Math.min(want, letters - 2));
+  let prefix = '', k = 0;
+  for (const ch of t) { if (k >= n) break; prefix += ch; if (ch !== ' ') k++; }
+  return { n, prefix, text: n === 1 ? `첫 글자는 '${prefix}'예요.` : `'${prefix}'로 시작해요.` };
 }
 
 // 오타 횟수: 넣기·빼기·바꾸기 한 번씩, 이웃한 두 글자 순서 바꿈도 한 번 (Damerau)

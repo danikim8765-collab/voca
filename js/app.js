@@ -1,7 +1,7 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
-  highlightMeaning, nextLetterHint, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
+  highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
   willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId,
 } from './core.js';
@@ -2320,6 +2320,7 @@ function renderSynQuestion(w) {
   const actions = $('#q-actions');
   unpinChoices();
   actions.innerHTML = '';
+  hideCoach(); // 넓은 컴퓨터 화면에선 말풍선이 #q-actions 밖(오른쪽 칸)에 있음
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
@@ -2483,6 +2484,7 @@ function renderQuestion() {
   const actions = $('#q-actions');
   unpinChoices();
   actions.innerHTML = '';
+  hideCoach(); // 넓은 컴퓨터 화면에선 말풍선이 #q-actions 밖(오른쪽 칸)에 있음
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
@@ -2638,6 +2640,7 @@ function renderWordQuestion(w) {
   const actions = $('#q-actions');
   unpinChoices();
   actions.innerHTML = '';
+  hideCoach(); // 넓은 컴퓨터 화면에선 말풍선이 #q-actions 밖(오른쪽 칸)에 있음
   kb = null;
   $('#quiz').classList.remove('kb-mode', 'phone-choices');
   $('.quiz-body').style.paddingBottom = '';
@@ -2878,7 +2881,8 @@ function renderChoices(actions) {
 }
 
 // 오답 풀이 말풍선: 키보드 바로 위(앱 키보드) 또는 입력칸 위(폰 키보드).
-// 문제 푸는 걸 막지 않게: 잠깐(글 길이에 따라 2.5~4.5초) 보였다가 저절로 사라지고, 다시 쓰기 시작해도 바로 사라짐. 눌러도 아래가 그대로 눌림
+// 컴퓨터는 예문 박스를 가리지 않게: 넓은 화면은 오른쪽 빈 칸(정답 풀이 자리), 좁은 화면은 안내 줄 아래
+// 문제 푸는 걸 막지 않게: 잠깐(글 길이에 따라 2.5~6초, 앞 글자를 알려 주는 초록은 4~9초) 보였다가 저절로 사라지고, 다시 쓰기 시작해도 바로 사라짐. 눌러도 아래가 그대로 눌림
 const COACH_ICON = { spell: '✏️', near: '🌱', off: '🤔', wait: '💭' }; // off(빨강)는 AI 풀이일 때만
 function showCoach(actions, f, { stay = false } = {}) {
   hideCoach();
@@ -2891,9 +2895,12 @@ function showCoach(actions, f, { stay = false } = {}) {
     msg.append(d, ` · ${f.text}`);
   } else msg.textContent = f.text;
   box.append(el('span', 'coach-ic', COACH_ICON[f.kind] || '💬'), msg);
-  actions.prepend(box);
+  if (wideDesk()) $('#quiz').appendChild(box);
+  else if (DESK) actions.appendChild(box);
+  else actions.prepend(box);
   if (stay) return; // 'AI가 살펴보는 중…'은 결과가 올 때까지
-  const ms = Math.min(6000, 2500 + f.text.length * 35);
+  const near = f.kind === 'near';
+  const ms = Math.min(near ? 9000 : 6000, (near ? 4000 : 2500) + f.text.length * 35);
   hideCoach.timer = setTimeout(() => { box.classList.add('out'); setTimeout(() => box.remove(), 300); }, ms);
 }
 function hideCoach() { clearTimeout(hideCoach.timer); document.querySelectorAll('.coach').forEach(c => c.remove()); }
@@ -2973,11 +2980,20 @@ function renderTyping(actions) {
   };
   // 틀린 답이 아깝거나 비슷하면 말풍선으로 (철자·형태 노랑 · 뜻이 통하는 말 초록). 상관없는 말엔 안 띄움
   // AI가 켜져 있으면: 철자 실수·빈칸 덜 채움은 바로 규칙 말풍선, 그 밖엔 AI가 두 예문을 보고 풀이 (실패하면 규칙 말풍선)
+  // 초록(뜻은 통함)이면 앱이 앞 글자를 붙임 (AI는 글자를 말하지 않음). 힌트로 치지 않음.
+  // 짧은 단어 1글자 · 긴 단어 2글자, 다른 비슷한 말을 또 쓰면 한 글자씩 더
+  const nearSeen = new Set();
+  const withLetters = (f, n) => {
+    if (!f || f.kind !== 'near') return f;
+    nearSeen.add(n);
+    const h = nearLetters(typingHintTarget(q.w, q.b1 && q.b1.blanks, q.b2 && q.b2.blanks), nearSeen.size);
+    return h ? { ...f, text: `${f.text} ${h.text}` } : f;
+  };
   const notYet = async (value, auto) => {
     clearTimeout(coachIdle);
     const n = normalizeAnswer(value);
     const f = coachFeedback(value, q.w, { cands, find: t => findWord(t, q.w.id) });
-    const plain = () => { if (f) showCoach(actions, f); else if (!auto) toast('아직 정답이 아니에요. 모르면 힌트를 눌러보세요'); };
+    const plain = () => { if (f) showCoach(actions, withLetters(f, n)); else if (!auto) toast('아직 정답이 아니에요. 모르면 힌트를 눌러보세요'); };
     if (!aiOnline() || n.length < 2 || q.revealed || (f && f.kind === 'spell')) return plain();
     const key = `${q.w.id}|${n}`;
     let r = coachCache.get(key);
@@ -2996,7 +3012,7 @@ function renderTyping(actions) {
     }
     // 그 사이 다음 문제로 넘어갔거나 다시 쓰기 시작했으면 안 보여 줌
     if (q !== thisQ || q.answered || !q.typing || normalizeAnswer(q.typing.get()) !== n) return;
-    if (r) showCoach(actions, r); else { hideCoach(); plain(); }
+    if (r) showCoach(actions, withLetters(r, n)); else { hideCoach(); plain(); }
   };
   if (settings.appKeyboard || DESK) {
     const kbHelp = DESK ? `${parts > 1 ? `빈칸 ${parts}곳 · ` : ''}키보드로 바로 치세요 · Enter 확인 · Shift 힌트`

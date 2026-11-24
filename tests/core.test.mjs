@@ -433,7 +433,7 @@ test('직접 입력 오답 풀이: 철자·형태(노랑) · 뜻이 통하는 �
   assert.match(coachFeedback('fatality', fatal, opt).text, /명사/);
   assert.match(coachFeedback('deadly', fatal, opt).text, /뉘앙스/);
   assert.equal(k('deadly'), 'near');
-  assert.match(coachFeedback('decisive', fatal, opt).text, /다른 단어는 없을까요\? 첫 글자는 'f'예요/);
+  assert.match(coachFeedback('decisive', fatal, opt).text, /다른 단어는 없을까요\?$/); // 앞 글자는 앱이 nearLetters로 붙임
   assert.equal(k('harmless'), null); // 반대말
   assert.equal(k('abide'), null);    // 상관없는 단어
   assert.equal(k('zzzz'), null);     // 모르는 말
@@ -1025,4 +1025,16 @@ test('코치와 이야기: 학생 말에 나온 단어(변화형·파생어·뜻
   assert.deepEqual(f('fatalism'), []);
   assert.deepEqual(findMentioned(ws, ['DAY 27이랑 day26, DAY 99']).days, [27, 26]);
   assert.equal(findMentioned(ws, ['fatal definite'], { max: 1 }).words.length, 1);
+});
+
+test('초록 말풍선 앞 글자: 짧으면 1글자, 길면 2글자, 다른 비슷한 말을 또 쓰면 한 글자씩 더', async () => {
+  const { nearLetters } = await import('../js/core.js');
+  assert.equal(nearLetters('fatal').text, "첫 글자는 'f'예요.");
+  assert.equal(nearLetters('fatal', 2).prefix, 'fa');
+  assert.equal(nearLetters('fatal', 9).prefix, 'fat'); // 끝 두 글자는 남김
+  assert.equal(nearLetters('gorgeous').text, "'go'로 시작해요.");
+  assert.equal(nearLetters('gorgeous', 2).prefix, 'gor');
+  assert.equal(nearLetters('break off', 5).prefix, 'break o'); // 띄어쓰기는 글자로 안 셈
+  assert.equal(nearLetters('odd').prefix, 'o');
+  assert.equal(nearLetters(''), null);
 });
