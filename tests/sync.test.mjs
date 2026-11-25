@@ -154,3 +154,32 @@ test('GitHub가 막으면 기다리는 동안 아무것도 안 보내고, Gist�
   assert.deepEqual(JSON.parse(gist['voca-marks.json']).coach, { char: 'owl', at: 1 });
   globalThis.fetch = real;
 });
+
+test('코치 이야기·학습 기록(voca-coach.json): 폰에서 한 학습을 PC 코치가 앎', async () => {
+  const { mergeCoachData, sameCoachData } = await import('../js/core.js');
+  store.clear();
+  store.set('voca.sync.v1', JSON.stringify({ token: 't', gistId: 'g1' }));
+  gist = {};
+  const now = Date.now();
+  const dev = data => {
+    const d = { data };
+    d.sync = createSync({
+      getLocal: () => ({ v: 2, resetAt: 0, stats: {}, prefs: {} }),
+      applyMerged: () => {},
+      extra: [{ file: 'voca-coach.json', get: () => d.data, set: m => { d.data = m; }, merge: mergeCoachData, same: sameCoachData }],
+    });
+    return d;
+  };
+  const phone = dev({ chat: { items: [{ who: 'me', text: '폰에서', t: now - 5 }], notes: [] }, log: [{ t: now - 3, m: 'e', sid: 1, id: 'a', o: 'wrong' }] });
+  await phone.sync.now();
+  const pc = dev({ chat: { items: [{ who: 'me', text: 'PC에서', t: now - 4 }], notes: [] }, log: [] });
+  await pc.sync.now();
+  assert.deepEqual(pc.data.log.map(e => e.id), ['a']);
+  assert.deepEqual(pc.data.chat.items.map(x => x.text), ['폰에서', 'PC에서']);
+  await phone.sync.now();
+  assert.deepEqual(phone.data.chat.items.map(x => x.text), ['폰에서', 'PC에서']);
+  // 바뀐 게 없으면 올리지 않음
+  calls = [];
+  await phone.sync.now();
+  assert.ok(!calls.some(c => c.opts.method === 'PATCH'));
+});

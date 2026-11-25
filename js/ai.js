@@ -705,7 +705,9 @@ const chatSystem = char => `영단어 시험을 준비하는 학생의 단어 �
 ${APP_GUIDE}
 - <data>는 앱이 가진 자세한 기록이에요: 단어장 전체, DAY별 진도, 정답률, 최근 공부한 날, 앞으로의 복습일, 오늘 배울·복습할 단어, 형광펜, 설정, 일정 선택지. 학생이 진도·기록·설정을 물으면 여기서 찾아 그대로 답해요.
 - <lookup>은 학생 말(또는 바로 앞 코치 말)에 나온 단어와 DAY를 앱의 단어장에서 찾은 자료예요: 뜻·유의어·반의어·파생어·예문·해석과 두 모드의 기록. 단어 뜻이나 예문을 말할 땐 이 앱 단어장의 것을 먼저 쓰고, 그 단어를 언제 배웠는지·몇 번 틀렸는지도 여기서 봐요.
-- 앱 자료(<facts>·<data>·<lookup>·<weak>)에 없는 기록은 모른다고 하고 지어내지 마요. 단어 뜻은 단어장에 없으면 아는 대로 말해도 되지만, 이 앱 단어장 뜻이 아니라고 밝혀요.
+- <recent>는 앱이 적은 학생의 실제 학습 기록이에요(시각순, 다른 기기와 두 모드 것까지): 학습마다 언제·무엇을·몇 문제 했는지, 끝냈는지 푸는 중인지, 틀린 단어와 그때 학생이 고르거나 쓴 답, 힌트 쓴 단어, 가장 최근 학습에서 푼 순서, 정답 화면에서 AI에게 물어본 것. "방금", "아까", "오늘 뭐 틀렸어?", "그 단어 뭐였지?"는 여기서 찾아 답해요. 학생이 고른 오답이 있으면 왜 헷갈렸을지 짚어 줄 수 있어요.
+- <recent>에 [코치와 마지막으로 이야기한 뒤] 표시가 있는 학습은 학생이 지난번 말 뒤에 새로 한 거예요. 학생이 그 얘기를 안 꺼내도 지켜본 코치처럼 첫 문장에 짧게 알아봐 줘도 좋아요(한 문장, 꼭 필요한 숫자 하나 정도). 학생 말이 다른 주제면 짧게만 하고 물은 것에 답해요.
+- 앱 자료(<facts>·<data>·<lookup>·<weak>·<recent>)에 없는 기록은 모른다고 하고 지어내지 마요. 단어 뜻은 단어장에 없으면 아는 대로 말해도 되지만, 이 앱 단어장 뜻이 아니라고 밝혀요.
 - <weak>는 학생이 약한 단어예요. 학생이 묻거나 흐름에 맞으면 몇 개를 짚어서 외우는 요령(어원, 비슷한 단어와 구별, 짧은 장면)을 알려 줘요. 퀴즈를 내 달라고 하면 여기서 한 문제씩 내고, 학생이 답하면 맞았는지 봐 준 다음 다음 문제로 가요.
 
 일정:
@@ -843,12 +845,12 @@ function looseChat(raw) {
 }
 
 /**
- * 코치와 이야기하기. facts: 오늘 상황, weak: 약한 단어 목록(글자), notes: 기억해 둔 것 [글자],
+ * 코치와 이야기하기. facts: 오늘 상황, recent: 최근 학습 기록(core.js activityDigest), weak: 약한 단어 목록(글자), notes: 기억해 둔 것 [글자],
  * history: 앞선 이야기(chatTranscript 참고), message: 학생이 방금 한 말, day: 오늘 날짜
  * 반환 { mood, text, plan: { rest?, perDay?, review?, today? } | null, remember: 글자 } 또는 null(실패, aiCoachError()로 까닭)
  */
 export const NEEDS_DATA = /진도|기록|정답|설정|일정|계획|선택지|복습|DAY|데이|언제|며칠|몇|형광|어제|오늘|이번 ?주|틀린|틀렸|배운|배웠|외운|외웠|남은|남았|밀린|밀렸|얼마|많이|모드|방식|동기화|버전|주기|암기 완료|다시 볼/i;
-export async function aiCoachChat({ char, facts, data = '', lookup = '', weak = '', notes = [], summary = '', history = [], message, day = '', onText = null }) {
+export async function aiCoachChat({ char, facts, data = '', lookup = '', recent = '', weak = '', notes = [], summary = '', history = [], message, day = '', onText = null }) {
   if (!aiCoachOnline()) { lastErr = 'offline'; return null; }
   const prev = chatFirst ? history.findIndex(h => itemKey(h) === chatFirst) : -1;
   const from = chatFrom(history, { ...chatWindow(coachConf().provider), prev });
@@ -872,8 +874,10 @@ ${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 
     ...lines.map(l => ({ text: `${l}\n` })),
   ];
   parts[parts.length - 1].cache = true;
-  // 학생 말에 나온 단어 자료는 말마다 달라서 캐시할 앞부분 뒤에 둠
-  parts.push({ text: `${lookup ? `<lookup>\n${lookup}\n</lookup>\n` : ''}${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
+  // 학생 말에 나온 단어 자료와 최근 학습 기록은 말마다 달라서 캐시할 앞부분 뒤에 둠
+  // Groq 무료 등급은 분당 토큰이 적어서 최근 학습 기록도 최근 쪽 1,200자까지만
+  if (recent && coachConf().provider === 'groq' && recent.length > 1200) recent = recent.slice(recent.indexOf('\n', recent.length - 1200) + 1);
+  parts.push({ text: `${recent ? `<recent>\n${recent}\n</recent>\n` : ''}${lookup ? `<lookup>\n${lookup}\n</lookup>\n` : ''}${day ? `(${day}, 지금)\n` : ''}학생이 방금 한 말:
 <message>${safeAnswer(message)}</message>` });
   const raw = await askCoach({
     system: chatSystem(char), json: true, schema: CHAT_SCHEMA, gschema: CHAT_GSCHEMA, timeout: 90000, chat: true,
@@ -906,7 +910,7 @@ ${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 
   // 일정 값을 뽑았으면 계산은 앱 카드가 보여 줌. AI가 결과를 짐작해서 쓴 숫자("총 180개, 48일 더")는 카드와 어긋나니,
   // 지금 상황·학생 말·뽑은 값에 없는 숫자가 든 문장은 빼고, 남는 게 없으면 앱의 말로
   if (has && text) {
-    const known = `${facts}\n${data}\n${lookup}\n${message}\n${Object.values(plan).flat().join(' ')}`;
+    const known = `${facts}\n${data}\n${lookup}\n${recent}\n${message}\n${Object.values(plan).flat().join(' ')}`;
     if (!numbersOk(text, known)) {
       const kept = (text.match(/[^.!?\n]+[.!?]*\s*/g) || []).filter(s => numbersOk(s, known)).join('').trim();
       text = kept || '말한 대로 계산해 볼게요. 바로 아래 카드에서 확인해 주세요.';

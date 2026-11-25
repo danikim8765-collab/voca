@@ -2,7 +2,7 @@ import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
-  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
+  synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
   willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId,
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
@@ -308,6 +308,19 @@ const sync = createSync({
     same: (x, y) => LOOK.sameLook(x, y),
   },
   other: { get: otherProgress, set: (st, m) => { save(OTHER_P + 'stats.v1', st); if (m) save(OTHER_P + 'bookResetAt.v1', m.bookResetAt || 0); } },
+  // 코치 이야기·기억과 학습 기록 (voca-coach.json): 다른 기기에서 한 학습과 이야기도 코치가 알게. 두 모드가 같이 씀
+  extra: [{
+    file: 'voca-coach.json',
+    get: () => ({ v: 1, chat: mergeCoachChat(load(CHAT_KEY, null), null, { keep: CHAT_KEEP, notes: NOTE_KEEP }), log: cleanLog(load(LOG_KEY, [])) }),
+    set: m => {
+      save(LOG_KEY, cleanLog(m.log));
+      const fail = (load(CHAT_KEY, null) || {}).sumFail;
+      save(CHAT_KEY, { ...m.chat, ...(fail ? { sumFail: fail } : {}) });
+      if (liveChat) liveChat(); // 코치와 이야기하는 화면이 열려 있으면 바로 합쳐 다시 그림
+    },
+    merge: (l, r) => mergeCoachData(l, r),
+    same: sameCoachData,
+  }],
   // 내 단어 (voca-mywords.json): 단어마다 더 최근에 고친 쪽으로
   mine: {
     get: () => myStore,
@@ -1138,7 +1151,7 @@ function pickSchedule() {
 }
 
 // ---------- 코치와 이야기하기 (AI) ----------
-// 메신저처럼 주고받는 화면. 이야기와 코치가 기억해 둔 것은 이 기기에만 저장하고(동기화 안 함) 날이 바뀌어도 이어짐.
+// 메신저처럼 주고받는 화면. 이야기와 코치가 기억해 둔 것은 날이 바뀌어도 이어지고, 동기화를 켜면 기기끼리도 맞춤(voca-coach.json).
 // 일정 얘기면 AI는 학생이 원하는 값만 뽑고(js/ai.js aiCoachChat), 계산과 숫자는 앱이 카드로 보여 줌(coachProposal).
 // 실제로 바뀌는 건 카드의 '이렇게 할게요'를 눌렀을 때
 // 코치는 예문·단어 모드가 하나: 이야기와 기억도 같이 씀. 예전 단어 모드 기록(voca.word.coach.chat.v1)은 처음 열 때 합침
@@ -1154,11 +1167,35 @@ function loadChat() {
     try { localStorage.removeItem(OLD_WORD_CHAT); } catch {}
   }
   const c = load(CHAT_KEY, null) || {};
-  return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [], sum: c.sum && (c.sum.text || c.sum.upTo) ? c.sum : null, sumFail: c.sumFail || 0 };
+  return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [], sum: c.sum && (c.sum.text || c.sum.upTo) ? c.sum : null, sumFail: c.sumFail || 0, wiped: c.wiped || 0, gone: c.gone || {} };
 }
 // 실패 안내(err)는 저장하지 않음: 다시 열면 사라짐
-// sum = 창 밖으로 밀려난 앞선 이야기의 요약 { text, upTo: 거기까지 줄인 마지막 이야기의 시각 }
-const saveChat = c => save(CHAT_KEY, { items: c.items.filter(m => !m.err).slice(-CHAT_KEEP), notes: c.notes.slice(-NOTE_KEEP), ...(c.sum ? { sum: c.sum } : {}), ...(c.sumFail ? { sumFail: c.sumFail } : {}) });
+// sum = 창 밖으로 밀려난 앞선 이야기의 요약 { text, upTo: 거기까지 줄인 마지막 이야기의 시각, at: 고친 시각 }
+// wiped = '모두 지우기' 시각, gone = { 지운 기억: 시각 } (다른 기기에서 받은 이야기에 되살아나지 않게)
+// 저장할 때 저장돼 있던 것(다른 기기에서 받은 이야기)과 합치고, 합친 걸 c에도 넣음 (c의 말은 그대로 같은 것이라 카드도 그대로 누를 수 있음)
+function saveChat(c) {
+  const m = mergeCoachChat({ ...c, items: c.items.filter(x => !x.err) }, load(CHAT_KEY, null), { keep: CHAT_KEEP, notes: NOTE_KEEP });
+  const errs = c.items.filter(x => x.err);
+  Object.assign(c, { items: [...m.items, ...errs], notes: m.notes, sum: m.sum || null, wiped: m.wiped || 0, gone: m.gone || {} });
+  save(CHAT_KEY, { ...m, ...(c.sumFail ? { sumFail: c.sumFail } : {}) });
+}
+let liveChat = null; // 열린 이야기 화면이 동기화로 받은 이야기를 합치는 함수
+
+// ---------- 코치가 아는 학습 기록 (두 모드가 같이 씀, 동기화를 켜면 기기끼리도) ----------
+// 문제를 풀 때마다·학습을 시작하고 끝낼 때·정답 화면에서 AI에게 물을 때 한 줄씩 (core.js cleanLog: 최근 14일, 800줄까지)
+const LOG_KEY = 'voca.coach.log.v1';
+function logAct(e) {
+  const log = load(LOG_KEY, []);
+  log.push({ t: Date.now(), m: WORD ? 'w' : 'e', ...e });
+  save(LOG_KEY, cleanLog(log));
+}
+const sessId = s => s.sid || (s.sid = Date.now());
+const logStart = s => logAct({ ev: 'start', sid: sessId(s), label: s.label, total: s.total });
+// 코치에게 넘기는 최근 학습 기록 (since: 학생이 코치에게 마지막으로 말한 시각)
+function recentText(since = 0) {
+  const live = session && current === 'quiz' ? { m: WORD ? 'w' : 'e', sid: session.sid, pos: session.pos, total: session.total } : null;
+  return activityDigest(cleanLog(load(LOG_KEY, [])), { word: id => byId.get(id) || null, mode: m => (m === 'w' ? '단어 모드' : '예문 모드'), since, live });
+}
 
 // 약한 단어: 틀린 적이 있는 단어를 많이 틀린 순으로 (지금 0단계면 앞으로). 코치가 짚어 주려고
 // 코치는 두 모드가 하나라 예문·단어 기록을 합쳐서 봄 (틀린·맞힌 횟수는 더하고, 마지막에 틀렸는지는 더 최근에 푼 쪽)
@@ -1324,9 +1361,10 @@ function openCoachChat() {
   // 받는 중인 코치 말: 받은 글(target)을 한 번에 붙이지 않고 몇 글자씩 늘려 보여 줌 (조각이 몰려 와도 고르게)
   const live = { target: '', n: 0, raf: 0, el: null, done: null };
   const last = chat.items[chat.items.length - 1];
-  if (!last || dateStr(last.t) !== today) chat.items.push({ who: 'coach', text: coachGreeting(), t: Date.now(), mood: 'cheer' });
+  // 그날 첫 인사 (g: 날짜, 기기마다 하나씩 생겨도 동기화로 합칠 때 하루에 하나만 남김)
+  if (!last || dateStr(last.t) !== today) chat.items.push({ who: 'coach', text: coachGreeting(), t: Date.now(), mood: 'cheer', g: today });
   $('#cc-name').textContent = `${COACH_NAMES[coachChar()]} 코치`;
-  $('#cc-sub').textContent = `${aiCoachName()} · 예문·단어 같이 · 이 기기에만 저장`;
+  $('#cc-sub').textContent = `${aiCoachName()} · 예문·단어 같이 · ${sync.enabled ? '기기끼리 맞춤' : '이 기기에만 저장'}`;
   $('#cc-menu').hidden = false;
   $('#cc-ask').hidden = false;
   $('#cc-noai').hidden = true;
@@ -1334,7 +1372,7 @@ function openCoachChat() {
   const dayLabel = t => { const x = dateStr(t); return x === today ? '오늘' : x === addDays(today, -1) ? '어제' : fmtDay(x); };
   // AI에게 넘길 앞선 이야기 (실패 안내와 '기억해 둘게요' 줄은 뺌)
   // t는 AI에 보내지 않고, 다음 번에도 같은 이야기부터 넘기려고(캐시) 씀
-  const forAi = () => chat.items.filter(m => !m.err && m.who !== 'note').map(m => ({ who: m.who, text: m.text, day: fmtDay(dateStr(m.t)), t: m.t }));
+  const forAi = (items = chat.items) => items.filter(m => !m.err && m.who !== 'note').map(m => ({ who: m.who, text: m.text, day: fmtDay(dateStr(m.t)), t: m.t }));
   const cardBox = (c, liveCard) => {
     const box = el('div', 'chat-plan');
     box.appendChild(el('div', 'cp-title', c.title));
@@ -1459,7 +1497,7 @@ function openCoachChat() {
     if (!drop.length || Date.now() - (chat.sumFail || 0) < 600000) return;
     const text = await aiCoachSummary({ summary: chat.sum ? chat.sum.text : '', history: drop });
     if (!text) { chat.sumFail = Date.now(); saveChat(chat); return; }
-    chat.sum = { text, upTo: drop[drop.length - 1].t || Date.now() };
+    chat.sum = { text, upTo: drop[drop.length - 1].t || Date.now(), at: Date.now() };
     chat.sumFail = 0;
     saveChat(chat);
   };
@@ -1467,15 +1505,20 @@ function openCoachChat() {
     msg = String(msg || '').trim();
     if (!msg || busy) return;
     busy = true;
-    if (!again) chat.items.push({ who: 'me', text: msg, t: Date.now() });
+    let mine = again ? [...chat.items].reverse().find(m => m.who === 'me' && m.text === msg) : null;
+    if (!mine) chat.items.push(mine = { who: 'me', text: msg, t: Date.now() });
     saveChat(chat);
     mood = 'normal';
     draw();
-    const history = forAi().slice(0, -1);
+    // 다른 기기에서 방금 한 학습·이야기까지 알고 답하게, 보내기 전에 한 번 받아 옴 (늦으면 4초까지만 기다림)
+    if (sync.enabled) await Promise.race([sync.now(), new Promise(r => setTimeout(r, 4000))]);
+    const before = chat.items.filter(m => m !== mine && (m.t || 0) <= mine.t);
+    const history = forAi(before);
     await catchUp(history);
     // 학생 말과 바로 앞 코치 말에 나온 단어를 찾아 그 자료를 같이 (퀴즈를 내고 학생이 답할 때도 그 단어를 알게)
     const prevCoach = [...history].reverse().find(h => h.who === 'coach');
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today), onText: liveSet });
+    const prevMe = [...before].reverse().find(m => m.who === 'me');
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), recent: recentText(prevMe ? prevMe.t : 0), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today), onText: liveSet });
     // 받은 말을 끝까지 보여 준 뒤에 이야기에 넣음 (실패면 받다 만 말은 지움)
     await liveEnd(res ? res.text : '');
     busy = false;
@@ -1492,6 +1535,7 @@ function openCoachChat() {
       if (res.plan) { saveChat(chat); if (open) showCard(res.plan); else { const data = modeProposal(res.plan); if (data) chat.items.push({ who: 'app', text: [data.title, ...data.lines].join('\n'), t: Date.now() }); } }
     }
     saveChat(chat);
+    sync.soon();
     if (open) draw();
   };
   // 자주 하는 말
@@ -1528,7 +1572,7 @@ function openCoachChat() {
       x.innerHTML = ICON.trash;
       x.setAttribute('aria-label', '지우기');
       x.title = '지우기';
-      x.addEventListener('click', () => { chat.notes.splice(i, 1); saveChat(chat); drawMem(); });
+      x.addEventListener('click', () => { const [gone] = chat.notes.splice(i, 1); chat.gone = { ...chat.gone, [gone.text]: Date.now() }; saveChat(chat); drawMem(); });
       row.appendChild(x);
       list.appendChild(row);
     });
@@ -1541,7 +1585,7 @@ function openCoachChat() {
       x.innerHTML = ICON.trash;
       x.setAttribute('aria-label', '지우기');
       x.title = '지우기';
-      x.addEventListener('click', () => { chat.sum = { text: '', upTo: chat.sum.upTo }; saveChat(chat); drawMem(); }); // 줄인 데까지는 그대로 둬서 지운 이야기가 다시 요약되지 않게
+      x.addEventListener('click', () => { chat.sum = { text: '', upTo: chat.sum.upTo, at: Date.now() }; saveChat(chat); drawMem(); }); // 줄인 데까지는 그대로 둬서 지운 이야기가 다시 요약되지 않게
       row.appendChild(x);
       list.appendChild(row);
     }
@@ -1554,9 +1598,11 @@ function openCoachChat() {
   $('#cc-wipe').onclick = e => {
     const b = e.currentTarget;
     if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = '한 번 더 누르면 지워요'; return; }
-    chat.items = [{ who: 'coach', text: '다 지웠어요. 처음부터 다시 이야기해요.', t: Date.now() }];
+    const now = Date.now();
+    chat.items = [{ who: 'coach', text: '다 지웠어요. 처음부터 다시 이야기해요.', t: now }];
     chat.notes = [];
-    chat.sum = null;
+    chat.sum = { text: '', upTo: now, at: now };
+    chat.wiped = now; // 다른 기기의 예전 이야기도 다시 안 들어오게
     card = null;
     saveChat(chat);
     mem.hidden = true;
@@ -1587,6 +1633,9 @@ function openCoachChat() {
   saveChat(chat);
   draw();
   grow();
+  // 동기화로 다른 기기의 이야기가 오면 합쳐서 다시 그림 (받는 중이면 그리기만 미룸)
+  liveChat = () => { saveChat(chat); if (open && !busy) draw(); };
+  sync.now();
   if (DESK) setTimeout(() => inp.focus(), 50); // 폰은 키보드가 바로 올라오지 않게
   const key = e => {
     if (e.key === 'Escape' && !mem.hidden) { e.preventDefault(); e.stopPropagation(); mem.hidden = true; }
@@ -2199,7 +2248,8 @@ async function startSession(mode, list, { mixed = false, label: givenLabel = '' 
     ids = (list || rw).map(w => w.id);
     label = `${range} 순서대로`;
   }
-  session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
+  session = { label, mode, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr(), sid: Date.now() };
+  logStart(session);
   if (startedFrom === 'list') session.from = 'list';
   if (mixed) session.mixed = true; // 복습에서 틀린 단어 다시 풀기도 복습처럼 ('복습은 외운 단어만 4지선다')
   if (mode !== 'retry') setTint(mode === 'day' ? 'study' : null); // 틀린 단어 다시 풀기는 하던 색 그대로
@@ -2251,7 +2301,8 @@ function startSynSession(day, list) {
   const ids = shuffle(pool.filter(hasSynAnt)).map(w => w.id);
   if (!ids.length) { toast(`DAY ${day}에는 유의어·반의어가 있는 단어가 없어요`); return; }
   setTint('syn');
-  session = { label: `DAY ${day} 유반의어`, mode: 'syn', synDay: day, noSave: true, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr() };
+  session = { label: `DAY ${day} 유반의어`, mode: 'syn', synDay: day, noSave: true, queue: ids, pos: 0, total: ids.length, done: [], wrong: [], hinted: [], again: {}, date: dateStr(), sid: Date.now() };
+  logStart(session);
   show('quiz');
   renderQuestion();
 }
@@ -2387,6 +2438,7 @@ function synAnswer(correct, given, kind) {
     } else { const more = comingAgain(id); label = more ? `정답! · ${more}` : '정답!'; }
   }
   session.pos++;
+  logAct({ sid: sessId(session), id, o: correct ? 'ok' : kind === 'hint' ? 'hint' : 'wrong', ...(kind ? { k: kind } : {}), ...(!correct && typeof given === 'string' && given ? { g: given.slice(0, 30) } : {}) });
   showProgress();
   showSynFeedback(correct, given, kind, label);
 }
@@ -3312,6 +3364,7 @@ function answer(correct, given, kind) {
           : cleared ? '정답! · 다시 볼 단어에서 뺐어요' : '정답!';
   }
   session.pos++;
+  logAct({ sid: sessId(session), id, o: outcome, ...(kind ? { k: kind } : {}), ...(outcome !== 'ok' && typeof given === 'string' && given ? { g: given.slice(0, 30) } : {}) });
   showProgress();
   saveStats();
   sync.soon();
@@ -3605,6 +3658,7 @@ function askBox(cur) {
     if (text === '왜 틀렸어?' && cur.fbWhy && !history.length) {
       t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
     }
+    logAct({ ev: 'ask', id: cur.w.id, q: text.slice(0, 80) });
     if (!t) t = await aiAskWord({ problem: askProblemOf(cur), history, message: text });
     busy = false;
     if (q !== cur) return; // 그새 다음 문제로 넘어감
@@ -3717,6 +3771,7 @@ function setFbTab(t) {
 function quitQuiz() {
   if (window.speechSynthesis) speechSynthesis.cancel();
   const toList = session && session.from === 'list' && history.state && history.state.s === 'list';
+  if (session && session.pos) logAct({ ev: 'quit', sid: sessId(session), label: session.label, total: session.total, pos: session.pos });
   session = null;
   if (toList) { show('list', false); renderList(); } else goHome();
 }
@@ -3768,8 +3823,9 @@ function resultComment(s, wrong) {
 }
 
 function finishSession() {
-  sync.now();
   const s = session;
+  logAct({ ev: 'end', sid: sessId(s), label: s.label, total: s.total });
+  sync.now();
   session = null;
   if (!s.noSave) saveSession();
   $('#feedback').hidden = true;
