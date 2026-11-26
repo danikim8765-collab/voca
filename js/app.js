@@ -239,7 +239,7 @@ function shareSweepKind(v, at) {
   save(OTHER_P + 'settings.v1', o);
 }
 function setSweepKind(m, v) {
-  settings.sweepKind = { ...cleanSweepKind(settings.sweepKind), [m]: v === 'type' ? 'type' : 'choice' };
+  settings.sweepKind = { ...cleanSweepKind(settings.sweepKind), [m]: m === 'first' ? (v === 'w' ? 'w' : 'e') : v === 'type' ? 'type' : 'choice' };
   settings.sweepKindAt = Date.now();
   saveSettings();
   shareSweepKind(settings.sweepKind, settings.sweepKindAt);
@@ -599,9 +599,14 @@ function dueLoadOf(m) {
 const itemOf = k => { const p = parseSweepKey(k); return { id: p.id, m: p.m || ME }; };
 const seenKey = k => { const { id, m } = itemOf(k); const s = statsOf(m)[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const sweepPick = () => pickBothSweep(reviewPool(), rangeWords(), { [ME]: stats, [OTHER_M]: statsOf(OTHER_M) }, { today: dateStr(), goal: sweepGoal(), exam: settings.exam, rest: restNow() });
-// 총정리 문제 방식: 단어 문제(처음엔 직접 입력)·예문 문제(처음엔 4지선다). 두 모드가 같이 씀 (sweepKindAt = 바꾼 시각)
-const SWEEP_KIND0 = { w: 'type', e: 'choice' };
-const cleanSweepKind = v => ({ w: v && v.w === 'choice' ? 'choice' : v && v.w === 'type' ? 'type' : SWEEP_KIND0.w, e: v && v.e === 'type' ? 'type' : v && v.e === 'choice' ? 'choice' : SWEEP_KIND0.e });
+// 총정리 문제 방식: 단어 문제(처음엔 직접 입력)·예문 문제(처음엔 4지선다), 먼저 풀 문제(first, 처음엔 예문). 두 모드가 같이 씀 (sweepKindAt = 바꾼 시각)
+const SWEEP_KIND0 = { w: 'type', e: 'choice', first: 'e' };
+const cleanSweepKind = v => ({
+  w: v && v.w === 'choice' ? 'choice' : v && v.w === 'type' ? 'type' : SWEEP_KIND0.w,
+  e: v && v.e === 'type' ? 'type' : v && v.e === 'choice' ? 'choice' : SWEEP_KIND0.e,
+  first: v && v.first === 'w' ? 'w' : 'e',
+});
+const sweepFirst = () => cleanSweepKind(settings.sweepKind).first;
 const sweepKind = m => cleanSweepKind(settings.sweepKind)[m === 'w' ? 'w' : 'e'];
 // 복습에 나오는 단어: 학습 범위 + 내 단어 + 범위 밖이어도 독해에서 막힌 단어책 단어
 let poolMemo = { rw: null, ver: -1, out: [] };
@@ -726,6 +731,7 @@ function renderHome() {
   $('#sweep-kinds').hidden = !sweepGoal() || !settings.exam || dateStr() >= settings.exam;
   setSeg('#seg-sweep-w', sweepKind('w'));
   setSeg('#seg-sweep-e', sweepKind('e'));
+  setSeg('#seg-sweep-first', sweepFirst());
   $('#exam-date').value = settings.exam || '';
   // 시험일 옆 D-n, 목표일(설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
   const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
@@ -2041,7 +2047,8 @@ function renderPlan() {
       const box = $('#review-info');
       fill(box, [[shown, rv.started && rv.left.length < rv.total ? `남은 문제 · 오늘 ${rv.total}` : '오늘 문제', editReviewToday]]);
       const split = el('div', 'sw-split');
-      split.append(el('span', 'kw', `단어 ${wN}`), el('span', 'ke', `예문 ${shown - wN}`));
+      const chips = [el('span', 'kw', `단어 ${wN}`), el('span', 'ke', `예문 ${shown - wN}`)];
+      split.append(...(sweepFirst() === 'w' ? chips : chips.reverse())); // 먼저 푸는 문제를 앞에
       box.appendChild(split);
       $('#btn-review').textContent = shown ? '총정리 시작' : '오늘 총정리 완료 ✓';
       const sp = sweepPick();
@@ -2377,8 +2384,8 @@ async function startSession(mode, list, { mixed = false, label: givenLabel = '',
     // 목록은 까먹었을 가능성이 큰 것부터라, 20개씩 묶어 그 안에서만 섞음 (밀린 게 많아 중간에 그만둬도 급한 것부터 한 셈)
     const left = day.review.filter(k => byId.has(itemOf(k).id) && !seenKey(k));
     ids = [];
-    // 총정리: 단어 20개씩 묶어 단어 문제 묶음 먼저, 그 묶음의 예문 문제는 다음 묶음 뒤에 (core.js sweepOrder)
-    if (both) ids = sweepOrder(left.map(itemOf)).map(x => sweepKey(x.m, x.id));
+    // 총정리: 단어 20개씩 묶어 먼저 풀 모드의 묶음 먼저, 그 묶음의 다른 모드 문제는 다음 묶음 뒤에 (core.js sweepOrder)
+    if (both) ids = sweepOrder(left.map(itemOf), { first: sweepFirst() }).map(x => sweepKey(x.m, x.id));
     // '복습은 외운 단어만 4지선다'면 묶음 안에서 4지선다를 먼저 (키보드가 한 번만 올라오게)
     else for (let i = 0; i < left.length; i += 20) ids.push(...mixOrder(shuffle(left.slice(i, i + 20))));
     if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
@@ -5043,6 +5050,7 @@ function bind() {
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
   onSeg('#seg-sweep-w', v => setSweepKind('w', v));
   onSeg('#seg-sweep-e', v => setSweepKind('e', v));
+  onSeg('#seg-sweep-first', v => setSweepKind('first', v));
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
   $('#today-flow').addEventListener('click', e => {

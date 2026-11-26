@@ -828,7 +828,7 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
  * 반환 { items: [{ id, m: 'w'|'e' }], words: [단어(몫 → 복습일 된 것)], phase: 'final', days, size, round, idx, start: 이번 바퀴 시작일, left: 이번 바퀴에 남은 단어 수, n, rest? }
  * 쉬는 날은 몫 없이 복습일 된 문제만. goal·exam이 맞지 않으면 null
  */
-export const SWEEP_MODES = ['w', 'e']; // 단어 문제가 먼저
+export const SWEEP_MODES = ['w', 'e']; // 몫 안에서 단어마다 두 문제 (푸는 순서는 sweepOrder의 first)
 export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), goal, exam, rest = [] } = {}) {
   if (!goal || !exam || today < goal || goal >= exam || today >= exam) return null;
   rest = cleanRest(rest);
@@ -872,20 +872,21 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
   return out(left.slice(0, quota), left.length);
 }
 
-// 총정리 문제 순서: 단어 20개씩 묶어서 단어 문제 묶음을 먼저, 그 묶음의 예문 문제는 다음 단어 묶음 뒤에
-// (W1 W2 E1 W3 E2 … En). 같은 단어의 두 문제가 붙어 나오지 않고(예문을 먼저 보면 단어 문제의 답이 보임),
+// 총정리 문제 순서: 단어 20개씩 묶어서 먼저 풀 모드(first, 처음 값은 예문)의 묶음을 먼저, 그 묶음의 다른 모드 문제는 다음 묶음 뒤에
+// (예문 먼저면 E1 E2 W1 E3 W2 … Wn). 같은 단어의 두 문제가 붙어 나오지 않고(앞 문제가 뒤 문제의 답을 보여 줘서),
 // 중간에 그만둬도 두 모드를 고르게 한 셈. 묶음 안에서는 섞음. items의 단어 순서(급한 것부터)대로 묶음
-export function sweepOrder(items, { size = 20, rand = Math.random } = {}) {
+export function sweepOrder(items, { size = 20, rand = Math.random, first = 'e' } = {}) {
   const ids = [], by = new Map();
   for (const it of items) { if (!by.has(it.id)) { by.set(it.id, []); ids.push(it.id); } by.get(it.id).push(it); }
   const blocks = [];
   for (let i = 0; i < ids.length; i += size) {
     const part = ids.slice(i, i + size).flatMap(id => by.get(id));
-    blocks.push({ w: shuffle(part.filter(x => x.m === 'w'), rand), e: shuffle(part.filter(x => x.m !== 'w'), rand) });
+    const isFirst = x => (first === 'w' ? x.m === 'w' : x.m !== 'w');
+    blocks.push({ a: shuffle(part.filter(isFirst), rand), b: shuffle(part.filter(x => !isFirst(x)), rand) });
   }
   const outList = [];
-  blocks.forEach((b, i) => { outList.push(...b.w); if (i) outList.push(...blocks[i - 1].e); });
-  if (blocks.length) outList.push(...blocks[blocks.length - 1].e);
+  blocks.forEach((b, i) => { outList.push(...b.a); if (i) outList.push(...blocks[i - 1].b); });
+  if (blocks.length) outList.push(...blocks[blocks.length - 1].b);
   return outList;
 }
 

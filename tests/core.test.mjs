@@ -1137,10 +1137,14 @@ test('총정리: 몫의 단어는 두 모드 문제를 다, 복습일 된 단어
   assert.equal(pickBothSweep(words, words, { e, w }, { ...opt, today: '2026-11-13' }), null);
   // 문제 순서: 단어 문제 묶음 먼저, 그 묶음의 예문 문제는 다음 묶음 뒤에
   const items = words.flatMap(x => [{ id: x.id, m: 'w' }, { id: x.id, m: 'e' }]);
-  const o = sweepOrder(items, { size: 2, rand: () => 0.99 }).map(x => sweepKey(x.m, x.id));
+  const o = sweepOrder(items, { size: 2, rand: () => 0.99, first: 'w' }).map(x => sweepKey(x.m, x.id));
   assert.deepEqual(o.map(k => k[0]).join(''), 'wwwweewweeee');
   assert.equal(o.length, 12);
   for (const x of words) assert.ok(o.indexOf('w:' + x.id) < o.indexOf('e:' + x.id));
+  // 처음 값은 예문 먼저
+  const oe = sweepOrder(items, { size: 2, rand: () => 0.99 }).map(x => sweepKey(x.m, x.id));
+  assert.deepEqual(oe.map(k => k[0]).join(''), 'eeeewweewwww');
+  for (const x of words) assert.ok(oe.indexOf('e:' + x.id) < oe.indexOf('w:' + x.id));
   assert.deepEqual(parseSweepKey('w:my|abc'), { m: 'w', id: 'my|abc' });
   assert.deepEqual(parseSweepKey('26|a0'), { m: '', id: '26|a0' });
 });

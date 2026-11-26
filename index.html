@@ -234,6 +234,12 @@
       <!-- 총정리 문제 방식(두 모드가 같이 씀): 목표일·시험일이 있을 때만 보임 (app.js renderHome) -->
       <div id="sweep-kinds" hidden>
         <div class="sub-label">총정리 문제<small class="x-desc">목표일부터 시험 전날까지 단어마다 두 문제를 풀어요. 위 문제 방식 대신 이걸 따라요</small></div>
+        <div class="set-row"><span class="t">먼저 풀 문제<small class="d">20단어씩 번갈아</small></span>
+          <div class="seg" id="seg-sweep-first">
+            <button data-v="e">예문 빈칸</button>
+            <button data-v="w">단어 → 뜻</button>
+          </div>
+        </div>
         <div class="set-row"><span class="t">단어 → 뜻<small class="d">영단어만 보고 뜻</small></span>
           <div class="seg" id="seg-sweep-w">
             <button data-v="type">직접 입력</button>
