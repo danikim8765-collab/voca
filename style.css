@@ -1001,7 +1001,7 @@ html:not(.desk) .desk-only { display: none; }
 #feedback[data-tab="ex"] .sheet-inner { max-height: 72dvh; }
 #feedback[data-tab="ai"].chatting .sheet-inner { height: 82dvh; max-height: 82dvh; }
 .desk #feedback[data-tab="ai"].chatting .sheet-inner { height: calc(100dvh - 120px); max-height: calc(100dvh - 120px); }
-/* AI 탭: 빠른 질문·입력칸은 위에 고정, 이야기만 스크롤. 계속하기 줄은 낮게 */
+/* AI 탭: 빠른 질문·입력칸은 아래에 고정, 이야기만 스크롤. 계속하기 줄은 낮게 */
 .sheet-inner > #fb-ai:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
 #feedback[data-tab="ai"] .fb-tabs { margin-bottom: 10px; }
 #feedback[data-tab="ai"] .fb-actions .next-btn { height: 46px; padding-top: 0; padding-bottom: 0; font-size: 16px; }
@@ -1011,7 +1011,7 @@ html:not(.desk) .desk-only { display: none; }
 #feedback.typing .grab, #feedback.typing .fb-actions, #feedback.typing #fb-pron { display: none; }
 #feedback.typing .fb-word .w { font-size: min(22px, var(--w-fit, 30px)); }
 #feedback.typing .fb-tabs { margin: 6px 0 8px; }
-/* 'AI에게 묻기': 위에서부터 빠른 질문 → 입력칸 → 주고받은 이야기 */
+/* 'AI에게 묻기': 코치 탭처럼 위에서부터 주고받은 이야기 → 빠른 질문 → 입력칸 */
 .ask { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .ask > .chips, .ask > .ask-form { flex: none; }
 .ask-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
@@ -1024,10 +1024,17 @@ html:not(.desk) .desk-only { display: none; }
 .ask-msg.me { align-self: flex-end; background: var(--primary); color: var(--card); }
 .ask-msg.ai { align-self: flex-start; background: var(--bg); }
 .ask-msg.wait { color: var(--muted); }
+/* 받는 중: 처음엔 점 세 개, 글이 오기 시작하면 끝에 깜빡이는 막대 (코치 탭과 같음) */
+.ask-msg.typing { display: flex; gap: 4px; padding: 14px; }
+.ask-msg.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: chat-dot 1s infinite ease-in-out; }
+.ask-msg.typing i:nth-child(2) { animation-delay: .15s; }
+.ask-msg.typing i:nth-child(3) { animation-delay: .3s; }
+.ask-msg.live::after { content: ''; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -2px; background: var(--muted); animation: chat-caret 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .ask-msg.typing i, .ask-msg.live::after { animation: none; } }
 .ask-msg.err { color: var(--danger); }
 .ask-chips { margin-top: 0; }
 .ask-form { display: flex; gap: 6px; align-items: center; }
-.ask-form input { flex: 1; min-width: 0; padding: 10px 12px; border: 2px solid transparent; border-radius: var(--r-md); background: var(--fill); color: var(--text); font-size: 16px; }
+.ask-form input { flex: 1; min-width: 0; padding: 10px 16px; border: 1.5px solid transparent; border-radius: 22px; background: var(--fill); color: var(--text); font-size: 16px; }
 .ask-form input:focus { outline: none; border-color: var(--primary); }
 .ask-form .btn { width: auto; flex: none; margin-bottom: 0; }
 .q-tools { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1140,7 +1147,9 @@ body[data-tint] {
 @media (prefers-reduced-motion: reduce) { .buddy-svg, .chat-char .buddy-svg, .chat-char.hop .buddy-svg, .res-buddy .buddy-svg, .fb-coach .buddy-svg, #coach-pick .coach-choice.on .buddy-svg, .talk-char .buddy-svg { animation: none; } }
 /* 코치와 이야기하기: 폰은 화면 가득, 넓은 화면은 가운데 카드 */
 /* 코치 탭: 메신저처럼 화면 가득 (위 코치 이름 · 가운데 이야기 · 아래 입력, 그 아래 탭) */
-#coach.screen.active { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; max-width: none; padding: 0 0 var(--tab-h); display: flex; }
+/* min-height 0: 모든 화면의 min-height 100dvh가 남아 있으면 키보드가 올라와 높이를 줄여도(app.js fit) 화면 높이 그대로라
+   아이폰·아이패드에서 입력 칸이 키보드 밑에 가려짐 (iOS의 100dvh는 키보드가 올라와도 안 줄어듦) */
+#coach.screen.active { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; min-height: 0; max-width: none; padding: 0 0 var(--tab-h); display: flex; }
 body.kb-up #coach.screen.active { padding-bottom: 0; }
 .chat-card { display: flex; flex-direction: column; width: 100%; max-width: 760px; height: 100%; min-height: 0; margin: 0 auto; color: var(--text); }
 .chat-head { flex: none; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 8px; }
@@ -1365,7 +1374,7 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
   .tab-name { display: block; font-size: 12px; font-weight: 600; }
   /* 탭 화면은 사이드바만큼 오른쪽으로 */
   body[data-screen="home"], body[data-screen="days"], body[data-screen="list"], body[data-screen="settings"] { padding-left: var(--rail-w); }
-  #coach.screen.active { left: var(--rail-w); }
+  #coach.screen.active { left: var(--rail-w); padding-bottom: env(safe-area-inset-bottom, 0px); } /* 아래 탭이 없으니 홈 표시줄만큼만 띄움 */
   body[data-screen="list"] .sticky-bottom { left: var(--rail-w); }
   body[data-screen="home"] .screen.active, body[data-screen="days"] .screen.active, body[data-screen="list"] .screen.active,
   body[data-screen="settings"] .screen.active { padding-bottom: 40px; }

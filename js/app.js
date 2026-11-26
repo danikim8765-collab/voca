@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
+  applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, DAY_START_HOUR, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
   willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey,
@@ -1600,7 +1600,7 @@ function openCoachChat() {
     // 학생 말과 바로 앞 코치 말에 나온 단어를 찾아 그 자료를 같이 (퀴즈를 내고 학생이 답할 때도 그 단어를 알게)
     const prevCoach = [...history].reverse().find(h => h.who === 'coach');
     const prevMe = [...before].reverse().find(m => m.who === 'me');
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), recent: recentText(prevMe ? prevMe.t : 0), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today), onText: liveSet });
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), recent: recentText(prevMe ? prevMe.t : 0), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: nowLabel(today), onText: liveSet });
     // 받은 말을 끝까지 보여 준 뒤에 이야기에 넣음 (실패면 받다 만 말은 지움)
     await liveEnd(res ? res.text : '');
     busy = false;
@@ -1739,10 +1739,17 @@ function openCoachChat() {
 // AI가 사실에 없는 숫자를 말하면 버림(js/ai.js numbersOk). 안 되면 위의 기본 말 그대로
 const WEEKDAY = '일월화수목금토';
 const weekday = d => WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()];
+// 코치에게 넘기는 '지금': 앱의 오늘 + 시계 시각. 자정~새벽 4시면 시계 날짜가 앱의 오늘과 달라서 같이 적음
+function nowLabel(today = dateStr(), t = new Date()) {
+  const h = t.getHours(), m = String(t.getMinutes()).padStart(2, '0');
+  const clock = `${h < 12 ? (h < 6 ? '새벽' : '오전') : '오후'} ${h % 12 || 12}:${m}`;
+  const cal = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  return `오늘 ${fmtDay(today)} ${weekday(today)}요일, 시계는 ${cal === today ? '' : `${fmtDay(cal)} `}${clock}${cal === today ? '' : ` (새벽 ${DAY_START_HOUR}시 전이라 아직 ${fmtDay(today)}로 셈)`}`;
+}
 function coachFacts(both = false) {
   const today = dateStr(), ex = settings.exam, rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
-  const lines = [`오늘: ${fmtDay(today)} ${weekday(today)}요일`];
+  const lines = [`오늘: ${fmtDay(today)} ${weekday(today)}요일 (앱의 하루는 새벽 ${DAY_START_HOUR}시에 바뀜)`];
   if (both) {
     lines.push(`지금 보는 화면: ${WORD ? '단어 모드(영단어를 보고 뜻 맞히기)' : '예문 모드(두 예문의 빈칸에 들어갈 영단어 맞히기)'}. 코치는 예문·단어 모드가 하나예요.`);
     lines.push(`두 모드는 진도·학습 범위·하루 새 단어 일정이 따로이고, 시험일·쉬는 요일은 같이 써요. 아래 진도와 일정은 ${MODE_NAME} 것이고, ${OTHER_NAME} 것은 맨 아래에 따로 있어요. 일정 카드로 바꾸는 하루 개수·복습 날 수는 지금 보는 ${MODE_NAME}에만, 쉬는 요일은 두 모드에 같이 적용돼요.`);
@@ -3804,7 +3811,7 @@ function askProblemOf(cur) {
 function askBox(cur) {
   const box = el('div', 'ask');
   cur.ask = cur.ask || [];
-  // 위에서부터: 빠른 질문 → 입력칸 → 주고받은 이야기 (보낸 뒤엔 새 답이 보이게 내려 줌)
+  // 코치 탭처럼 위에서부터: 주고받은 이야기 → 빠른 질문 → 입력칸 (입력칸이 맨 아래)
   const chips = el('div', 'chips ask-chips');
   const form = el('form', 'ask-form');
   const inp = el('input');
@@ -3816,8 +3823,10 @@ function askBox(cur) {
   send.title = '보내기';
   form.append(inp, send);
   const log = el('div', 'ask-log');
-  box.append(chips, form, log);
+  box.append(log, chips, form);
   let busy = false;
+  // 받는 중인 답: 받은 글(target)을 한 번에 붙이지 않고 몇 글자씩 늘려 보여 줌 (코치 탭 liveTick과 같은 셈)
+  const live = { target: '', n: 0, raf: 0, el: null, done: null };
   // 아직 아무것도 안 물었으면 낮게, 이야기가 생기면 대화창처럼 높게 (style.css .ask.chatting)
   const setChat = () => {
     const on = cur.ask.length > 0 || busy;
@@ -3829,7 +3838,9 @@ function askBox(cur) {
     setChat();
     log.innerHTML = '';
     for (const m of cur.ask) log.appendChild(el('div', 'ask-msg ' + m.who + (m.err ? ' err' : ''), m.text));
-    if (busy) log.appendChild(el('div', 'ask-msg ai wait', 'AI가 답 쓰는 중…'));
+    live.el = null;
+    if (busy && live.target) { live.el = el('div', 'ask-msg ai live', live.target.slice(0, live.n)); log.appendChild(live.el); }
+    else if (busy) { const t = el('div', 'ask-msg ai typing'); t.setAttribute('aria-label', 'AI가 답 쓰는 중'); t.append(el('i'), el('i'), el('i')); log.appendChild(t); }
     const asked = new Set(cur.ask.filter(m => m.who === 'me').map(m => m.text));
     chips.innerHTML = '';
     for (const t of [...(!cur.fbCorrect ? ['왜 틀렸어?'] : []), ...ASK_QUICK]) {
@@ -3841,9 +3852,41 @@ function askBox(cur) {
       chips.appendChild(c);
     }
     chips.hidden = !chips.children.length;
-    inp.disabled = send.disabled = busy;
+    send.disabled = busy || !inp.value.trim(); // 칸은 받는 중에도 그대로 둠 (막으면 폰 키보드가 내려감)
   };
   const toEnd = () => { log.scrollTop = log.scrollHeight; };
+  inp.addEventListener('input', () => { send.disabled = busy || !inp.value.trim(); });
+  // 한 화면(1/60초)마다 남은 글의 1/14쯤, 적어도 2글자씩. 위로 올려 읽는 중이면 안 끌어내림
+  const liveTick = () => {
+    live.raf = 0;
+    const t = live.target;
+    if (live.n < t.length) live.n = Math.min(t.length, live.n + Math.max(2, Math.ceil((t.length - live.n) / 14)));
+    if (!live.el || !live.el.isConnected) draw();
+    if (live.el) {
+      const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+      live.el.textContent = t.slice(0, live.n);
+      if (atEnd) toEnd();
+    }
+    if (live.n < t.length) live.raf = requestAnimationFrame(liveTick);
+    else if (live.done) { const f = live.done; live.done = null; f(); }
+  };
+  const liveSet = t => {
+    if (q !== cur) return;
+    // 앞에 보여 준 글과 이어지지 않으면(다른 모델로 다시 받음) 같은 데까지만 남기고 거기서부터
+    const old = live.target;
+    let k = 0;
+    while (k < old.length && k < t.length && old[k] === t[k]) k++;
+    if (live.n > k) live.n = k;
+    live.target = t;
+    if (!live.raf) live.raf = requestAnimationFrame(liveTick);
+  };
+  // 다 받은 답까지 마저 보여 주고 끝냄 (한 번에 온 답도 타자 치듯. 화면이 꺼져 있거나 다음 문제로 갔으면 바로)
+  const liveEnd = t => new Promise(done => {
+    const reset = () => Object.assign(live, { target: '', n: 0, raf: 0, el: null, done: null });
+    if (!t || document.hidden || q !== cur || !box.isConnected) { cancelAnimationFrame(live.raf); reset(); return done(); }
+    live.done = () => { reset(); done(); };
+    liveSet(t);
+  });
   async function submit(text) {
     text = String(text || '').trim();
     if (!text || busy || q !== cur) return;
@@ -3858,15 +3901,15 @@ function askBox(cur) {
       t = await aiExplainWrong({ word: cur.w.word, meaning: cur.w.meaning, user: cur.userAnswer, how: cur.how, extra: synonymOf(cur.w) ? `유의어 ${synonymOf(cur.w)}` : '' });
     }
     logAct({ ev: 'ask', id: cur.w.id, q: text.slice(0, 80) });
-    if (!t) t = await aiAskWord({ problem: askProblemOf(cur), history, message: text });
+    if (!t) t = await aiAskWord({ problem: askProblemOf(cur), history, message: text, onText: liveSet });
+    await liveEnd(t);
     busy = false;
     if (q !== cur) return; // 그새 다음 문제로 넘어감
     cur.ask.push(t ? { who: 'ai', text: t } : { who: 'ai', text: coachErrorText(), err: true });
     if (!t) { inp.value = text; cur.ask.splice(-2, 1); } // 못 받았으면 물은 말을 칸에 돌려놓아 다시 보내게
+    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
     draw();
-    // 새 답의 첫머리가 보이게 (긴 답이면 위부터 읽게)
-    const ans = log.lastElementChild;
-    if (ans) log.scrollTop = ans.offsetHeight > log.clientHeight ? ans.offsetTop - log.offsetTop : log.scrollHeight;
+    if (atEnd) toEnd();
   }
   form.addEventListener('submit', e => { e.preventDefault(); submit(inp.value); });
   // 칸에 쓰는 동안 퀴즈 단축키(Enter 계속하기, Space 형광펜, Shift 등)가 눌리지 않게
