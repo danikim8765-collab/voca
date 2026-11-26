@@ -144,8 +144,9 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
         if (!x.same(mx, lx)) x.set(mx);
         if (!x.same(mx, rx)) files[x.file] = { content: JSON.stringify(mx) };
       }
-      if (other && g.files && g.files[OTHER]) {
-        const lo = other.get();
+      // 다른 모드 파일이 아직 없어도 이 기기에 그 모드 기록이 있으면(총정리에서 두 모드 문제를 풀면 생김) 새로 올림
+      const lo = other && other.get();
+      if (other && g.files && (g.files[OTHER] || Object.keys((lo && lo.stats) || {}).length)) {
         const ro = await readFile(g, OTHER);
         const mo = mergeProgress(lo, ro, prune);
         if (!sameStats(mo.stats, lo.stats || {}) || (mo.bookResetAt || 0) !== (lo.bookResetAt || 0)) other.set(mo.stats, mo);

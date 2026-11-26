@@ -3,7 +3,7 @@ import {
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
-  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId,
+  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey,
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
@@ -109,16 +109,16 @@ if (Object.values(stats).some(v => v && v.st == null)) {
 }
 const settings = Object.assign({
   from: null, to: null, kind: 'choice', newPerDay: 20, exam: '', prefsAt: 0,
-  // 복습: 복습 간격 다섯 가지(srsPreset), 목표일(goal = 전체 복습을 시작하는 날. 시험일도 있으면 그날부터 시험 전날까지 범위 전체를 나눠 복습)
+  // 복습: 복습 간격 다섯 가지(srsPreset), 목표일(goal = 총정리를 시작하는 날. 시험일도 있으면 그날부터 시험 전날까지 범위 전체를 나눠 복습)
   srsPreset: 'm', goal: '',
   accent: 'en-US', rate: 0.9, autoSpeak: true, showKo: true, showMeaning: false, appKeyboard: true,
   baseAccept: 'pause', // 원형이 예문 형태의 앞부분일 때(outlaw → outlawed): pause = 0.8초 멈추면 정답, instant = 바로
   extraN: 20, // 추가 학습·복습 개수
   strict: 'mid', // 단어 모드 직접 입력 채점: easy | mid | hard
   // 단어 코치: 시험일에 맞춰 목표일(coachGoal)과 하루 새 단어 수를 정해 줌. coachBase = 일정을 짤 때의 하루 개수, coachKey = 그때의 시험일·범위
-  // coachReview = 코치와 상의해서 정한 시험 전 전체 복습 날 수 (0 = 코치가 정함)
+  // coachReview = 코치와 상의해서 정한 시험 전 총정리 날 수 (0 = 코치가 정함)
   // coachFix = 코치와 정한 하루 새 단어 수(0 = 고정 안 함. 고정하면 복습 날 수는 거기서 정해짐), coachTail = 남는 단어를 'last' 마지막 날에 붙임 · 'extra' 하루 더
-  // coachRest = 쉬는 요일(0 일 … 6 토). 그날은 새 단어·전체 복습 몫 없이 쉼
+  // coachRest = 쉬는 요일(0 일 … 6 토). 그날은 새 단어·총정리 몫 없이 쉼
   coach: false, coachGoal: '', coachBase: 0, coachKey: '', coachReview: 0, coachRest: [], coachFix: 0, coachTail: '',
   // 다시 나오기 (core.js AGAIN_*): 틀림·힌트 두 번·힌트 한 번마다 이번 학습에서 다시 나올 때. 두 모드가 같이 씀(againAt = 바꾼 시각)
   again: AGAIN_REC, againAt: 0,
@@ -231,6 +231,21 @@ function setAgain(v) {
   shareAgain(settings.again, settings.againAt);
   sync.soon();
 }
+// 총정리 문제 방식도 두 모드가 같이 씀 (다시 나오기처럼 바꾼 시각을 따로)
+function shareSweepKind(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if ((o.sweepKindAt || 0) > at) return;
+  o.sweepKind = cleanSweepKind(v); o.sweepKindAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+function setSweepKind(m, v) {
+  settings.sweepKind = { ...cleanSweepKind(settings.sweepKind), [m]: m === 'first' ? (v === 'w' ? 'w' : 'e') : v === 'type' ? 'type' : 'choice' };
+  settings.sweepKindAt = Date.now();
+  saveSettings();
+  shareSweepKind(settings.sweepKind, settings.sweepKindAt);
+  sync.soon();
+  renderHome();
+}
 function setRest(v) {
   settings.coachRest = cleanRest(v);
   settings.restAt = Date.now();
@@ -240,7 +255,7 @@ function setRest(v) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, bookResetAt, stats: allStats(), prefs: { reviewMix: !!settings.reviewMix, exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: true, srsPreset: settings.srsPreset, goal: settings.goal, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
+  getLocal: () => ({ v: 2, resetAt, bookResetAt, stats: allStats(), prefs: { reviewMix: !!settings.reviewMix, exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: true, srsPreset: settings.srsPreset, goal: settings.goal, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', ...(settings.sweepKindAt ? { sweepKind: cleanSweepKind(settings.sweepKind), sweepKindAt: settings.sweepKindAt } : {}), at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -264,6 +279,11 @@ const sync = createSync({
       Object.assign(settings, { again: cleanAgain(m.prefs.again), againAt: m.prefs.againAt });
       saveSettings();
       shareAgain(settings.again, settings.againAt);
+    }
+    if (m.prefs && m.prefs.sweepKind && (m.prefs.sweepKindAt || 0) > (settings.sweepKindAt || 0)) {
+      Object.assign(settings, { sweepKind: cleanSweepKind(m.prefs.sweepKind), sweepKindAt: m.prefs.sweepKindAt });
+      saveSettings();
+      shareSweepKind(settings.sweepKind, settings.sweepKindAt);
     }
     if (m.prefs && restAt(m.prefs) > myRestAt()) {
       Object.assign(settings, { coachRest: cleanRest(m.prefs.coachRest), restAt: restAt(m.prefs) });
@@ -307,7 +327,7 @@ const sync = createSync({
     merge: (l, r) => LOOK.mergeLook(l, r),
     same: (x, y) => LOOK.sameLook(x, y),
   },
-  other: { get: otherProgress, set: (st, m) => { save(OTHER_P + 'stats.v1', st); if (m) save(OTHER_P + 'bookResetAt.v1', m.bookResetAt || 0); } },
+  other: { get: otherProgress, set: (st, m) => { save(OTHER_P + 'stats.v1', st); dropOtherMemo(); if (m) save(OTHER_P + 'bookResetAt.v1', m.bookResetAt || 0); if (current === 'home') renderHome(); } },
   // 코치 이야기·기억과 학습 기록 (voca-coach.json): 다른 기기에서 한 학습과 이야기도 코치가 알게. 두 모드가 같이 씀
   extra: [{
     file: 'voca-coach.json',
@@ -536,12 +556,58 @@ function rangeWords() {
 // 단어 코치: 켜져 있고 시험일이 앞으로 남아 있으면 코치가 목표일과 하루 새 단어 수를 정함
 const coachActive = () => !!(settings.coach && settings.exam && settings.exam > dateStr());
 const goalDate = () => (coachActive() ? settings.coachGoal || '' : settings.goal);
-// 시험 전 전체 복습이 있는 일정인지: 목표일·시험일이 둘 다 있고 목표일이 먼저일 때 (코치가 켜져 있으면 코치의 목표일로 언제나)
+// 시험 전 총정리가 있는 일정인지: 목표일·시험일이 둘 다 있고 목표일이 먼저일 때 (코치가 켜져 있으면 코치의 목표일로 언제나)
 const sweepOn = () => (coachActive() ? !!settings.coachGoal : !!(settings.goal && settings.exam && settings.goal < settings.exam));
 const intervals = () => PRESETS[settings.srsPreset] || PRESETS.m;
 const maxStage = () => intervals().length; // 기본 4단계(1·3·7·14일)
-// 전체 복습 기간(목표일 ~ 시험 전날): 오늘의 복습이 범위 전체를 나눠 훑는 때
-const inSweep = (today = dateStr()) => sweepOn() && !!goalDate() && today >= goalDate() && !!settings.exam && today < settings.exam;
+// ---------- 총정리 (목표일 ~ 시험 전날): 예문·단어 두 모드 문제를 한 학습에서 같이 ----------
+// 두 모드가 목표일을 따로 갖고 있어서(코치 일정도 모드마다) 둘 중 먼저 오는 목표일부터 총정리. 어느 모드에서 열든 같은 학습
+const ME = WORD ? 'w' : 'e', OTHER_M = WORD ? 'e' : 'w';
+function otherGoal() {
+  const ex = settings.exam, o = load(OTHER_P + 'settings.v1', {});
+  if (!ex) return '';
+  // 코치는 두 모드가 같이 켜고 끔. 그 모드가 지금 시험일로 짠 일정일 때만 (오래 안 연 모드의 예전 일정은 안 믿음)
+  if (settings.coach && ex > dateStr()) return o.coachGoal && String(o.coachKey || '').split('|')[0] === ex && o.coachGoal <= ex ? o.coachGoal : '';
+  return o.goal && o.goal < ex ? o.goal : '';
+}
+const sweepGoal = () => { const a = sweepOn() ? goalDate() : '', b = otherGoal(); return a && b ? (a < b ? a : b) : a || b; };
+// 총정리 기간: 오늘의 복습이 범위 전체를 나눠 두 모드로 훑는 때
+const inSweep = (today = dateStr()) => { const g = sweepGoal(); return !!g && today >= g && !!settings.exam && today < settings.exam; };
+// 다른 모드 진도 (총정리에서 그 모드 문제를 풀면 거기에 적음). 저장된 걸 읽어 두고, 동기화로 바뀌면 다시 읽음
+let otherMemo = null;
+function otherAll() { if (!otherMemo) otherMemo = load(OTHER_P + 'stats.v1', {}); return otherMemo; }
+const otherStats = () => { const all = otherAll(), out = {}; for (const [k, v] of Object.entries(all)) if (v && !v.del) out[k] = v; return out; };
+let otherLive = null; // otherStats()를 한 번 그린 동안 나눠 씀
+const statsOf = m => (m === ME ? stats : (otherLive || (otherLive = otherStats())));
+const dropOtherMemo = () => { otherMemo = null; otherLive = null; };
+function putStat(m, id, st) {
+  if (m === ME) { delete tombs[id]; stats[id] = st; saveStats(); return; }
+  const all = otherAll();
+  all[id] = st;
+  save(OTHER_P + 'stats.v1', all);
+  if (otherLive) otherLive[id] = st;
+}
+const otherSettings = () => load(OTHER_P + 'settings.v1', {});
+const intervalsOf = m => (m === ME ? intervals() : PRESETS[otherSettings().srsPreset] || PRESETS.m);
+function dueLoadOf(m) {
+  if (m === ME) return dueLoad();
+  const S = statsOf(m), mm = new Map();
+  for (const w of reviewPool()) { const s = S[w.id]; if (s && s.due && !s.g) mm.set(s.due, (mm.get(s.due) || 0) + 1); }
+  return d => mm.get(d) || 0;
+}
+// 총정리 문제 하나: 'w:<id>' 단어 문제 · 'e:<id>' 예문 문제. 그 밖의 학습은 단어 id 그대로(지금 보는 모드)
+const itemOf = k => { const p = parseSweepKey(k); return { id: p.id, m: p.m || ME }; };
+const seenKey = k => { const { id, m } = itemOf(k); const s = statsOf(m)[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
+const sweepPick = () => pickBothSweep(reviewPool(), rangeWords(), { [ME]: stats, [OTHER_M]: statsOf(OTHER_M) }, { today: dateStr(), goal: sweepGoal(), exam: settings.exam, rest: restNow() });
+// 총정리 문제 방식: 단어 문제(처음엔 직접 입력)·예문 문제(처음엔 4지선다), 먼저 풀 문제(first, 처음엔 예문). 두 모드가 같이 씀 (sweepKindAt = 바꾼 시각)
+const SWEEP_KIND0 = { w: 'type', e: 'choice', first: 'e' };
+const cleanSweepKind = v => ({
+  w: v && v.w === 'choice' ? 'choice' : v && v.w === 'type' ? 'type' : SWEEP_KIND0.w,
+  e: v && v.e === 'type' ? 'type' : v && v.e === 'choice' ? 'choice' : SWEEP_KIND0.e,
+  first: v && v.first === 'w' ? 'w' : 'e',
+});
+const sweepFirst = () => cleanSweepKind(settings.sweepKind).first;
+const sweepKind = m => cleanSweepKind(settings.sweepKind)[m === 'w' ? 'w' : 'e'];
 // 복습에 나오는 단어: 학습 범위 + 내 단어 + 범위 밖이어도 독해에서 막힌 단어책 단어
 let poolMemo = { rw: null, ver: -1, out: [] };
 function reviewPool() {
@@ -581,7 +647,7 @@ const newTargetMine = () => loadDay().newTarget != null; // 오늘 새 단어 �
 function todayPlan() {
   const rw = rangeWords();
   const bookRange = rw.some(w => hitNew(w.id) && !stats[w.id]) ? rw.filter(w => !(hitNew(w.id) && !stats[w.id])) : rw;
-  const plan = buildPlan(reviewPool(), bookRange, stats, { today: dateStr(), newPerDay: todayNewTarget(), exam: settings.exam, srs: sweepOn() ? { goal: goalDate(), exam: settings.exam } : null, newToday: newToday() });
+  const plan = buildPlan(reviewPool(), bookRange, stats, { today: dateStr(), newPerDay: todayNewTarget(), exam: settings.exam, srs: sweepOn() || inSweep() ? { goal: inSweep() ? sweepGoal() : goalDate(), exam: settings.exam } : null, newToday: newToday() });
   plan.mine = myQueue().slice(0, myQuotaLeft());
   return plan;
 }
@@ -589,6 +655,12 @@ function todayPlan() {
 // limit은 '오늘 복습할 단어' 숫자를 오늘만 바꿨을 때만
 const reviewPick = (limit = 0) => pickSrsReview(reviewPool(), rangeWords(), stats, { today: dateStr(), goal: sweepOn() ? goalDate() : '', exam: settings.exam, limit, rest: restNow() });
 const pickToday = () => reviewPick().words;
+// 오늘의 복습 목록(고정해 둘 것): 총정리면 'w:id'·'e:id' 문제, 아니면 단어 id. limit > 0이면 그 개수까지
+const reviewKeys = (limit = 0) => {
+  if (!inSweep()) return reviewPick(limit).words.map(w => w.id);
+  const keys = (sweepPick() || { items: [] }).items.map(x => sweepKey(x.m, x.id));
+  return limit > 0 ? keys.slice(0, limit) : keys;
+};
 const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
 
@@ -597,10 +669,12 @@ const loadDay = () => { const d = load(KEY.day, null); return d && d.date === da
 const hintedId = () => loadDay().hint || null;
 function reviewState() {
   const day = loadDay();
-  const started = Array.isArray(day.review);
-  const ids = started ? day.review.filter(id => byId.has(id)) : pickToday().map(w => w.id);
-  const left = started ? ids.filter(id => !seenToday(id)) : ids;
-  return { started, total: ids.length, left, done: !left.length };
+  const both = inSweep();
+  // 고정해 둔 목록이 총정리인지가 지금과 다르면(목표일·시험일을 바꿈) 새로 고름
+  const started = Array.isArray(day.review) && !!day.both === both;
+  const ids = started ? day.review.filter(k => byId.has(itemOf(k).id)) : reviewKeys();
+  const left = started ? ids.filter(k => !seenKey(k)) : ids;
+  return { started, both, total: ids.length, left, done: !left.length };
 }
 
 // 오늘의 학습 → 오늘의 복습 → 추가 학습·복습 순서로 열림
@@ -653,6 +727,11 @@ function renderHome() {
   $('#opt-review-mix').checked = !!settings.reviewMix;
   setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
+  dropOtherMemo(); // 다른 모드 진도·설정은 다른 화면(그 모드)에서 바뀌었을 수 있어서 홈을 그릴 때마다 다시 읽음
+  $('#sweep-kinds').hidden = !sweepGoal() || !settings.exam || dateStr() >= settings.exam;
+  setSeg('#seg-sweep-w', sweepKind('w'));
+  setSeg('#seg-sweep-e', sweepKind('e'));
+  setSeg('#seg-sweep-first', sweepFirst());
   $('#exam-date').value = settings.exam || '';
   // 시험일 옆 D-n, 목표일(설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
   const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
@@ -681,13 +760,16 @@ function renderHome() {
   const lo = Math.min(settings.from, settings.to), hi = Math.max(settings.from, settings.to);
   const sumBox = $('#plan-sum');
   sumBox.innerHTML = '';
-  sumBox.append(el('b', 'plan-sum-range', lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`), el('span', 'plan-sum-desc', [
+  const kn = k => (k === 'type' ? '직접 입력' : '4지선다');
+  sumBox.append(el('b', 'plan-sum-range', lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`), el('span', 'plan-sum-desc', inSweep() ? [
+    `총정리 중 · 시험 ${fmtDay(settings.exam)}`, `단어 ${kn(sweepKind('w'))}`, `예문 ${kn(sweepKind('e'))}`,
+  ].join(' · ') : [
     settings.kind === 'type' ? '직접 입력' : '4지선다',
     ...(settings.reviewMix ? ['복습 섞어서'] : []),
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     ...(coachActive()
-      ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 전체 복습 중'])
-      : [`새 단어 ${settings.newPerDay}`, ...(!sweepOn() ? [] : dateStr() < goalDate() ? [`${fmtDay(addDays(goalDate(), -1))}까지`] : ['전체 복습 중'])]),
+      ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 총정리 중'])
+      : [`새 단어 ${settings.newPerDay}`, ...(!sweepOn() ? [] : dateStr() < goalDate() ? [`${fmtDay(addDays(goalDate(), -1))}까지`] : ['총정리 중'])]),
   ].join(' · ')));
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
@@ -853,7 +935,7 @@ function swipeHintOnce(grid) {
 // 매일 남은 단어 ÷ 목표일까지 남은 날로 오늘 몫을 다시 계산함. 홈 맨 위에서 고른 코치 캐릭터가 말로 알려 줌. 설정에서 끌 수 있음
 const fmtDay = d => { const [, m, dd] = String(d || '').split('-'); return m ? `${+m}월 ${+dd}일` : ''; };
 const leftNew = () => rangeWords().filter(w => !stats[w.id]).length;
-// 목표일(coachGoal)은 전체 복습을 시작하는 날이라 새 단어를 보는 마지막 날은 그 전날
+// 목표일(coachGoal)은 총정리를 시작하는 날이라 새 단어를 보는 마지막 날은 그 전날
 const lastLearnDay = () => addDays(settings.coachGoal, -1);
 // 쉬는 요일은 다른 모드에서 바뀔 수 있어서(두 모드가 같이 씀) 있을 때만 붙임 (없으면 예전 열쇠 그대로라 일정을 괜히 다시 짜지 않음)
 const coachKeyNow = () => { const r = cleanRest(settings.coachRest); return [settings.exam, Math.min(settings.from, settings.to), Math.max(settings.from, settings.to)].join('|') + (r.length ? `|r${r.join('')}` : ''); };
@@ -1004,7 +1086,7 @@ function coachSay() {
   const replan = ['일정 다시 짜기', () => { planCoach(true); coachMoved = false; renderHome(); toast('남은 날에 맞춰 일정을 다시 짰어요'); }];
   const talk = [aiCoachOnline() ? '코치와 이야기하기' : '일정 상의하기', talkCoach];
   const rest = restNow(), restTxt = rest.length ? ` ${restLabel(rest)}은 쉬어요.` : '';
-  // 쉬는 날: 새 단어·전체 복습 몫 없이 복습일 된 단어만 (오늘 개수를 직접 정했으면 아래 그대로)
+  // 쉬는 날: 새 단어·총정리 몫 없이 복습일 된 단어만 (오늘 개수를 직접 정했으면 아래 그대로)
   if (isRestDay(today, rest) && !newTargetMine()) {
     if (today >= goal) return { mood: 'sleep', text: `오늘은 쉬는 날이에요. ${rv ? `복습일이 된 단어 ${rv}개만 보면 돼요.` : '푹 쉬고 내일 다시 훑어요.'}`, acts: aiCoachOnline() ? [talk] : [] };
     const next = addDays(today, 1), n = studyDays(next, goal, rest), more = n ? Math.ceil(leftNew() / n) : 0;
@@ -1017,9 +1099,9 @@ function coachSay() {
     return { mood: 'normal', text: `새 단어는 다 봤어요. 시험까지 ${D}일 동안 범위 전체를 다시 훑어요.${restTxt} 오늘은 복습 ${rv}개예요.`, acts: chat };
   }
   const span = rd === 1 ? '하루' : `${rd}일`;
-  const tail = rd > 0 ? `마지막 ${span}는 전체 복습이에요`.replace('일는', '일은') : '시험 전날까지 새 단어를 봐요';
+  const tail = rd > 0 ? `마지막 ${span}는 총정리예요`.replace('일는', '일은') : '시험 전날까지 새 단어를 봐요';
   const last = lastLearnDay(), by = last === today ? '오늘' : fmtDay(last);
-  if (allDone) return { mood: 'happy', text: `${moved}오늘 몫 끝! ` + (last === today ? `새 단어를 다 봤어요. 내일부터 시험 전날까지는 전체 복습이에요.` : `이대로면 ${by}에 새 단어를 다 보고, ${tail}.`), acts: last === today ? chat : [talk] };
+  if (allDone) return { mood: 'happy', text: `${moved}오늘 몫 끝! ` + (last === today ? `새 단어를 다 봤어요. 내일부터 시험 전날까지는 총정리예요.` : `이대로면 ${by}에 새 단어를 다 보고, ${tail}.`), acts: last === today ? chat : [talk] };
   // 밀렸는지는 코치 계산(남은 새 단어 ÷ 남은 날)으로 봄. 오늘 개수를 직접 늘린 건 밀린 게 아님
   const target = todayNewTarget(), need = coachDaily(), base = settings.coachBase || 0;
   const fixed = settings.coachFix ? coachPlanNow() : null;
@@ -1042,7 +1124,7 @@ function coachSay() {
   return { mood: 'normal', text: `${moved}시험까지 ${D}일. ${by}까지 새 단어를 끝내고 ${tail}.${restTxt} 오늘은 ${todo || '할 게 없어요'}${todo ? '예요' : ''}.`, acts: last === today ? chat : [talk] };
 }
 
-// 일정 상의하기: 코치가 시험 전 전체 복습 날 수를 몇 가지 골라 주고(여유 있게 · 추천 · 길게 · 아주 길게), 고르면 그 날 수를 계속 따름
+// 일정 상의하기: 코치가 시험 전 총정리 날 수를 몇 가지 골라 주고(여유 있게 · 추천 · 길게 · 아주 길게), 고르면 그 날 수를 계속 따름
 // (목표일 = 시험일 − 복습 날 수, 하루 새 단어 수는 거기에 맞춰 매일 다시 계산). 추천을 고르면 다시 코치가 정함
 function coachOptions() {
   const auto = coachPlanFor(0);
@@ -1066,7 +1148,7 @@ function coachOptions() {
 // 고른 선택지에 대한 코치의 말
 function optionSay({ r, p, rec }, a) {
   const end = addDays(p.goal, -1), by = end === dateStr() ? '오늘' : fmtDay(end);
-  const plan = `${by}까지 새 단어를 하루 ${p.perDay}개씩 보고, 마지막 ${r === 1 ? '하루' : `${r}일`}는 하루 ${p.finalPerDay}개쯤 전체 복습해요.`.replace('일는', '일은');
+  const plan = `${by}까지 새 단어를 하루 ${p.perDay}개씩 보고, 마지막 ${r === 1 ? '하루' : `${r}일`}는 하루 ${p.finalPerDay}단어쯤 단어·예문 두 문제씩 총정리해요.`.replace('일는', '일은');
   if (rec) return ['happy', `${plan} 배우는 날과 복습하는 날의 부담이 비슷해서 제일 무난해요.`];
   if (p.perDay > 40) return ['worry', `${plan} 새 단어가 하루 ${p.perDay}개라 조금 빡빡해요. 할 수 있으면 좋아요!`];
   if (r > a) return ['cheer', `${plan} 시험 전에 천천히 여러 날 훑을 수 있어요.`];
@@ -1090,7 +1172,7 @@ function coachErrorText() {
 function talkCoach() { return aiCoachOnline() ? openCoach() : pickSchedule(); }
 const canPlanNow = () => coachActive() && !!leftNew() && dateStr() < settings.coachGoal;
 
-// 일정 상의하기(선택지): 시험 전 전체 복습을 며칠 할지 고름. 고르면 하루 개수 고정은 풀림
+// 일정 상의하기(선택지): 시험 전 총정리를 며칠 할지 고름. 고르면 하루 개수 고정은 풀림
 function pickSchedule() {
   const opts = canPlanNow() ? coachOptions() : [];
   if (opts.length < 2) { toast(coachActive() && leftNew() ? '시험이 너무 가까워서 일정을 바꿀 수 없어요' : '지금은 바꿀 일정이 없어요'); return; }
@@ -1135,7 +1217,7 @@ function pickSchedule() {
           Object.assign(settings, { coachReview: cur.rec ? 0 : cur.r, coachFix: 0, coachTail: '' }); // 추천이면 코치에게 맡김 (범위·진도가 바뀌면 추천도 따라 바뀌게)
           planCoach(true);
           coachMoved = false;
-          toast(`시험 전 ${cur.r}일은 전체 복습`, 3000);
+          toast(`시험 전 ${cur.r}일은 총정리`, 3000);
           renderHome();
           if (current === 'settings') renderSrs();
         }
@@ -1246,16 +1328,16 @@ function coachProposal(ch) {
   const by = p => { const end = addDays(p.goal, -1); return end === today ? '오늘' : fmtDay(end); };
   const span = n => (n === 1 ? '하루' : `${n}일`);
   if (!canPlanNow()) { // 새 단어를 다 봤으면 바꿀 수 있는 건 쉬는 요일뿐
-    if (!ch.rest) return { title: '지금은 바꿀 일정이 없어요', lines: ['새 단어를 다 봐서 시험 전날까지 전체 복습만 남았어요. 쉬는 요일은 바꿀 수 있어요.'] };
+    if (!ch.rest) return { title: '지금은 바꿀 일정이 없어요', lines: ['새 단어를 다 봐서 시험 전날까지 총정리만 남았어요. 쉬는 요일은 바꿀 수 있어요.'] };
     const k = studyDays(today, settings.exam, rest);
-    return { title: restTxt, lines: [`전체 복습: 시험 전날까지 공부하는 날 ${k}일, 하루 ${Math.ceil(rangeWords().length / Math.max(1, k))}개쯤`], ok: { rest } };
+    return { title: restTxt, lines: [`총정리: 시험 전날까지 공부하는 날 ${k}일, 하루 ${Math.ceil(rangeWords().length / Math.max(1, k))}개쯤`], ok: { rest } };
   }
   const left = leftNew() + newToday();
   const fix = ch.perDay || (ch.review ? 0 : settings.coachFix || 0);
   const review = fix ? 0 : ch.review || settings.coachReview || 0;
   const mk = tail => coachPlanFor(review, rest, fix, tail);
-  const reviewLine = p => (p.reviewDays ? `전체 복습: ${fmtDay(p.goal)}부터 ${span(p.reviewDays)} (공부하는 날 ${studyDays(p.goal, settings.exam, rest)}일), 하루 ${p.finalPerDay}개쯤` : '전체 복습: 할 날이 안 남아요 (시험 전날까지 새 단어)');
-  const curLine = cur ? `지금 일정: 하루 ${cur.perDay}개, 전체 복습 ${cur.reviewDays}일${restNow().length ? `, ${restLabel(restNow())} 쉼` : ''}` : '';
+  const reviewLine = p => (p.reviewDays ? `총정리: ${fmtDay(p.goal)}부터 ${span(p.reviewDays)} (공부하는 날 ${studyDays(p.goal, settings.exam, rest)}일), 하루 ${p.finalPerDay}단어쯤(단어·예문 두 문제씩)` : '총정리: 할 날이 안 남아요 (시험 전날까지 새 단어)');
+  const curLine = cur ? `지금 일정: 하루 ${cur.perDay}개, 총정리 ${cur.reviewDays}일${restNow().length ? `, ${restLabel(restNow())} 쉼` : ''}` : '';
   const todayN = ch.today != null ? Math.max(ch.today, newToday()) : null;
   const todayLine = todayN != null ? `오늘 새 단어: ${todayN}개 (오늘만)` : '';
   // 코치의 한마디 (앱이 씀)
@@ -1290,8 +1372,8 @@ function coachProposal(ch) {
         title: head,
         lines: [`남은 새 단어 ${left}개를 하루 ${fix}개씩 보면 ${p.over}개가 남아요. 어떻게 할까요?`, todayLine, curLine].filter(Boolean),
         choices: [
-          { label: '마지막 날에 붙이기', sub: `${by(a)}에 끝 (그날만 ${a.lastDay}개) · 전체 복습 ${a.reviewDays}일`, pick: { rest: ch.rest ? rest : null, fix, tail: 'last', today: todayN } },
-          { label: '하루 늘리기', sub: `${by(b)}에 끝 (그날은 ${b.lastDay}개) · 전체 복습 ${b.reviewDays}일`, pick: { rest: ch.rest ? rest : null, fix, tail: 'extra', today: todayN } },
+          { label: '마지막 날에 붙이기', sub: `${by(a)}에 끝 (그날만 ${a.lastDay}개) · 총정리 ${a.reviewDays}일`, pick: { rest: ch.rest ? rest : null, fix, tail: 'last', today: todayN } },
+          { label: '하루 늘리기', sub: `${by(b)}에 끝 (그날은 ${b.lastDay}개) · 총정리 ${b.reviewDays}일`, pick: { rest: ch.rest ? rest : null, fix, tail: 'extra', today: todayN } },
         ],
       };
     }
@@ -1335,7 +1417,7 @@ function applyProposal(o) {
   else if (o.review) {
     const auto = coachPlanFor(0, cleanRest(settings.coachRest));
     Object.assign(settings, { coachFix: 0, coachTail: '', coachReview: auto && o.review === auto.auto ? 0 : o.review });
-    msgs.push(`시험 전 ${o.review}일은 전체 복습`);
+    msgs.push(`시험 전 ${o.review}일은 총정리`);
   }
   if (o.today != null) { const day = loadDay(); day.newTarget = o.today; save(KEY.day, day); msgs.push(`오늘은 새 단어 ${o.today}개`); }
   if (coachActive()) planCoach(true); else { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); }
@@ -1350,7 +1432,7 @@ function planNowText() {
   const p = coachActive() ? coachPlanNow() : null;
   if (!p) return '';
   const rest = restNow();
-  return `바뀐 일정: ${p.perDay ? `새 단어는 ${fmtDay(addDays(p.goal, -1))}까지 하루 ${p.perDay}개` + (p.fix && p.fits && p.studyN > 1 && p.lastDay !== p.fix ? `(마지막 날만 ${p.lastDay}개)` : '') + ', ' : ''}전체 복습은 ${p.reviewDays}일${rest.length ? `, ${restLabel(rest)} 쉼` : ''}`;
+  return `바뀐 일정: ${p.perDay ? `새 단어는 ${fmtDay(addDays(p.goal, -1))}까지 하루 ${p.perDay}개` + (p.fix && p.fits && p.studyN > 1 && p.lastDay !== p.fix ? `(마지막 날만 ${p.lastDay}개)` : '') + ', ' : ''}총정리는 ${p.reviewDays}일${rest.length ? `, ${restLabel(rest)} 쉼` : ''}`;
 }
 
 function openCoachChat() {
@@ -1676,14 +1758,14 @@ function coachFacts(both = false) {
     const dEx = daysBetween(today, ex);
     lines.push(`시험일(시험 보는 날): ${fmtDay(ex)} ${weekday(ex)}요일, 시험까지 ${dEx}일`);
     if (g && today >= g) {
-      lines.push('목표일(새 단어를 다 배우는 날)은 지남. 지금은 전체 복습 기간: 새 단어는 다 봤고, 시험 전날까지 범위 전체를 날마다 나눠 복습');
+      lines.push('목표일(새 단어를 다 배우는 날)은 지남. 지금은 총정리 기간: 새 단어는 다 봤고, 시험 전날까지 범위 전체를 날마다 나눠 단어마다 단어 문제·예문 문제를 한 학습에서 같이 풀어요');
       lines.push(`홈 위쪽 표시: '시험 D-${dEx}'`);
     } else if (g) {
       const last = lastLearnDay(), dg = daysBetween(today, last);
       const rd = daysBetween(g, ex), base = settings.coachBase || 0, need = coachDaily(), target = todayNewTarget();
       lines.push(`목표일(새 단어를 다 배우는 마지막 날, 시험일과 다름): ${fmtDay(last)} ${weekday(last)}요일, ` + (dg > 0 ? `목표일까지 ${dg}일` : '오늘이 목표일'));
       lines.push(`홈 위쪽 표시: ${dg > 0 ? `'목표 D-${dg}'` : "'목표 D-day'"} (목표일이 지나면 '시험 D-n'으로 바뀜)`);
-      lines.push(`일정: ${fmtDay(last)}까지 새 단어, ${fmtDay(g)}부터 시험 전날까지 ${rd}일 전체 복습 (${settings.coachFix ? `학생이 하루 새 단어를 ${settings.coachFix}개로 고정함` : settings.coachReview ? '복습 날 수는 학생이 정함' : '코치가 추천한 일정'})`);
+      lines.push(`일정: ${fmtDay(last)}까지 새 단어, ${fmtDay(g)}부터 시험 전날까지 ${rd}일 총정리 (${settings.coachFix ? `학생이 하루 새 단어를 ${settings.coachFix}개로 고정함` : settings.coachReview ? '복습 날 수는 학생이 정함' : '코치가 추천한 일정'})`);
       lines.push(`처음 계획은 하루 새 단어 ${base}개, 코치 계산으로 오늘 필요한 건 ${need}개` + (base && need > base * 1.25 + 2 ? ' (밀려서 늘어남)' : base && need < base ? ' (앞서 있어서 줄어듦)' : ' (계획대로)'));
       if (newTargetMine() && target !== need) lines.push(`학생이 오늘만 새 단어 목표를 ${target}개로 직접 정함 (${target > need ? '계획보다 많이 하려는 것, 밀린 게 아님' : '오늘은 덜 하려는 것'})`);
     }
@@ -1705,7 +1787,7 @@ function coachFacts(both = false) {
   else lines.push('아직 공부한 적 없음');
   if (coachActive()) {
     const rest = restNow();
-    lines.push(rest.length ? `쉬는 요일: ${restLabel(rest)} (그날은 새 단어·전체 복습 몫 없이 쉼)` : '쉬는 요일: 없음 (매일 공부)');
+    lines.push(rest.length ? `쉬는 요일: ${restLabel(rest)} (그날은 새 단어·총정리 몫 없이 쉼)` : '쉬는 요일: 없음 (매일 공부)');
     if (isRestDay(today, rest)) lines.push('오늘은 쉬는 날');
   }
   if (coachMoved) lines.push('목표일이 지났는데 새 단어가 남아서 일정을 방금 다시 짬');
@@ -1730,7 +1812,7 @@ function otherFacts() {
   const out = [`[${OTHER_NAME}] 학습 범위: DAY ${lo}~${hi}, ${rw.length}단어 (배운 단어 ${learned}개, 아직 안 배운 새 단어 ${rw.length - learned}개), 다시 볼 단어 ${wrong}개, 암기 완료 ${mastered}개, 오늘 배운 새 단어 ${fresh}개`];
   if (last) { const n = daysBetween(dateStr(last), today); out.push(`[${OTHER_NAME}] ${n ? `마지막으로 공부한 날: ${n}일 전` : '오늘 공부함'}`); }
   else out.push(`[${OTHER_NAME}] 아직 공부한 적 없음`);
-  if (o.coach && o.coachGoal && ex() && today < o.coachGoal) out.push(`[${OTHER_NAME}] 일정: ${fmtDay(addDays(o.coachGoal, -1))}까지 새 단어${o.coachFix ? ` (학생이 하루 ${o.coachFix}개로 고정함)` : o.coachBase ? ` (처음 계획 하루 ${o.coachBase}개)` : ''}, 그 뒤 시험 전날까지 전체 복습`);
+  if (o.coach && o.coachGoal && ex() && today < o.coachGoal) out.push(`[${OTHER_NAME}] 일정: ${fmtDay(addDays(o.coachGoal, -1))}까지 새 단어${o.coachFix ? ` (학생이 하루 ${o.coachFix}개로 고정함)` : o.coachBase ? ` (처음 계획 하루 ${o.coachBase}개)` : ''}, 그 뒤 시험 전날까지 총정리`);
   return out;
   function ex() { return settings.exam && settings.exam > today; }
 }
@@ -1792,7 +1874,7 @@ function coachData() {
   lines.push(`- 설정: 문제 방식 ${settings.kind === 'type' ? '직접 입력' : '4지선다'}${settings.reviewMix ? '(복습은 외운 단어만 4지선다)' : ''}` +
     `, 하루 새 단어 수 ${coachActive() ? '코치가 정함' : `${settings.newPerDay}개`}, 오늘의 복습은 복습일이 된 단어 전부` +
     `, 복습 주기 ${PRESET_LABEL[settings.srsPreset] || '보통'}(${(PRESETS[settings.srsPreset] || PRESETS.m).join('·')}일 간격)` +
-    (!coachActive() && sweepOn() ? `, 학생이 정한 목표일 ${fmtDay(addDays(goalDate(), -1))}(그다음 날부터 시험 전날까지 전체 복습)` : '') +
+    (!coachActive() && sweepOn() ? `, 학생이 정한 목표일 ${fmtDay(addDays(goalDate(), -1))}(그다음 날부터 시험 전날까지 총정리)` : '') +
     `, 틀린 단어 다시 나오기 ${agName}` + (WORD ? `, 직접 입력 채점 ${{ easy: '너그럽게', mid: '보통', hard: '엄격하게' }[settings.strict] || '보통'}` : `, 예문 해석 ${settings.showKo ? '보이기' : '가리기'}`) +
     `, 발음 ${settings.accent === 'en-GB' ? '영국식' : '미국식'}${settings.autoSpeak ? '(자동 읽기)' : ''}, 동기화 ${sync.enabled ? '켜짐' : '꺼짐'}, 코치에 쓰는 AI ${aiCoachName()}`);
   // 일정 선택지 (앱 계산). 학생이 '어떤 일정이 좋아?'라고 물으면 이걸로 비교
@@ -1901,8 +1983,11 @@ function renderPlan() {
     }
   };
   const order = ['learn', 'review', 'extra'];
-  $('#today-title').textContent = { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기', day: `DAY ${soloDay} 학습` }[stage];
-  $('#today-flow').hidden = stage === 'day';
+  // 총정리: 학습 단계(내 단어)가 아니면 카드가 총정리 모양으로 (남은 날 칸 · 두 모드 문제 수 · 한 바퀴 막대)
+  const sw = rv.both && stage !== 'day' && stage !== 'learn';
+  $('#today-title').textContent = sw ? (stage === 'review' ? '총정리' : '오늘 총정리 끝') : { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기', day: `DAY ${soloDay} 학습` }[stage];
+  $('#today-flow').hidden = stage === 'day' || (sw && !learnLeft);
+  renderSweep(sw, rv);
   $('#btn-solo-close').hidden = stage !== 'day';
   $('#stage-day').hidden = stage !== 'day';
   $('#card-today').classList.toggle('solo-mode', stage === 'day'); // DAY 단독 학습: 고른 DAY 박스와 같은 주황으로
@@ -1925,12 +2010,13 @@ function renderPlan() {
   for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
   const dd = $('#exam-dday');
   // 목표일이 있으면 그 전엔 목표 D-n, 그 뒤엔 시험 D-n.
-  // 'O월 O일까지 새 단어'로 새 단어를 보는 마지막 날(전체 복습 시작 전날)을 보여 주니, D-n도 그날로 셈 (D-11과 27일까지가 하루 어긋나 보이지 않게)
+  // 'O월 O일까지 새 단어'로 새 단어를 보는 마지막 날(총정리 시작 전날)을 보여 주니, D-n도 그날로 셈 (D-11과 27일까지가 하루 어긋나 보이지 않게)
   const toGoal = sweepOn() && dateStr() < goalDate();
   const goalEnd = addDays(goalDate(), -1);
   const left = toGoal ? daysBetween(dateStr(), goalEnd) : settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   dd.hidden = left == null || left < 0 || stage === 'day';
   if (!dd.hidden) { dd.textContent = left === 0 ? (toGoal ? '목표 D-day' : 'D-day') : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
+  if (sw) dd.hidden = true; // 총정리는 카드 안에 크게
   let note = '';
 
   if (stage === 'day') {
@@ -1953,16 +2039,30 @@ function renderPlan() {
     note = !learnLeft ? '숫자를 누르면 오늘 더 배울 수 있어요.'
       : waiting ? `복습할 단어 ${waiting}개가 기다려요 · 위의 '복습'을 누르면 먼저 할 수 있어요.` : '';
   } else if (stage === 'review') {
-    // 복습일이 된 단어 전부 · 전체 복습 기간엔 범위를 나눈 오늘 몫도
+    // 복습일이 된 단어 전부 · 총정리 기간엔 범위를 나눈 오늘 몫도
     const shown = rv.left.length;
-    const dueIn = rv.left.filter(id => isDue(stats[id], dateStr())).length;
-    fill($('#review-info'), [[shown, '복습', editReviewToday], [dueIn, '복습일 된 단어']]);
-    $('#btn-review').textContent = shown ? '오늘 복습 시작' : '오늘 복습 완료 ✓';
+    if (sw) {
+      // 총정리: 남은 문제 수를 크게, 그 아래 단어 문제·예문 문제
+      const wN = rv.left.filter(k => itemOf(k).m === 'w').length;
+      const box = $('#review-info');
+      fill(box, [[shown, rv.started && rv.left.length < rv.total ? `남은 문제 · 오늘 ${rv.total}` : '오늘 문제', editReviewToday]]);
+      const split = el('div', 'sw-split');
+      const chips = [el('span', 'kw', `단어 ${wN}`), el('span', 'ke', `예문 ${shown - wN}`)];
+      split.append(...(sweepFirst() === 'w' ? chips : chips.reverse())); // 먼저 푸는 문제를 앞에
+      box.appendChild(split);
+      $('#btn-review').textContent = shown ? '총정리 시작' : '오늘 총정리 완료 ✓';
+      const sp = sweepPick();
+      note = sp && sp.rest ? '오늘은 쉬는 날이라 복습일이 된 문제만 있어요.' : sp ? sweepNote(sp) : '';
+    } else {
+      const dueIn = rv.left.filter(k => isDue(statsOf(itemOf(k).m)[itemOf(k).id], dateStr())).length;
+      fill($('#review-info'), [[shown, '복습', editReviewToday], [dueIn, '복습일 된 단어']]);
+      $('#btn-review').textContent = shown ? '오늘 복습 시작' : '오늘 복습 완료 ✓';
+      const sp = reviewPick();
+      if (sp.phase === 'final') note = `목표일부터 시험 전까지 학습 범위 ${rangeWords().length}단어를 ${sp.days}일에 나눠 전부 복습해요 (하루 ${sp.size}개쯤).`;
+      const pace = paceNote();
+      if (pace) note = pace;
+    }
     $('#btn-review').disabled = !shown;
-    const sp = reviewPick();
-    if (sp.phase === 'final') note = `목표일부터 시험 전까지 학습 범위 ${rangeWords().length}단어를 ${sp.days}일에 나눠 전부 복습해요 (하루 ${sp.size}개쯤).`;
-    const pace = paceNote();
-    if (pace) note = pace;
   } else if (stage === 'extra') {
     const n = settings.extraN;
     setSeg('#seg-extra', String(n)); // 5·10·20·40이 아니면(슬라이더로 고른 값) 아무것도 안 켜짐
@@ -1974,7 +2074,7 @@ function renderPlan() {
     br.textContent = nRev ? '추가 복습' : '복습할 단어 없음';
     bn.disabled = !nNew;
     br.disabled = !nRev;
-    note = nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
+    note = sw ? `오늘 몫을 다 했어요 👏 ${sweepCheer()}` : nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
   }
   $('#today-note').textContent = note;
   // 시작할 게 있으면 카드 전체가 시작 버튼 (인디고로 칠함). 다 했거나 '더 하기'면 흰 카드
@@ -1987,6 +2087,72 @@ function renderPlan() {
   if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
   $('#opt-coach-plan').checked = !!settings.coach;
   renderCoach(stage);
+}
+
+// ---------- 총정리 카드 ----------
+// 시험까지 남은 날에 따라 카드 색이 달아오름: 8일 넘게 calm(강조색) · 4~7일 near(보라) · 2~3일 hot(주황→빨강) · 시험 전날 last(빨강)
+const sweepHeat = left => (left <= 1 ? 'last' : left <= 3 ? 'hot' : left <= 7 ? 'near' : 'calm');
+const examLeft = () => daysBetween(dateStr(), settings.exam);
+function sweepCheer() {
+  const L = examLeft();
+  return L <= 1 ? '내일이 시험이에요. 오늘 본 단어를 한 번 더 떠올리고 푹 자요.'
+    : L <= 3 ? `시험까지 ${L}일. 마지막 바퀴는 약한 단어가 시험에 가까이 나와요.`
+      : `시험까지 ${L}일 남았어요.`;
+}
+function sweepNote(sp) {
+  const L = examLeft();
+  const head = L <= 1 ? '내일이 시험! 마지막 날이에요 · ' : L <= 3 ? '이제 정말 얼마 안 남았어요 · ' : '';
+  if (sp.lap === 2) return `${head}2바퀴째: 약한 단어 ${sp.total}개를 약한 쪽 문제로 한 번 더 (하루 ${sp.size}단어쯤)`;
+  const per = `하루 ${sp.size}단어 × 단어·예문 두 문제`;
+  return head + (sp.lap2Start
+    ? `${fmtDay(addDays(sp.lap2Start, -1))}까지 범위 ${sp.n}단어를 한 바퀴 · ${per} · 남은 ${sp.days - sp.lap1Days}일은 약한 단어만 한 번 더`
+    : `범위 ${sp.n}단어를 시험 전날까지 ${sp.days}일에 나눠 두 모드로 훑어요 · ${per}`);
+}
+function renderSweep(on, rv) {
+  const card = $('#card-today'), box = $('#sweep-box'), round = $('#sweep-round');
+  card.classList.toggle('sweep-mode', on);
+  box.hidden = round.hidden = !on;
+  if (!on) { delete card.dataset.heat; return; }
+  const today = dateStr(), ex = settings.exam, g = sweepGoal(), rest = restNow();
+  const L = daysBetween(today, ex);
+  card.dataset.heat = sweepHeat(L);
+  // 시험까지 n일: 숫자를 크게
+  const lb = $('#sweep-left');
+  lb.innerHTML = '';
+  lb.append(el('span', 'sl-pre', '시험까지'), el('b', 'sl-num', String(L)), el('span', 'sl-unit', L === 1 ? '일 · 내일 시험' : '일'));
+  // 남은 날 칸: 총정리 첫날부터 시험날까지. 지난 날 · 오늘 · 남은 날 · 쉬는 날 · 시험
+  const strip = $('#sweep-strip');
+  strip.innerHTML = '';
+  const n = daysBetween(g, ex);
+  const sp = sweepPick();
+  const lap2 = sp ? sp.lap2Start : '';
+  // 날이 많으면(2주 넘게) 오늘 앞쪽 지난 날은 줄여서 한 칸으로
+  let from = 0;
+  if (n > 14) from = Math.max(0, Math.min(daysBetween(g, today), n - 14));
+  if (from > 0) { const c = el('span', 'sd past more'); c.append(el('i', null, `+${from}`), el('small', null, '')); strip.appendChild(c); }
+  for (let i = from; i <= n; i++) {
+    const d = addDays(g, i), isExam = d === ex;
+    const kind = isExam ? 'exam' : d < today ? 'past' : d === today ? 'now' : 'next';
+    // 2바퀴(약한 단어만) 날은 점선 칸
+    const c = el('span', `sd ${kind}` + (!isExam && isRestDay(d, rest) ? ' rest' : '') + (!isExam && lap2 && d >= lap2 ? ' lap2' : '') + (d === lap2 ? ' lap2-first' : ''));
+    const dot = el('i');
+    if (isExam) dot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>';
+    else if (kind === 'past') dot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg>';
+    c.append(dot, el('small', null, isExam ? '시험' : d === today ? '오늘' : weekday(d)));
+    strip.appendChild(c);
+  }
+  strip.style.setProperty('--n', strip.children.length);
+  strip.classList.toggle('dense', strip.children.length > 10);
+  strip.setAttribute('aria-label', `총정리 ${n}일 중 ${Math.max(0, daysBetween(g, today))}일 지남, 시험까지 ${L}일`);
+  // 이번 바퀴: 끝낸 단어(오늘 본 것 포함) + 오늘 몫이 끝나면 닿을 곳. 1바퀴 = 전체를 두 모드로, 2바퀴 = 약한 단어의 약한 쪽 문제
+  if (!sp) { round.hidden = true; return; }
+  const total = Math.max(1, sp.total);
+  const goalNow = Math.min(sp.total, sp.size * (sp.idx + 1));
+  const end = sp.lap === 1 && lap2 ? fmtDay(addDays(lap2, -1)) : '';
+  $('#sr-label').textContent = sp.lap === 1 ? (lap2 ? `1바퀴 · 전체 단어 · ${end}까지` : '범위 한 바퀴 · 두 모드로 다 본 단어') : '2바퀴 · 약한 단어만 한 번 더';
+  $('#sr-num').textContent = `${sp.done.toLocaleString('ko-KR')} / ${sp.total.toLocaleString('ko-KR')}`;
+  $('#sr-fill').style.width = `${(Math.min(sp.done, total) / total) * 100}%`;
+  $('#sr-today').style.width = `${(Math.min(total, Math.max(sp.done, goalNow)) / total) * 100}%`;
 }
 
 // 복습이 평소보다 많이 밀렸을 때 왜 쌓이는지와 맞는 페이스를 숫자로 (새 단어 하나는 하루 복습 5개쯤으로 돌아옴)
@@ -2071,11 +2237,12 @@ async function editReviewToday() {
   if (n == null) return;
   // 오늘 이미 복습한 단어는 두고, 남은 단어를 n개(전부면 다)로 다시 고름
   const day = loadDay();
-  const done = Array.isArray(day.review) ? day.review.filter(id => byId.has(id) && seenToday(id)) : [];
+  const both = inSweep();
+  const done = Array.isArray(day.review) && !!day.both === both ? day.review.filter(k => byId.has(itemOf(k).id) && seenKey(k)) : [];
   const want = n < 0 ? 0 : n;
-  const picked = reviewPick(want).words;
-  const rest = picked.map(w => w.id).filter(id => !done.includes(id));
+  const rest = reviewKeys(want).filter(k => !done.includes(k) && !seenKey(k));
   day.review = [...done, ...(n < 0 ? rest : rest.slice(0, want))];
+  if (both) day.both = true; else delete day.both;
   save(KEY.day, day);
   viewStage = 'review';
   renderPlan();
@@ -2180,7 +2347,7 @@ function onSeg(sel, fn) {
 }
 
 // ---------- 학습 세션 ----------
-async function startSession(mode, list, { mixed = false, label: givenLabel = '' } = {}) {
+async function startSession(mode, list, { mixed = false, label: givenLabel = '', keys = null } = {}) {
   // 하던 학습이 있으면: 같은 학습이면 이어서, 다른 학습이면 물어보고 (말없이 덮어쓰지 않게)
   const saved = mode === 'retry' ? null : load(KEY.session, null);
   if (saved && saved.date === dateStr() && saved.pos > 0 && saved.pos < saved.queue.length) {
@@ -2196,8 +2363,14 @@ async function startSession(mode, list, { mixed = false, label: givenLabel = '' 
   const rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   const range = from === to ? `DAY ${from}` : `DAY ${from}~${to}`;
-  let ids, label;
-  if (mode === 'today') {
+  let ids, label, both = false;
+  if (keys) {
+    // 총정리에서 틀린 문제 다시 풀기: 단어 문제·예문 문제 그대로
+    ids = shuffle(keys.filter(k => byId.has(itemOf(k).id)));
+    if (!ids.length) return;
+    both = true;
+    label = '총정리 틀린 문제';
+  } else if (mode === 'today') {
     const plan = todayPlan();
     // 시험 대비 → 새 단어(교재 순서) 순으로
     ids = [...shuffle(plan.final), ...plan.mine, ...plan.fresh].map(w => w.id);
@@ -2206,14 +2379,17 @@ async function startSession(mode, list, { mixed = false, label: givenLabel = '' 
   } else if (mode === 'review') {
     // 처음 시작할 때 오늘의 복습 목록을 고정 → 중간에 그만둬도 남은 단어만 이어서
     const day = loadDay();
-    if (!Array.isArray(day.review)) { day.review = pickToday().map(w => w.id); save(KEY.day, day); }
+    both = inSweep();
+    if (!Array.isArray(day.review) || !!day.both !== both) { day.review = reviewKeys(); if (both) day.both = true; else delete day.both; save(KEY.day, day); }
     // 목록은 까먹었을 가능성이 큰 것부터라, 20개씩 묶어 그 안에서만 섞음 (밀린 게 많아 중간에 그만둬도 급한 것부터 한 셈)
-    const left = day.review.filter(id => byId.has(id) && !seenToday(id));
+    const left = day.review.filter(k => byId.has(itemOf(k).id) && !seenKey(k));
     ids = [];
+    // 총정리: 단어 20개씩 묶어 먼저 풀 모드의 묶음 먼저, 그 묶음의 다른 모드 문제는 다음 묶음 뒤에 (core.js sweepOrder)
+    if (both) ids = sweepOrder(left.map(itemOf), { first: sweepFirst() }).map(x => sweepKey(x.m, x.id));
     // '복습은 외운 단어만 4지선다'면 묶음 안에서 4지선다를 먼저 (키보드가 한 번만 올라오게)
-    for (let i = 0; i < left.length; i += 20) ids.push(...mixOrder(shuffle(left.slice(i, i + 20))));
+    else for (let i = 0; i < left.length; i += 20) ids.push(...mixOrder(shuffle(left.slice(i, i + 20))));
     if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
-    label = '오늘의 복습';
+    label = both ? '총정리' : '오늘의 복습';
   } else if (mode === 'extraNew') {
     ids = extraNew(settings.extraN).map(w => w.id);
     if (!ids.length) { toast('배울 새 단어가 없어요'); return; }
@@ -2252,6 +2428,7 @@ async function startSession(mode, list, { mixed = false, label: givenLabel = '' 
   logStart(session);
   if (startedFrom === 'list') session.from = 'list';
   if (mixed) session.mixed = true; // 복습에서 틀린 단어 다시 풀기도 복습처럼 ('복습은 외운 단어만 4지선다')
+  if (both) session.both = true; // 총정리: queue가 'w:id'·'e:id' (두 모드 문제)
   if (mode !== 'retry') setTint(mode === 'day' ? 'study' : null); // 틀린 단어 다시 풀기는 하던 색 그대로
   saveSession();
   show('quiz');
@@ -2282,7 +2459,7 @@ function resumeSession() {
   const saved = load(KEY.session, null);
   if (!saved) return;
   if (saved.date !== dateStr()) { dropSession(); renderHome(); toast('날짜가 바뀌어서 오늘의 학습을 새로 만들었어요'); return; }
-  saved.queue = saved.queue.filter(id => byId.has(id));
+  saved.queue = saved.queue.filter(k => byId.has(itemOf(k).id));
   saved.hinted = saved.hinted || [];
   delete saved.from;
   session = saved;
@@ -2487,25 +2664,38 @@ let q = null; // 현재 문제 상태
 const reviewSession = s => !!s && (s.mode === 'review' || s.mode === 'extraReview' || !!s.mixed);
 // 맞히면 졸업하는 복습인지 (그 문제는 직접 입력)
 const finalFor = id => willGraduate(stats[id], { grad: gradDays(id), intervals: intervals(), today: dateStr() });
-const kindFor = w => questionKind(settings.kind, stats[w.id], {
+// 총정리는 문제 방식을 모드마다 따로 (학습 계획의 '총정리 문제')
+const kindFor = (w, m = ME, key = w.id) => (session.both ? sweepKind(m) : questionKind(settings.kind, stats[w.id], {
   mix: !!settings.reviewMix && reviewSession(session),
-  again: session.wrong.includes(w.id) || session.hinted.includes(w.id),
+  again: session.wrong.includes(key) || session.hinted.includes(key),
   final: finalFor(w.id),
-});
+}));
+// 지금 문제가 단어 문제(영단어 보고 뜻)인지. 총정리에서는 문제마다 다름
+const qWord = () => (q && q.m ? q.m === 'w' : WORD);
+// 총정리 문제 표시 (예문 문제·단어 문제)
+function showQKind(m) {
+  const t = $('#q-kind');
+  t.hidden = !session.both;
+  if (!session.both) return;
+  t.textContent = m === 'w' ? '단어 → 뜻' : '예문 빈칸';
+  t.className = 'tag kind-tag sw-kind ' + (m === 'w' ? 'kw' : 'ke');
+}
 // 복습 묶음 순서: 4지선다로 나올 단어 먼저 ('복습은 외운 단어만 4지선다'를 켰을 때만)
 const mixOrder = ids => (settings.reviewMix ? choicesFirst(ids, id => questionKind(settings.kind, stats[id], { mix: true, final: finalFor(id) })) : ids);
 
 function renderQuestion() {
-  const id = session.queue[session.pos];
+  const key = session.queue[session.pos];
+  const { id, m } = itemOf(key);
   const w = byId.get(id);
   if (!w) { session.pos++; return session.pos < session.queue.length ? renderQuestion() : finishSession(); }
   $('#q-kind').hidden = true;
   if (session.mode === 'syn') return renderSynQuestion(w);
-  if (WORD) return renderWordQuestion(w);
+  showQKind(m);
+  if (m === 'w') return renderWordQuestion(w, key);
   $('#btn-idk').hidden = true;
   const b1 = w.ex1 ? makeBlanks(w.ex1, w.blank, w.word) : null;
   const b2 = w.ex2 ? makeBlanks(w.ex2, w.blank, w.word) : null;
-  q = { w, b1, b2, kind: kindFor(w), answered: false, letterHint: false, revealed: false, usedHint: hintedId() === id };
+  q = { w, key, m, b1, b2, kind: kindFor(w, m, key), answered: false, letterHint: false, revealed: false, usedHint: hintedId() === key };
 
   $('#feedback').hidden = true;
   $('#fb-head').hidden = true;
@@ -2514,7 +2704,7 @@ function renderQuestion() {
   $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = dayTag(w);
-  $('#q-again').hidden = !session.again[id];
+  $('#q-again').hidden = !session.again[key];
 
   const box = $('#q-sentences');
   box.innerHTML = '';
@@ -2583,7 +2773,7 @@ function choiceNotes(choices, right, picked) {
   for (const c of choices) {
     const ok = c === right, mine = c === picked && !ok;
     const row = el('div', 'opt' + (ok ? ' ok' : '') + (mine ? ' picked' : ''));
-    row.append(el('span', 'opt-ic', ok ? '✓' : mine ? '✕' : '·'), el('b', null, WORD ? c.word : displayAnswer(c)),
+    row.append(el('span', 'opt-ic', ok ? '✓' : mine ? '✕' : '·'), el('b', null, qWord() ? c.word : displayAnswer(c)),
       el('span', 'muted', `${shortMeaning(c.meaning) || c.meaning} · ${dayTag(c)}`));
     card.appendChild(row);
   }
@@ -2668,8 +2858,8 @@ function wordCard(w) {
   return card;
 }
 
-function renderWordQuestion(w) {
-  q = { w, kind: kindFor(w), answered: false, usedHint: hintedId() === w.id };
+function renderWordQuestion(w, key = w.id) {
+  q = { w, key, m: 'w', kind: kindFor(w, 'w', key), answered: false, usedHint: hintedId() === key };
   $('#feedback').hidden = true;
   $('#fb-head').hidden = true;
   const prompt = document.querySelector('.q-prompt');
@@ -2678,7 +2868,7 @@ function renderWordQuestion(w) {
   $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = dayTag(w);
-  $('#q-again').hidden = !session.again[w.id];
+  $('#q-again').hidden = !session.again[key];
   const box = $('#q-sentences');
   box.className = '';
   box.innerHTML = '';
@@ -2897,10 +3087,11 @@ function leanBar(actions) {
 
 // 그만뒀다 이어해도 보기가 그대로이게: 지금 문제의 보기를 진행 기록(session)에 남겨 둠. 답하면 지움 (answer)
 function keptChoices(w, pick) {
-  const kept = session && session.opts && session.opts.id === w.id ? session.opts.ids.map(id => byId.get(id)) : null;
+  const okey = (q && q.key) || w.id;
+  const kept = session && session.opts && session.opts.id === okey ? session.opts.ids.map(id => byId.get(id)) : null;
   if (kept && kept.every(Boolean) && kept.includes(w) && new Set(kept).size === kept.length) return kept;
   const choices = pick();
-  if (session && !session.noSave) { session.opts = { id: w.id, ids: choices.map(c => c.id) }; saveSession(); }
+  if (session && !session.noSave) { session.opts = { id: okey, ids: choices.map(c => c.id) }; saveSession(); }
   return choices;
 }
 
@@ -3270,8 +3461,8 @@ function renderAppKeyboard(actions, helpText, check, autoCheck, notYet, fillsSlo
 function useHint() {
   if (!q || q.answered) return;
   q.usedHint = true;
-  if (session && !session.noSave && hintedId() !== q.w.id) { const d = loadDay(); d.hint = q.w.id; save(KEY.day, d); }
-  if (WORD || q.syn) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
+  if (session && !session.noSave && hintedId() !== (q.key || q.w.id)) { const d = loadDay(); d.hint = q.key || q.w.id; save(KEY.day, d); }
+  if (qWord() || q.syn) { $('#q-meaning').hidden = false; setHintButtons(null); return; }
   if (q.typing) {
     if (q.revealed) return;
     hideCoach(); // 힌트로 글자가 바뀌니 앞의 말풍선(… 한 글자 달라요)은 치움
@@ -3328,45 +3519,53 @@ function answer(correct, given, kind) {
   q.answered = true;
   const w = q.w;
   const id = w.id;
+  const key = q.key || id, m = q.m || ME; // 총정리는 문제마다 모드가 다름 (그 모드 진도에 적음)
+  const S = statsOf(m);
   const today = dateStr();
   // 힌트 없이 맞힘 / 힌트 쓰고 맞힘 / 틀림(정답 보고 따라 쓴 것 포함)
   const outcome = correct ? 'ok' : kind === 'hint' || kind === 'partial' ? 'hint' : 'wrong';
-  const before = stats[id];
+  const before = S[id];
   // 일정에 반영: 오늘의 학습이거나, 새 단어이거나, 복습일이 된 단어. 이번 학습에서 이미 틀렸던 단어는 맞혀도 내일 다시
   // 힌트를 썼던 단어가 다시 나와서 맞힌 것도 연습으로 (복습 단계는 첫 결과대로)
-  const retry = session.wrong.includes(id) || session.hinted.includes(id);
+  const retry = session.wrong.includes(key) || session.hinted.includes(key);
   // 목표일부터 범위 전체를 훑는 오늘의 복습도 일정에 반영: 훑으며 맞힌 단어가 며칠 뒤 복습일에 또 나오지 않게
   const scheduled = !retry && (session.mode === 'today' || !before || isDue(before, today) || (session.mode === 'review' && inSweep(today)));
-  delete tombs[id]; // 지운 DAY 단어를 다시 풀면 새 기록으로
-  stats[id] = applyResult(before, outcome, { today, exam: settings.exam, scheduled, intervals: intervals(), load: dueLoad(), rest: restNow(), kind: q.kind || '', retry, grad: gradDays(id) });
-  const graduated = !!stats[id].g && !(before && before.g);
+  // 총정리에서 그 모드로는 처음 보는 단어를 한 번에 맞히면, 다른 모드에서 쌓은 단계를 이어받음
+  // (예문으로 다 아는 단어를 단어 문제로 처음 맞혔는데 내일 또 나오면 복습만 늘어서). 틀리면 처음부터
+  let base = before;
+  if (session.both && !before && outcome === 'ok') {
+    const o = normalizeStat(statsOf(m === 'w' ? 'e' : 'w')[id]);
+    if (o && o.st > 0 && !o.g) base = { st: o.st - 1, c: 0, w: 0, due: '' };
+  }
+  const st = applyResult(base, outcome, { today, exam: settings.exam, scheduled, intervals: intervalsOf(m), load: dueLoadOf(m), rest: restNow(), kind: q.kind || '', retry, grad: gradDays(id) });
+  const graduated = !!st.g && !(before && before.g);
   // 다시 볼 단어(또는 틀린 단어 다시 풀기)에서 힌트 없이 맞히면 오늘은 목록에서 뺌
   const cleared = outcome === 'ok' && !retry && !scheduled && isWrongRaw(before) && (session.mode === 'wrong' || session.mode === 'retry');
-  if (cleared) stats[id].r = today; else delete stats[id].r;
-  if (hintedId() === id) { const d = loadDay(); delete d.hint; save(KEY.day, d); }
-  if (session.opts && session.opts.id === id) delete session.opts; // 다음에 또 나오면 보기를 새로 뽑음
+  if (cleared) st.r = today; else delete st.r;
+  putStat(m, id, st); // 지운 DAY 단어를 다시 풀면 새 기록으로
+  if (hintedId() === key) { const d = loadDay(); delete d.hint; save(KEY.day, d); }
+  if (session.opts && session.opts.id === key) delete session.opts; // 다음에 또 나오면 보기를 새로 뽑음
 
   let label;
   if (outcome === 'wrong') {
-    if (!session.wrong.includes(id)) session.wrong.push(id);
-    const when = againLater(id, kind === 'copied' ? 'hint2' : 'wrong');
+    if (!session.wrong.includes(key)) session.wrong.push(key);
+    const when = againLater(key, kind === 'copied' ? 'hint2' : 'wrong');
     label = `${kind === 'copied' ? '정답 보고 씀' : kind === 'idk' ? '모름' : '오답'} · ${when}`;
   } else {
-    if (!session.done.includes(id)) session.done.push(id);
-    const when = outcome === 'hint' ? againLater(id, 'hint1') : '';
-    if (outcome === 'hint' && !session.hinted.includes(id)) session.hinted.push(id);
-    const n = stats[id].due ? daysBetween(today, stats[id].due) : 0;
+    if (!session.done.includes(key)) session.done.push(key);
+    const when = outcome === 'hint' ? againLater(key, 'hint1') : '';
+    if (outcome === 'hint' && !session.hinted.includes(key)) session.hinted.push(key);
+    const n = st.due ? daysBetween(today, st.due) : 0;
     label = kind === 'partial' ? `부분 정답 · ${when}`
       : outcome === 'hint' ? `힌트 사용 · ${when}`
-      : retry ? `정답! · ${comingAgain(id) || '내일 다시'}`
+      : retry ? `정답! · ${comingAgain(key) || '내일 다시'}`
         : graduated ? '정답! · 졸업했어요 🎓'
         : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습`
           : cleared ? '정답! · 다시 볼 단어에서 뺐어요' : '정답!';
   }
   session.pos++;
-  logAct({ sid: sessId(session), id, o: outcome, ...(kind ? { k: kind } : {}), ...(outcome !== 'ok' && typeof given === 'string' && given ? { g: given.slice(0, 30) } : {}) });
+  logAct({ sid: sessId(session), id, m, o: outcome, ...(kind ? { k: kind } : {}), ...(outcome !== 'ok' && typeof given === 'string' && given ? { g: given.slice(0, 30) } : {}) });
   showProgress();
-  saveStats();
   sync.soon();
   saveSession();
   showFeedback(correct, given, kind, label);
@@ -3374,7 +3573,7 @@ function answer(correct, given, kind) {
 
 // 단어 모드 '모르겠어요': 틀린 걸로 치고 정답을 보여 줌 (같은 학습 중 3~5문제 뒤 + 내일 다시)
 function giveUp() {
-  if (!q || q.answered || current !== 'quiz' || (!WORD && !q.syn)) return;
+  if (!q || q.answered || current !== 'quiz' || (!qWord() && !q.syn)) return;
   const right = document.querySelector('#q-actions .choice[data-ok="1"]');
   if (right) right.classList.add('correct');
   document.querySelectorAll('#q-actions .choice, #q-actions input, #q-actions button').forEach(x => (x.disabled = true));
@@ -3400,7 +3599,7 @@ function showFeedback(correct, given, kind, label) {
   const box = $('#q-sentences');
   box.innerHTML = '';
   box.className = 'answered ' + state;
-  if (WORD) box.appendChild(wordCard(w));
+  if (qWord()) box.appendChild(wordCard(w));
   else {
     [[q.b1, w.ex1ko], [q.b2, w.ex2ko]].forEach(([b, ko], i) => {
       if (b && b.segs.length) box.appendChild(sentenceCard(b, ko, i + 1, true, state === 'bad', w, i ? w.ex2src : w.ex1src));
@@ -3421,7 +3620,7 @@ function showFeedback(correct, given, kind, label) {
   setFbCoach(state);
   const more = [];
   if (q.choices && !correct) more.push(choiceNotes(q.choices, w, q.picked));
-  Object.assign(q, { fbCorrect: correct, fbWhy: WORD && !correct && kind !== 'hint' && !!q.userAnswer }); // 'AI에게 묻기'에 씀
+  Object.assign(q, { fbCorrect: correct, fbWhy: qWord() && !correct && kind !== 'hint' && !!q.userAnswer }); // 'AI에게 묻기'에 씀
   openSheet(w, more);
 }
 
@@ -3448,7 +3647,7 @@ function openSheet(w, more = []) {
   if (w.pos) tags.appendChild(el('span', 'tag', w.pos));
   tags.appendChild(el('span', 'tag', dayTag(w)));
   card.append(tags, el('div', 'fb-meaning', formatMeaning(w.meaning)));
-  if (!WORD && !(q && q.syn) && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
+  if (!qWord() && !(q && q.syn) && answerParts(w.blank).length > 1) card.appendChild(el('div', 'muted', `빈칸: ${displayAnswer(w)}`));
   mean.appendChild(card);
   for (const m of more) mean.appendChild(m);
   if (w.extras.length) {
@@ -3489,10 +3688,10 @@ function reportCtx() {
   if (!q || !q.w) return null;
   const w = q.w;
   const bold = ko => (ko ? highlightMeaning(ko, w.meaning, w.koMark).map(x => (x.t === 'mark' ? `**${x.v}**` : x.v)).join('') : '');
-  const mode = q.syn ? 'syn' : WORD ? 'word' : 'ex';
+  const mode = q.syn ? 'syn' : qWord() ? 'word' : 'ex';
   const how = q.syn ? 'choice' : q.kind;
   const opts = q.syn ? q.syn.options : q.choices;
-  const text = o => (q.syn ? o.text : WORD ? o.meaning : displayAnswer(o));
+  const text = o => (q.syn ? o.text : qWord() ? o.meaning : displayAnswer(o));
   const ctx = {
     word: w.word, id: w.id, day: w.day, mode, how, label: q.fbLabel, given: q.fbGiven || q.userAnswer || '',
     strict: mode === 'word' && how === 'type' ? `채점 ${{ easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통'}` : '',
@@ -3599,7 +3798,7 @@ function askProblemOf(cur) {
   const w = cur.w;
   const ex = [[w.ex1, w.ex1ko], [w.ex2, w.ex2ko]].filter(([en]) => en).map(([en, ko]) => ({ en, ko }));
   const pick = cur.kind !== 'type';
-  const mode = cur.syn ? '유의어·반의어 고르기' : WORD ? `영단어 보고 한글 뜻 ${pick ? '고르기(4지선다)' : '쓰기'}` : `예문 빈칸에 들어갈 영단어 ${pick ? '고르기(4지선다)' : '쓰기'}`;
+  const mode = cur.syn ? '유의어·반의어 고르기' : (cur.m ? cur.m === 'w' : WORD) ? `영단어 보고 한글 뜻 ${pick ? '고르기(4지선다)' : '쓰기'}` : `예문 빈칸에 들어갈 영단어 ${pick ? '고르기(4지선다)' : '쓰기'}`;
   return { word: w.word, pos: w.pos, meaning: w.meaning, mode, examples: ex, extras: w.extras, user: cur.fbGiven || '', result: cur.fbLabel || (cur.fbCorrect ? '정답' : '오답') };
 }
 function askBox(cur) {
@@ -3829,12 +4028,19 @@ function finishSession() {
   session = null;
   if (!s.noSave) saveSession();
   $('#feedback').hidden = true;
-  const wrong = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(id => byId.has(id));
+  // 총정리는 문제('w:id'·'e:id')로 세고, 틀린 단어 목록은 단어로 (단어 문제·예문 문제를 둘 다 틀려도 한 번)
+  const wrongKeys = [...new Set([...s.wrong, ...(s.hinted || [])])].filter(k => byId.has(itemOf(k).id));
+  const wrong = [...new Set(wrongKeys.map(k => itemOf(k).id))];
   $('#res-title').textContent = `${s.label} 끝`;
   $('#res-detail').textContent = '';
+  if (s.both && s.mode === 'review') {
+    const wn = wrongKeys.filter(k => itemOf(k).m === 'w').length;
+    $('#res-detail').textContent = `단어 문제 ${wn}개 · 예문 문제 ${wrongKeys.length - wn}개를 틀렸거나 힌트를 봤어요.` + (inSweep() && settings.exam ? ` 시험까지 ${daysBetween(dateStr(), settings.exam)}일!` : '');
+    if (!wrongKeys.length) $('#res-detail').textContent = inSweep() && settings.exam ? `시험까지 ${daysBetween(dateStr(), settings.exam)}일!` : '';
+  }
   $('#res-total').textContent = s.total;
-  $('#res-ok').textContent = Math.max(0, s.total - wrong.length);
-  $('#res-bad').textContent = wrong.length;
+  $('#res-ok').textContent = Math.max(0, s.total - wrongKeys.length);
+  $('#res-bad').textContent = wrongKeys.length;
   const rk = $('#res-buddy');
   rk.hidden = !settings.coach;
   if (settings.coach) rk.innerHTML = coachSvg(wrong.length ? 'normal' : 'cheer');
@@ -3857,6 +4063,9 @@ function finishSession() {
     $('#res-detail').textContent = `${s.total}단어를 다 풀었어요. 학습 기록에는 남지 않아요.`;
     again.textContent = wrong.length ? '틀린 단어 다시 풀기' : '한 번 더';
     again.onclick = () => startSynSession(s.synDay, wrong.length ? wrong.map(id => byId.get(id)) : null);
+  } else if (wrong.length && s.both) {
+    again.textContent = '틀린 문제 다시 풀기';
+    again.onclick = () => startSession('retry', null, { keys: wrongKeys });
   } else if (wrong.length) {
     again.textContent = '틀린 단어 다시 풀기';
     again.onclick = () => startSession('retry', wrong.map(id => byId.get(id)), { mixed: reviewSession(s) });
@@ -4206,8 +4415,8 @@ function renderSyncStatus() {
   }
 }
 
-// 목표일 칸 (학습 계획 화면·설정 > 복습, 시험일 위): 새 단어를 보는 마지막 날을 고름. 저장은 그다음 날(전체 복습을 시작하는 날)로.
-// 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고, 바꾸면 그날에 맞춰 전체 복습 날 수를 정해 다시 짬(하루 개수 고정은 풀림). 비우면 코치가 다시 정함
+// 목표일 칸 (학습 계획 화면·설정 > 복습, 시험일 위): 새 단어를 보는 마지막 날을 고름. 저장은 그다음 날(총정리를 시작하는 날)로.
+// 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고, 바꾸면 그날에 맞춰 총정리 날 수를 정해 다시 짬(하루 개수 고정은 풀림). 비우면 코치가 다시 정함
 const goalShown = () => { const g = goalDate(); return g ? addDays(g, -1) : ''; };
 function fillGoalInput(input) {
   input.value = goalShown();
@@ -4218,14 +4427,14 @@ function goalNote() {
   if (coachActive()) return settings.coachFix ? `하루 ${settings.coachFix}개 고정으로` : settings.coachReview ? '직접 정함' : '코치가 정함 · 바꿔도 돼요';
   const g = settings.goal, ex = settings.exam;
   if (!g) return '새 단어를 다 배울 날';
-  if (!ex || ex <= dateStr()) return '시험일도 정해야 전체 복습';
+  if (!ex || ex <= dateStr()) return '시험일도 정해야 총정리';
   if (g >= ex) return '시험일보다 앞이어야 해요';
-  return '다음 날부터 전체 복습';
+  return '다음 날부터 총정리';
 }
 function setGoal(input) {
   const v = input.value, ex = settings.exam;
   const bad = v && v < dateStr() ? '지난 날짜는 목표일로 정할 수 없어요'
-    : v && ex && ex > dateStr() && addDays(v, 1) >= ex ? '목표일은 시험 전전날까지예요 (시험 전에 전체 복습할 날이 하루는 있어야 해요)' : '';
+    : v && ex && ex > dateStr() && addDays(v, 1) >= ex ? '목표일은 시험 전전날까지예요 (시험 전에 총정리할 날이 하루는 있어야 해요)' : '';
   if (bad) { toast(bad); fillGoalInput(input); return; }
   if (coachActive()) {
     Object.assign(settings, { coachReview: v ? daysBetween(addDays(v, 1), ex) : 0, coachFix: 0, coachTail: '' });
@@ -4268,7 +4477,7 @@ function renderSrs() {
     cc.appendChild(b);
   }
   $('#btn-coach-replan').hidden = !coachActive();
-  // 쉬는 요일: 누를 때마다 켜고 끔. 그날은 새 단어·전체 복습 몫 없이 쉬고, 나머지 날에 나눔
+  // 쉬는 요일: 누를 때마다 켜고 끔. 그날은 새 단어·총정리 몫 없이 쉬고, 나머지 날에 나눔
   const rb = $('#coach-rest');
   $('#coach-rest-label').hidden = rb.hidden = !coach;
   rb.innerHTML = '';
@@ -4298,7 +4507,7 @@ function renderSrs() {
     else {
       const gd = settings.coachGoal, rd = daysBetween(gd, ex);
       cp.textContent = today >= gd ? `새 단어는 끝났어요. 시험 전날까지 ${daysBetween(today, ex)}일 동안 범위 전체를 나눠 복습해요.`
-        : `시험까지 ${daysBetween(today, ex)}일 · 새 단어는 ${fmtDay(lastLearnDay())}까지(오늘 ${todayNewTarget()}개) · ` + (rd > 0 ? `마지막 ${rd === 1 ? '하루' : `${rd}일`}는 범위 전체 복습`.replace('일는', '일은') : '시험 전날까지 새 단어')
+        : `시험까지 ${daysBetween(today, ex)}일 · 새 단어는 ${fmtDay(lastLearnDay())}까지(오늘 ${todayNewTarget()}개) · ` + (rd > 0 ? `마지막 ${rd === 1 ? '하루' : `${rd}일`}는 범위 총정리`.replace('일는', '일은') : '시험 전날까지 새 단어')
           + (settings.coachFix ? ` (하루 ${settings.coachFix}개로 고정)` : settings.coachReview ? ' (복습 날 수는 직접 정함)' : '') + (restNow().length ? ` · ${restLabel(restNow())}은 쉼` : '');
     }
   }
@@ -4839,6 +5048,9 @@ function bind() {
   showSetTab(setTab);
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
+  onSeg('#seg-sweep-w', v => setSweepKind('w', v));
+  onSeg('#seg-sweep-e', v => setSweepKind('e', v));
+  onSeg('#seg-sweep-first', v => setSweepKind('first', v));
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
   $('#today-flow').addEventListener('click', e => {
