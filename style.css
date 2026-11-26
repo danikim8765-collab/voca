@@ -1001,7 +1001,7 @@ html:not(.desk) .desk-only { display: none; }
 #feedback[data-tab="ex"] .sheet-inner { max-height: 72dvh; }
 #feedback[data-tab="ai"].chatting .sheet-inner { height: 82dvh; max-height: 82dvh; }
 .desk #feedback[data-tab="ai"].chatting .sheet-inner { height: calc(100dvh - 120px); max-height: calc(100dvh - 120px); }
-/* AI 탭: 빠른 질문·입력칸은 위에 고정, 이야기만 스크롤. 계속하기 줄은 낮게 */
+/* AI 탭: 빠른 질문·입력칸은 아래에 고정, 이야기만 스크롤. 계속하기 줄은 낮게 */
 .sheet-inner > #fb-ai:not([hidden]) { display: flex; flex-direction: column; overflow: hidden; }
 #feedback[data-tab="ai"] .fb-tabs { margin-bottom: 10px; }
 #feedback[data-tab="ai"] .fb-actions .next-btn { height: 46px; padding-top: 0; padding-bottom: 0; font-size: 16px; }
@@ -1011,7 +1011,7 @@ html:not(.desk) .desk-only { display: none; }
 #feedback.typing .grab, #feedback.typing .fb-actions, #feedback.typing #fb-pron { display: none; }
 #feedback.typing .fb-word .w { font-size: min(22px, var(--w-fit, 30px)); }
 #feedback.typing .fb-tabs { margin: 6px 0 8px; }
-/* 'AI에게 묻기': 위에서부터 빠른 질문 → 입력칸 → 주고받은 이야기 */
+/* 'AI에게 묻기': 코치 탭처럼 위에서부터 주고받은 이야기 → 빠른 질문 → 입력칸 */
 .ask { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .ask > .chips, .ask > .ask-form { flex: none; }
 .ask-log { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
@@ -1024,10 +1024,17 @@ html:not(.desk) .desk-only { display: none; }
 .ask-msg.me { align-self: flex-end; background: var(--primary); color: var(--card); }
 .ask-msg.ai { align-self: flex-start; background: var(--bg); }
 .ask-msg.wait { color: var(--muted); }
+/* 받는 중: 처음엔 점 세 개, 글이 오기 시작하면 끝에 깜빡이는 막대 (코치 탭과 같음) */
+.ask-msg.typing { display: flex; gap: 4px; padding: 14px; }
+.ask-msg.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: chat-dot 1s infinite ease-in-out; }
+.ask-msg.typing i:nth-child(2) { animation-delay: .15s; }
+.ask-msg.typing i:nth-child(3) { animation-delay: .3s; }
+.ask-msg.live::after { content: ''; display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -2px; background: var(--muted); animation: chat-caret 1s steps(1) infinite; }
+@media (prefers-reduced-motion: reduce) { .ask-msg.typing i, .ask-msg.live::after { animation: none; } }
 .ask-msg.err { color: var(--danger); }
 .ask-chips { margin-top: 0; }
 .ask-form { display: flex; gap: 6px; align-items: center; }
-.ask-form input { flex: 1; min-width: 0; padding: 10px 12px; border: 2px solid transparent; border-radius: var(--r-md); background: var(--fill); color: var(--text); font-size: 16px; }
+.ask-form input { flex: 1; min-width: 0; padding: 10px 16px; border: 1.5px solid transparent; border-radius: 22px; background: var(--fill); color: var(--text); font-size: 16px; }
 .ask-form input:focus { outline: none; border-color: var(--primary); }
 .ask-form .btn { width: auto; flex: none; margin-bottom: 0; }
 .q-tools { display: flex; gap: 6px; flex-wrap: wrap; }

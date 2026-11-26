@@ -496,14 +496,18 @@ export function askProblem(p) {
  * 'AI에게 묻기'. history: 이 단어에서 앞서 주고받은 것 [{ who: 'me'|'ai', text }], message: 방금 물은 것
  * 반환 글자 또는 null(오프라인·키 없음·실패 → aiCoachError()로 까닭). 코치용 키가 있으면 그 키로 (막히면 다른 모델로)
  */
-export async function aiAskWord({ problem, history = [], message }) {
+// 받는 중인 글도 같은 모양으로 (끝나지 않은 <think>는 거기부터 버림)
+const tidyAsk = t => String(t || '').replace(/<think>[\s\S]*?(?:<\/think>|$)/g, '').replace(/\*\*|[#`]/g, '').trim();
+export async function aiAskWord({ problem, history = [], message, onText = null }) {
   const past = history.slice(-8).map(m => `${m.who === 'me' ? '학생' : '선생님'}: ${clip(safeAnswer(m.text), 600)}`).join('\n');
   const text = await askCoach({
     // Claude면 생각을 조금 하고 답함(medium). 생각한 토큰도 max_tokens에 들어가 넉넉히
     system: ASK, chat: true, effort: 'medium', maxTokens: 8192, timeout: 45000,
     user: `<problem>\n${askProblem(problem)}\n</problem>${past ? `\n\n앞서 나눈 이야기:\n${past}` : ''}\n\n<question>${clip(safeAnswer(message), 500)}</question>`,
+    // onText: 받는 대로 지금까지 온 답을 넘김 (다른 모델로 다시 받으면 ''부터)
+    ...(onText ? { onText: raw => onText(tidyAsk(String(raw || '').replace(/<\/?[a-z]*$/i, ''))) } : {}), // 반만 온 꼬리표(<thi)는 다음 조각까지 기다림
   });
-  const t = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\*\*|[#`]/g, '').trim();
+  const t = tidyAsk(text);
   if (text != null && !t) lastErr = 'bad';
   return t || null;
 }

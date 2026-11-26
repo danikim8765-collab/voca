@@ -725,3 +725,18 @@ test('코치와 이야기: onText를 주면 세 회사 모두 받는 대로 넘�
   const used = calls.slice(-2).map(c => JSON.parse(c.opts.body).model);
   assert.notEqual(used[0], used[1]); // 막힌 모델 다음엔 다른 모델로 (앞 테스트에서 쉬게 된 모델은 뒤로 가서 순서는 상관없음)
 });
+
+test("'AI에게 묻기': onText를 주면 받는 대로 넘기고(마크다운·생각은 빼고), 다 받은 답은 전과 같음", async () => {
+  const { aiAskWord } = await import('../js/ai.js');
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'openai/gpt-oss-120b' }));
+  store.delete('voca.ai.coach.v1');
+  const full = '<think>음</think>**라틴어** fatum(운명)에서 왔어요. 그래서 "운명적인, 치명적인"이에요.';
+  reply = sseReply([...pieces(full, 6).map(t => ({ choices: [{ delta: { content: t } }] })), { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
+  const seen = [];
+  const out = await aiAskWord({ problem: { word: 'fatal', meaning: '치명적인' }, message: '어원은?', onText: t => seen.push(t) });
+  assert.equal(out, '라틴어 fatum(운명)에서 왔어요. 그래서 "운명적인, 치명적인"이에요.');
+  assert.ok(seen.length > 3);
+  assert.equal(seen.at(-1), out);
+  assert.ok(!seen.some(t => /think|음/.test(t))); // 생각하는 중인 조각은 안 보임
+  assert.equal(JSON.parse(calls.at(-1).opts.body).stream, true);
+});
