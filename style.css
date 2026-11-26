@@ -232,8 +232,8 @@ button { cursor: pointer; }
 .q-prompt { font-size: 20px; font-weight: 800; letter-spacing: -.4px; line-height: 1.35; color: var(--text); margin: 2px 0 14px; }
 .q-prompt:empty { display: none; }
 /* DAY·문제 종류는 작은 글자로 조용하게 (채점 결과·다시 나온 단어 표시는 그대로 색 띠) */
-.q-meta #q-day, .q-meta .kind-tag:not(.syn):not(.ant) { background: none; padding: 2px 0; color: var(--muted); font-weight: 600; font-size: 13px; }
-.q-meta #q-day + .kind-tag:not([hidden]):not(.syn):not(.ant)::before { content: '· '; }
+.q-meta #q-day, .q-meta .kind-tag:not(.syn):not(.ant):not(.sw-kind) { background: none; padding: 2px 0; color: var(--muted); font-weight: 600; font-size: 13px; }
+.q-meta #q-day + .kind-tag:not([hidden]):not(.syn):not(.ant):not(.sw-kind)::before { content: '· '; }
 /* 힌트·모르겠어요: 보기 위 오른쪽 아이콘 */
 .quiz-body > .q-tools { justify-content: flex-end; margin: 4px 0 2px; }
 /* 폰·패드: 보기 번호는 빼고 (컴퓨터는 숫자 키로 고르니 그대로) */
@@ -1398,3 +1398,68 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .my-bad { margin-top: 10px; font-size: 13px; }
 .my-acts { margin-top: 10px; }
 .btn.danger-text { color: var(--bad); }
+
+/* ---------- 총정리 (목표일 ~ 시험 전날, app.js renderSweep) ----------
+   시험까지 남은 날에 따라 카드가 달아오름: calm(강조색) → near(보라) → hot(주황→빨강) → last(시험 전날, 빨강)
+   --heat: 흰 카드에서 칸·막대 색 / --go-bg: 할 게 있을 때 카드 바탕 */
+#card-today.sweep-mode { --heat: var(--primary); --sw-on: var(--card); }
+/* 보라·주황·빨강 바탕엔 언제나 흰 글자 (단어 모드 다크처럼 강조색 위 글자가 어두운 테마에서도) */
+#card-today.sweep-mode:is([data-heat="near"], [data-heat="hot"], [data-heat="last"]) { --go-fg: #ffffff; }
+#card-today.sweep-mode[data-heat="near"] { --heat: #7048e8; --go-bg: linear-gradient(145deg, var(--primary) 0%, #7048e8 100%); }
+#card-today.sweep-mode[data-heat="hot"] { --heat: #f03e3e; --go-bg: linear-gradient(145deg, #f76707 0%, #e03131 100%); }
+#card-today.sweep-mode[data-heat="last"] { --heat: #e03131; --go-bg: linear-gradient(145deg, #e03131 0%, #a61e4d 100%); }
+#card-today.sweep-mode.go { box-shadow: 0 14px 34px -14px color-mix(in srgb, var(--heat) 70%, transparent); }
+.sweep, .sweep-round { position: relative; z-index: 1; pointer-events: none; }
+.sweep { margin: 12px 0 2px; --ink: var(--heat); --soft: var(--line); }
+.sweep-left { display: flex; align-items: baseline; gap: 6px; font-size: 15px; font-weight: 600; color: var(--text2); }
+.sl-num { font-size: 60px; font-weight: 800; letter-spacing: -2.5px; line-height: .95; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sweep-strip { display: grid; grid-template-columns: repeat(var(--n, 7), minmax(0, 1fr)); gap: 6px; margin-top: 16px; }
+.sd { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.sd i { position: relative; display: grid; place-items: center; width: 100%; max-width: 34px; aspect-ratio: 1; border-radius: 50%; font-style: normal; font-size: 11px; font-weight: 800; box-shadow: inset 0 0 0 1.5px var(--soft); color: var(--ink); }
+.sd i svg { width: 58%; height: 58%; }
+.sd small { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.sd.past i { background: var(--ink); box-shadow: none; color: var(--sw-on); }
+.sd.past i svg { width: 52%; height: 52%; }
+.sd.past.more i { font-size: 10px; letter-spacing: -.5px; }
+.sd.now i { box-shadow: inset 0 0 0 3px var(--ink); background: color-mix(in srgb, var(--ink) 16%, transparent); }
+.sd.now i::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--ink); opacity: 0; animation: sd-pulse 1.8s ease-out infinite; }
+.sd.now small { color: var(--ink); font-weight: 800; }
+.sd.rest i { box-shadow: inset 0 0 0 1.5px var(--soft); opacity: .5; background: repeating-linear-gradient(135deg, transparent 0 3px, var(--soft) 3px 4.5px); }
+.sd.exam i { border-radius: 30%; background: var(--ink); box-shadow: none; color: var(--sw-on); }
+.sd.exam small { color: var(--ink); font-weight: 800; }
+@keyframes sd-pulse { 0% { opacity: .7; transform: scale(.85); } 100% { opacity: 0; transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .sd.now i::after { animation: none; } }
+/* 두 모드 문제 수 */
+.sw-split { display: flex; flex-wrap: wrap; align-self: flex-end; gap: 6px; margin-bottom: 8px; }
+.plan > .sw-split span { font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: var(--r-pill); background: var(--fill); color: var(--text2); white-space: nowrap; }
+.sweep-mode .plan { gap: 18px; flex-wrap: wrap; }
+.sweep-mode .plan b { font-size: 48px; }
+/* 한 바퀴 막대: 진하게 = 두 모드로 다 본 단어, 옅게 = 오늘 몫까지 하면 닿을 곳 */
+.sweep-round { margin-top: 10px; --ink: var(--heat); --track: var(--fill); }
+.sr-head { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 7px; }
+.sr-head b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sr-bar { position: relative; height: 10px; border-radius: var(--r-pill); background: var(--track); overflow: hidden; }
+.sr-fill, .sr-today { position: absolute; inset: 0 auto 0 0; border-radius: inherit; transition: width .6s ease; }
+.sr-today { background: color-mix(in srgb, var(--ink) 28%, transparent); }
+.sr-fill { background: var(--ink); z-index: 1; }
+@media (prefers-reduced-motion: reduce) { .sr-fill, .sr-today { transition: none; } }
+/* 할 게 있어서 카드가 칠해졌을 때: 흰 글자로 */
+.today.go .sweep, .today.go .sweep-round { --ink: var(--go-fg); --soft: color-mix(in srgb, var(--go-fg) 38%, transparent); --track: color-mix(in srgb, var(--go-fg) 20%, transparent); }
+#card-today.sweep-mode.go { --sw-on: var(--heat); }
+.today.go .sweep-left, .today.go .sd small, .today.go .sr-head { color: color-mix(in srgb, var(--go-fg) 80%, transparent); }
+.today.go .sr-head b, .today.go .sd.now small, .today.go .sd.exam small { color: var(--go-fg); }
+.today.go .plan > .sw-split span { background: color-mix(in srgb, var(--go-fg) 18%, transparent); color: var(--go-fg); }
+/* 퀴즈 위 '단어 → 뜻' · '예문 빈칸' 표시 */
+.q-meta .tag.kind-tag.sw-kind { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: var(--r-pill); }
+.q-meta .tag.kind-tag.sw-kind.kw { background: color-mix(in srgb, #0c8599 14%, transparent); color: #0b7285; }
+.q-meta .tag.kind-tag.sw-kind.ke { background: var(--primary-soft); color: var(--primary); }
+:root[data-theme="dark"] .q-meta .tag.kind-tag.sw-kind.kw { color: #66d9e8; }
+/* 학습 계획 > 문제 카드의 '총정리 문제' */
+#sweep-kinds { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.sub-label { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.sub-label .x-desc { display: block; margin-top: 3px; font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1.45; }
+/* 칸이 많으면(열흘 넘게) 요일은 빼고 오늘·시험만 글자로 */
+.sweep-strip.dense { gap: 4px; }
+.sweep-strip.dense .sd small { visibility: hidden; }
+.sweep-strip.dense .sd.now small, .sweep-strip.dense .sd.exam small { visibility: visible; }
+.sweep-round:not([hidden]) + #stage-extra:not([hidden]) { margin-top: 18px; }

@@ -1104,3 +1104,43 @@ test('코치에게 넘기는 최근 학습 기록: 학습마다 틀린 단어와
   assert.match(activityDigest(log, { now, word: id => W[id], live: { m: 'w', sid: 2, pos: 1, total: 20 } }), /지금 푸는 중 \(1\/20문제\)/);
   assert.equal(activityDigest([], { now }), '');
 });
+
+test('총정리 하루 몫: 2주 남았으면 9일 배우고 5일 총정리 (두 모드 문제라 훑는 날이 늘어남)', async () => {
+  const { coachPlan, addDays } = await import('../js/core.js');
+  const p = coachPlan({ today: '2026-11-11', exam: addDays('2026-11-11', 14), total: 200, remaining: 200 });
+  assert.deepEqual([p.learnDays, p.reviewDays], [9, 5]);
+});
+
+test('총정리: 몫의 단어는 두 모드 문제를 다, 복습일 된 단어는 그 모드 문제로', async () => {
+  const { pickBothSweep, sweepOrder, sweepKey, parseSweepKey } = await import('../js/core.js');
+  const words = Array.from({ length: 6 }, (_, i) => ({ id: `26|a${i}` }));
+  const T = d => new Date(`${d}T12:00:00`).getTime();
+  const opt = { goal: '2026-11-10', exam: '2026-11-13' }; // 공부하는 날 3일 → 하루 2단어
+  // 예문 모드로 잘 아는 a0·a1, 단어 모드로는 처음. a5는 단어 모드 복습일
+  const e = { '26|a0': { st: 4, c: 5, w: 0, due: '2026-12-01', s: T('2026-11-01'), f: '2026-11-01' }, '26|a1': { st: 3, c: 3, w: 0, due: '2026-12-01', s: T('2026-11-01'), f: '2026-11-01' } };
+  const w = { '26|a0': { st: 2, c: 2, w: 0, due: '2026-12-01', s: T('2026-11-01'), f: '2026-11-01' }, '26|a5': { st: 1, c: 1, w: 1, due: '2026-11-10', s: T('2026-11-05'), f: '2026-11-01' } };
+  const r = pickBothSweep(words, words, { e, w }, { ...opt, today: '2026-11-10' });
+  assert.deepEqual([r.size, r.days, r.idx], [2, 3, 0]);
+  // 둘 다 아는 a0이 먼저(약한 쪽 단계 2), 그다음 a1(단어 모드 안 배움 → -1이라 뒤지만 a2~보다 덜 틀림 순·순서)
+  assert.deepEqual(r.items.map(x => sweepKey(x.m, x.id)), ['w:26|a0', 'e:26|a0', 'w:26|a1', 'e:26|a1', 'w:26|a5']);
+  // 다음 날: a0은 두 모드 다 봤고, a1은 예문만 봤으면 a1 단어 문제가 남아 몫으로 셈
+  const e2 = { ...e, '26|a0': { ...e['26|a0'], s: T('2026-11-10') }, '26|a1': { ...e['26|a1'], s: T('2026-11-10') } };
+  const w2 = { ...w, '26|a0': { ...w['26|a0'], s: T('2026-11-10') }, '26|a5': { st: 2, c: 2, w: 1, due: '2026-11-20', s: T('2026-11-10'), f: '2026-11-01' } };
+  const r2 = pickBothSweep(words, words, { e: e2, w: w2 }, { ...opt, today: '2026-11-11' });
+  assert.equal(r2.left, 5);
+  assert.deepEqual(r2.items.map(x => sweepKey(x.m, x.id)), ['w:26|a1', 'w:26|a2', 'e:26|a2', 'w:26|a3', 'e:26|a3']);
+  // 오늘 이미 본 문제는 빠짐
+  const w3 = { ...w2, '26|a2': { st: 1, c: 1, w: 0, due: '2026-11-12', s: T('2026-11-11'), f: '2026-11-11' } };
+  assert.ok(!pickBothSweep(words, words, { e: e2, w: w3 }, { ...opt, today: '2026-11-11' }).items.some(x => x.m === 'w' && x.id === '26|a2'));
+  // 목표일 전 · 시험일부터는 총정리가 아님
+  assert.equal(pickBothSweep(words, words, { e, w }, { ...opt, today: '2026-11-09' }), null);
+  assert.equal(pickBothSweep(words, words, { e, w }, { ...opt, today: '2026-11-13' }), null);
+  // 문제 순서: 단어 문제 묶음 먼저, 그 묶음의 예문 문제는 다음 묶음 뒤에
+  const items = words.flatMap(x => [{ id: x.id, m: 'w' }, { id: x.id, m: 'e' }]);
+  const o = sweepOrder(items, { size: 2, rand: () => 0.99 }).map(x => sweepKey(x.m, x.id));
+  assert.deepEqual(o.map(k => k[0]).join(''), 'wwwweewweeee');
+  assert.equal(o.length, 12);
+  for (const x of words) assert.ok(o.indexOf('w:' + x.id) < o.indexOf('e:' + x.id));
+  assert.deepEqual(parseSweepKey('w:my|abc'), { m: 'w', id: 'my|abc' });
+  assert.deepEqual(parseSweepKey('26|a0'), { m: '', id: '26|a0' });
+});

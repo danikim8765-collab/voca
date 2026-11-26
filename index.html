@@ -75,6 +75,11 @@
           <button class="btn ghost small" id="btn-solo-close" hidden>정규 학습으로</button>
         </div>
         <div class="flow" id="today-flow"><span data-s="learn">학습</span><i>›</i><span data-s="review">복습</span><i>›</i><span data-s="extra">더 하기</span></div>
+        <!-- 총정리(목표일 ~ 시험 전날): 시험까지 남은 날을 한 칸씩. 지난 날은 채우고, 오늘은 고리, 맨 끝은 시험 (app.js renderSweep) -->
+        <div class="sweep" id="sweep-box" hidden>
+          <div class="sweep-left" id="sweep-left"></div>
+          <div class="sweep-strip" id="sweep-strip" role="img"></div>
+        </div>
         <!-- 학습·복습·DAY 단계는 카드 전체가 시작 버튼 (버튼을 카드 크기로 깔고, ✎·단계 이동만 위에서 따로 눌림) -->
         <div id="stage-day" hidden>
           <div class="go-row"><div class="plan" id="day-info"></div><span class="today-go" aria-hidden="true">시작<i class="chev">›</i></span></div>
@@ -88,6 +93,11 @@
         <div id="stage-review" hidden>
           <div class="go-row"><div class="plan" id="review-info"></div><span class="today-go" aria-hidden="true">시작<i class="chev">›</i></span></div>
           <button class="btn primary big stretch" id="btn-review">오늘 복습 시작</button>
+        </div>
+        <!-- 총정리 한 바퀴: 범위 단어 중 이번 바퀴에 두 모드로 다 본 단어 -->
+        <div class="sweep-round" id="sweep-round" hidden>
+          <div class="sr-head"><span id="sr-label"></span><b id="sr-num"></b></div>
+          <div class="sr-bar"><div class="sr-fill" id="sr-fill"></div><div class="sr-today" id="sr-today"></div></div>
         </div>
         <div id="stage-extra" hidden>
           <div class="seg" id="seg-extra">
@@ -219,6 +229,22 @@
         <div class="seg" id="seg-ko">
           <button data-v="show">보이기</button>
           <button data-v="hide">가리기</button>
+        </div>
+      </div>
+      <!-- 총정리 문제 방식(두 모드가 같이 씀): 목표일·시험일이 있을 때만 보임 (app.js renderHome) -->
+      <div id="sweep-kinds" hidden>
+        <div class="sub-label">총정리 문제<small class="x-desc">목표일부터 시험 전날까지 단어마다 두 문제를 풀어요. 위 문제 방식 대신 이걸 따라요</small></div>
+        <div class="set-row"><span class="t">단어 → 뜻<small class="d">영단어만 보고 뜻</small></span>
+          <div class="seg" id="seg-sweep-w">
+            <button data-v="type">직접 입력</button>
+            <button data-v="choice">4지선다</button>
+          </div>
+        </div>
+        <div class="set-row"><span class="t">예문 빈칸<small class="d">예문에 들어갈 단어</small></span>
+          <div class="seg" id="seg-sweep-e">
+            <button data-v="choice">4지선다</button>
+            <button data-v="type">직접 입력</button>
+          </div>
         </div>
       </div>
     </div>
