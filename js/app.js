@@ -3,7 +3,7 @@ import {
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
-  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey,
+  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey, lapOneDays,
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
@@ -238,14 +238,15 @@ function shareSweepKind(v, at) {
   o.sweepKind = cleanSweepKind(v); o.sweepKindAt = at;
   save(OTHER_P + 'settings.v1', o);
 }
-function setSweepKind(m, v) {
-  settings.sweepKind = { ...cleanSweepKind(settings.sweepKind), [m]: m === 'first' ? (v === 'w' ? 'w' : 'e') : v === 'type' ? 'type' : 'choice' };
+function setSweep(patch, { quiet = false } = {}) {
+  settings.sweepKind = cleanSweepKind({ ...cleanSweepKind(settings.sweepKind), ...patch });
   settings.sweepKindAt = Date.now();
   saveSettings();
   shareSweepKind(settings.sweepKind, settings.sweepKindAt);
   sync.soon();
-  renderHome();
+  if (!quiet) renderHome();
 }
+const setSweepKind = (m, v) => setSweep({ [m]: m === 'first' ? (v === 'w' ? 'w' : 'e') : v === 'type' ? 'type' : 'choice' });
 function setRest(v) {
   settings.coachRest = cleanRest(v);
   settings.restAt = Date.now();
@@ -441,6 +442,11 @@ function renderTabs() {
   const order = [...side];
   order.splice(Math.floor(side.length / 2), 0, 'home');
   for (const b of bar.querySelectorAll('[data-tab]')) b.hidden = !order.includes(b.dataset.tab);
+  // 총정리 전날부터 코치와 총정리 일정을 상의할 때까지 코치 탭에 빨간 느낌표
+  const cb = bar.querySelector('[data-tab="coach"]');
+  const alert = shown.coach && words.length > 0 && sweepTalkPending();
+  cb.classList.toggle('alert', alert);
+  cb.setAttribute('aria-label', alert ? '코치 · 총정리 일정을 상의해요' : '코치');
   order.forEach(k => bar.appendChild(bar.querySelector(`[data-tab="${k}"]`)));
   if (current === 'coach' && !shown.coach) goHome();
 }
@@ -570,7 +576,12 @@ function otherGoal() {
   if (settings.coach && ex > dateStr()) return o.coachGoal && String(o.coachKey || '').split('|')[0] === ex && o.coachGoal <= ex ? o.coachGoal : '';
   return o.goal && o.goal < ex ? o.goal : '';
 }
-const sweepGoal = () => { const a = sweepOn() ? goalDate() : '', b = otherGoal(); return a && b ? (a < b ? a : b) : a || b; };
+const sweepGoal = () => {
+  const sk = cleanSweepKind(settings.sweepKind), ex = settings.exam;
+  if (sk.start && ex && sk.startExam === ex && sk.start < ex) return sk.start; // 코치와 정한 첫날
+  const a = sweepOn() ? goalDate() : '', b = otherGoal();
+  return a && b ? (a < b ? a : b) : a || b;
+};
 // 총정리 기간: 오늘의 복습이 범위 전체를 나눠 두 모드로 훑는 때
 const inSweep = (today = dateStr()) => { const g = sweepGoal(); return !!g && today >= g && !!settings.exam && today < settings.exam; };
 // 다른 모드 진도 (총정리에서 그 모드 문제를 풀면 거기에 적음). 저장된 걸 읽어 두고, 동기화로 바뀌면 다시 읽음
@@ -598,13 +609,19 @@ function dueLoadOf(m) {
 // 총정리 문제 하나: 'w:<id>' 단어 문제 · 'e:<id>' 예문 문제. 그 밖의 학습은 단어 id 그대로(지금 보는 모드)
 const itemOf = k => { const p = parseSweepKey(k); return { id: p.id, m: p.m || ME }; };
 const seenKey = k => { const { id, m } = itemOf(k); const s = statsOf(m)[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
-const sweepPick = () => pickBothSweep(reviewPool(), rangeWords(), { [ME]: stats, [OTHER_M]: statsOf(OTHER_M) }, { today: dateStr(), goal: sweepGoal(), exam: settings.exam, rest: restNow() });
-// 총정리 문제 방식: 단어 문제(처음엔 직접 입력)·예문 문제(처음엔 4지선다), 먼저 풀 문제(first, 처음엔 예문). 두 모드가 같이 씀 (sweepKindAt = 바꾼 시각)
+const sweepPick = () => pickBothSweep(reviewPool(), rangeWords(), { [ME]: stats, [OTHER_M]: statsOf(OTHER_M) }, { today: dateStr(), goal: sweepGoal(), exam: settings.exam, rest: restNow(), lap1: cleanSweepKind(settings.sweepKind).lap1 });
+// 총정리 설정 (두 모드가 같이 씀, sweepKindAt = 바꾼 시각): 단어 문제(처음엔 직접 입력)·예문 문제(처음엔 4지선다), 먼저 풀 문제(first, 처음엔 예문),
+// 1바퀴 날 수(lap1, 0 = 알아서 앞 70%쯤), 코치와 상의를 마친 총정리(talked = 그때의 총정리 첫날. 코치 탭 느낌표를 끔)
 const SWEEP_KIND0 = { w: 'type', e: 'choice', first: 'e' };
 const cleanSweepKind = v => ({
   w: v && v.w === 'choice' ? 'choice' : v && v.w === 'type' ? 'type' : SWEEP_KIND0.w,
   e: v && v.e === 'type' ? 'type' : v && v.e === 'choice' ? 'choice' : SWEEP_KIND0.e,
   first: v && v.first === 'w' ? 'w' : 'e',
+  lap1: v && Number.isFinite(+v.lap1) && +v.lap1 > 0 ? Math.round(+v.lap1) : 0,
+  talked: v && /^\d{4}-\d\d-\d\d$/.test(v.talked || '') ? v.talked : '',
+  // 코치와 정한 총정리 첫날 (그때의 시험일 startExam과 같을 때만 씀. 두 모드·기기가 같은 날 시작하게)
+  start: v && /^\d{4}-\d\d-\d\d$/.test(v.start || '') ? v.start : '',
+  startExam: v && /^\d{4}-\d\d-\d\d$/.test(v.startExam || '') ? v.startExam : '',
 });
 const sweepFirst = () => cleanSweepKind(settings.sweepKind).first;
 const sweepKind = m => cleanSweepKind(settings.sweepKind)[m === 'w' ? 'w' : 'e'];
@@ -661,6 +678,15 @@ const reviewKeys = (limit = 0) => {
   const keys = (sweepPick() || { items: [] }).items.map(x => sweepKey(x.m, x.id));
   return limit > 0 ? keys.slice(0, limit) : keys;
 };
+// 총정리에서 몫과 안 겹치는 복습 문제 (총정리 뒤 '복습' 단계로)
+const sweepDueKeys = () => (sweepPick() || { items: [] }).items.filter(x => x.due).map(x => sweepKey(x.m, x.id));
+// 오늘 목록을 고정: 총정리면 복습 문제도 따로 적어 둠 (day.due)
+function fixReview(day, keys) {
+  const both = inSweep();
+  day.review = keys;
+  if (both) { const due = new Set(sweepDueKeys()); day.both = true; day.due = keys.filter(k => due.has(k)); } else { delete day.both; delete day.due; }
+  save(KEY.day, day);
+}
 const seenToday = id => { const s = stats[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
 const loadDay = () => { const d = load(KEY.day, null); return d && d.date === dateStr() ? d : { date: dateStr() }; };
 
@@ -674,7 +700,11 @@ function reviewState() {
   const started = Array.isArray(day.review) && !!day.both === both;
   const ids = started ? day.review.filter(k => byId.has(itemOf(k).id)) : reviewKeys();
   const left = started ? ids.filter(k => !seenKey(k)) : ids;
-  return { started, both, total: ids.length, left, done: !left.length };
+  // 총정리는 몫(sweep) → 복습(due) 두 단계
+  const dueSet = new Set(!both ? [] : started ? day.due || [] : sweepDueKeys());
+  const dueAll = ids.filter(k => dueSet.has(k));
+  const dueLeft = left.filter(k => dueSet.has(k)), sweepLeft = left.filter(k => !dueSet.has(k));
+  return { started, both, total: ids.length, left, done: !left.length, sweepLeft, dueLeft, sweepTotal: ids.length - dueAll.length, dueTotal: dueAll.length };
 }
 
 // 오늘의 학습 → 오늘의 복습 → 추가 학습·복습 순서로 열림
@@ -683,7 +713,9 @@ function flowState() {
   const learnLeft = plan.final.length + plan.fresh.length + plan.mine.length;
   const rv = reviewState();
   // 복습을 이미 시작했으면(그 사이 하루 새 단어 수를 늘렸어도) 복습부터 마저
-  const stage = learnLeft && !rv.started ? 'learn' : !rv.done ? 'review' : learnLeft ? 'learn' : 'extra';
+  let stage = learnLeft && !rv.started ? 'learn' : !rv.done ? 'review' : learnLeft ? 'learn' : 'extra';
+  // 총정리: 몫을 다 하면 '복습'(몫과 안 겹치는 복습일 된 문제)
+  if (stage === 'review' && rv.both && !rv.sweepLeft.length) stage = 'due';
   return { plan, learnLeft, rv, stage };
 }
 // 추가 학습: 기다리는 내 단어 먼저, 그다음 범위의 새 단어
@@ -728,6 +760,7 @@ function renderHome() {
   setSeg('#seg-ko', settings.showKo ? 'show' : 'hide');
   setSeg('#seg-new', String(settings.newPerDay));
   dropOtherMemo(); // 다른 모드 진도·설정은 다른 화면(그 모드)에서 바뀌었을 수 있어서 홈을 그릴 때마다 다시 읽음
+  renderTabs(); // 코치 탭 느낌표 (총정리 상의)
   $('#sweep-kinds').hidden = !sweepGoal() || !settings.exam || dateStr() >= settings.exam;
   setSeg('#seg-sweep-w', sweepKind('w'));
   setSeg('#seg-sweep-e', sweepKind('e'));
@@ -1445,6 +1478,23 @@ function openCoachChat() {
   const last = chat.items[chat.items.length - 1];
   // 그날 첫 인사 (g: 날짜, 기기마다 하나씩 생겨도 동기화로 합칠 때 하루에 하나만 남김)
   if (!last || dateStr(last.t) !== today) chat.items.push({ who: 'coach', text: coachGreeting(), t: Date.now(), mood: 'cheer', g: today });
+  // 총정리 상의: 느낌표가 떠 있으면 코치가 먼저 꺼내고(그 총정리에 한 번만 말함) 카드를 이야기 맨 아래에
+  let sweepEl = null;
+  const openSweepTalk = () => {
+    const g = sweepGoal();
+    if (!chat.items.some(m => m.sw === g && dateStr(m.t) === today)) chat.items.push({ who: 'coach', text: sweepTalkSay(), t: Date.now(), mood: 'cheer', sw: g });
+    sweepEl = sweepTalkCard(said => {
+      sweepEl = null;
+      chat.items.push({ who: 'note', text: `총정리 일정을 정했어요(두 모드 같이): ${said}`, t: Date.now() });
+      chat.items.push({ who: 'app', text: `학생이 코치 화면의 총정리 일정 카드에서 '이렇게 할게요'를 누름: ${said}`, t: Date.now(), hide: true });
+      saveChat(chat);
+      mood = 'happy';
+      draw();
+      toast('총정리 일정을 정했어요', 2500);
+    });
+    saveChat(chat);
+  };
+  if (sweepTalkPending()) openSweepTalk();
   $('#cc-name').textContent = `${COACH_NAMES[coachChar()]} 코치`;
   $('#cc-sub').textContent = `${aiCoachName()} · 예문·단어 같이 · ${sync.enabled ? '기기끼리 맞춤' : '이 기기에만 저장'}`;
   $('#cc-menu').hidden = false;
@@ -1524,6 +1574,7 @@ function openCoachChat() {
       }
       log.appendChild(b);
     }
+    if (sweepEl) log.appendChild(sweepEl); // 총정리 상의 카드 (고르던 것은 그대로)
     live.el = null;
     if (busy && live.target) { live.el = el('div', 'chat-msg bot live', live.target.slice(0, live.n)); log.appendChild(live.el); }
     else if (busy) { const t = el('div', 'chat-msg bot typing'); t.setAttribute('aria-label', '코치가 생각하고 있어요'); t.append(el('i'), el('i'), el('i')); log.appendChild(t); }
@@ -1634,6 +1685,12 @@ function openCoachChat() {
     b.type = 'button';
     b.addEventListener('click', () => talk(q));
     chips.appendChild(b);
+  }
+  if (canTalkSweep()) {
+    const b = el('button', 'chip', '총정리 일정 상의하기');
+    b.type = 'button';
+    b.addEventListener('click', () => { if (!busy) { openSweepTalk(); draw(); } });
+    chips.prepend(b);
   }
   if (canPlanNow() && coachOptions().length > 1) {
     const b = el('button', 'chip', '선택지에서 고르기');
@@ -1757,6 +1814,13 @@ function coachFacts(both = false) {
     // 목표일과 시험일을 헷갈리지 않게 이름을 붙여 따로 적음. 목표일 = 새 단어를 보는 마지막 날(coachGoal 전날), 홈의 '목표 D-n'과 같은 셈
     const dEx = daysBetween(today, ex);
     lines.push(`시험일(시험 보는 날): ${fmtDay(ex)} ${weekday(ex)}요일, 시험까지 ${dEx}일`);
+    // 총정리 일정 (두 모드 같이): 첫날, 1바퀴(전체)·2바퀴(약한 단어만) 날 나누기, 오늘 몫
+    const swg = sweepGoal();
+    if (swg) {
+      const D = Math.max(1, studyDays(swg, ex, restNow())), L1 = lapOneDays(D, cleanSweepKind(settings.sweepKind).lap1);
+      const sp = inSweep() ? sweepPick() : null;
+      lines.push(`총정리: ${fmtDay(swg)}부터 시험 전날까지 ${D}일, ` + (L1 === D ? '전체 한 바퀴' : `전체 ${L1}일 + 약한 단어만 ${D - L1}일`) + ` (단어마다 단어 문제·예문 문제, 학생이 코치 화면 카드에서 바꿀 수 있음)` + (sp ? `. 오늘은 ${sp.lap}바퀴째, 하루 ${sp.size}단어` : ''));
+    }
     if (g && today >= g) {
       lines.push('목표일(새 단어를 다 배우는 날)은 지남. 지금은 총정리 기간: 새 단어는 다 봤고, 시험 전날까지 범위 전체를 날마다 나눠 단어마다 단어 문제·예문 문제를 한 학습에서 같이 풀어요');
       lines.push(`홈 위쪽 표시: '시험 D-${dEx}'`);
@@ -1952,15 +2016,28 @@ function drawCoachPlain() {
   const log = $('#cc-log');
   log.innerHTML = '';
   log.append(el('div', 'chat-day', '오늘'), el('div', 'chat-msg bot', say.text));
+  // 총정리 상의 (AI가 꺼져 있어도 카드로)
+  const talkSweep = () => {
+    log.append(el('div', 'chat-msg bot', sweepTalkSay()), sweepTalkCard(said => {
+      $('#cc-char').innerHTML = coachSvg('happy');
+      log.lastChild.remove();
+      log.append(el('div', 'chat-note', `총정리 일정을 정했어요(두 모드 같이): ${said}`));
+      log.scrollTop = log.scrollHeight;
+      toast('총정리 일정을 정했어요', 2500);
+    }));
+    log.scrollTop = log.scrollHeight;
+  };
+  if (sweepTalkPending()) talkSweep();
   const chips = $('#cc-chips');
   chips.innerHTML = '';
-  for (const [label, fn] of say.acts) {
+  const acts = [...(canTalkSweep() ? [['총정리 일정 상의하기', () => { if (!log.querySelector('.sweep-talk')) talkSweep(); }]] : []), ...say.acts];
+  for (const [label, fn] of acts) {
     const b = el('button', 'chip', label);
     b.type = 'button';
     b.addEventListener('click', fn);
     chips.appendChild(b);
   }
-  chips.hidden = !say.acts.length;
+  chips.hidden = !acts.length;
 }
 
 // 홈의 오늘 카드: 오늘의 학습(시험 대비 → 새 단어) → 오늘의 복습 → 더 하기 순서로 한 카드 안에서 바뀜
@@ -1969,7 +2046,7 @@ function renderPlan() {
   ensureCoachPlan();
   const { plan, learnLeft, rv, stage: regular } = flowState();
   // 눌러서 갈 수 있는 단계: 학습·복습은 언제나(복습을 먼저 해도 됨), 더 하기는 둘 다 끝냈으면
-  const can = { learn: true, review: true, extra: !learnLeft && rv.done };
+  const can = { learn: true, review: true, due: !!(rv.both && rv.dueTotal), extra: !learnLeft && rv.done };
   if (viewStage && !can[viewStage]) viewStage = null;
   const stage = soloDay != null && days.includes(soloDay) ? 'day' : viewStage || regular;
   // items: [숫자, 이름, 누르면 할 일(있으면 눌러서 직접 정하기)]
@@ -1985,9 +2062,16 @@ function renderPlan() {
   const order = ['learn', 'review', 'extra'];
   // 총정리: 학습 단계(내 단어)가 아니면 카드가 총정리 모양으로 (남은 날 칸 · 두 모드 문제 수 · 한 바퀴 막대)
   const sw = rv.both && stage !== 'day' && stage !== 'learn';
-  $('#today-title').textContent = sw ? (stage === 'review' ? '총정리' : '오늘 총정리 끝') : { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기', day: `DAY ${soloDay} 학습` }[stage];
-  $('#today-flow').hidden = stage === 'day' || (sw && !learnLeft);
+  $('#today-title').textContent = sw ? { review: '총정리', due: '총정리 · 복습', extra: '오늘 총정리 끝' }[stage] : { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기', day: `DAY ${soloDay} 학습` }[stage];
+  $('#today-flow').hidden = stage === 'day';
+  // 단계 줄: 평소엔 학습 › 복습 › 더 하기, 총정리엔 (내 단어가 있으면 학습 ›) 총정리 › 복습 › 더 하기 (복습할 게 없으면 복습은 뺌)
+  const steps = rv.both ? [...(learnLeft ? [['learn', '학습']] : []), ['review', '총정리'], ...(rv.dueTotal ? [['due', '복습']] : []), ['extra', '더 하기']]
+    : [['learn', '학습'], ['review', '복습'], ['extra', '더 하기']];
+  const flowBox = $('#today-flow');
+  flowBox.innerHTML = '';
+  steps.forEach(([k, l], i) => { if (i) flowBox.appendChild(el('i', null, '›')); const sp = el('span', null, l); sp.dataset.s = k; flowBox.appendChild(sp); });
   renderSweep(sw, rv);
+  $('#card-today').dataset.stage = stage;
   $('#btn-solo-close').hidden = stage !== 'day';
   $('#stage-day').hidden = stage !== 'day';
   $('#card-today').classList.toggle('solo-mode', stage === 'day'); // DAY 단독 학습: 고른 DAY 박스와 같은 주황으로
@@ -2002,12 +2086,12 @@ function renderPlan() {
   }
   // 홈의 학습 계획 요약은 흐리게만 (문제 방식은 DAY 단독 학습에서도 바꿀 수 있어서 눌러 들어갈 수는 있음)
   $('#plan-sum-card').classList.toggle('faded', stage === 'day');
-  const finished = { learn: !learnLeft, review: !learnLeft && rv.done, extra: false };
+  const finished = rv.both ? { learn: !learnLeft, review: !rv.sweepLeft.length, due: !rv.dueLeft.length, extra: false } : { learn: !learnLeft, review: !learnLeft && rv.done, extra: false };
   document.querySelectorAll('#today-flow span').forEach(sp => {
     const k = sp.dataset.s;
     sp.className = [finished[k] ? 'done' : '', k === stage ? 'on' : '', can[k] && k !== stage ? 'link' : ''].filter(Boolean).join(' ');
   });
-  for (const k of order) $(`#stage-${k}`).hidden = k !== stage;
+  for (const k of order) $(`#stage-${k}`).hidden = k !== (stage === 'due' ? 'review' : stage); // 총정리 복습도 같은 칸에
   const dd = $('#exam-dday');
   // 목표일이 있으면 그 전엔 목표 D-n, 그 뒤엔 시험 D-n.
   // 'O월 O일까지 새 단어'로 새 단어를 보는 마지막 날(총정리 시작 전날)을 보여 주니, D-n도 그날로 셈 (D-11과 27일까지가 하루 어긋나 보이지 않게)
@@ -2038,21 +2122,26 @@ function renderPlan() {
     const waiting = rv.started ? rv.left.length : plan.review.length;
     note = !learnLeft ? '숫자를 누르면 오늘 더 배울 수 있어요.'
       : waiting ? `복습할 단어 ${waiting}개가 기다려요 · 위의 '복습'을 누르면 먼저 할 수 있어요.` : '';
-  } else if (stage === 'review') {
-    // 복습일이 된 단어 전부 · 총정리 기간엔 범위를 나눈 오늘 몫도
-    const shown = rv.left.length;
+  } else if (stage === 'review' || stage === 'due') {
+    // 복습일이 된 단어 전부 · 총정리 기간엔 몫(총정리)과 몫과 안 겹치는 복습(복습)을 따로
+    let shown = rv.left.length;
     if (sw) {
       // 총정리: 남은 문제 수를 크게, 그 아래 단어 문제·예문 문제
-      const wN = rv.left.filter(k => itemOf(k).m === 'w').length;
+      const isDueStage = stage === 'due';
+      const list = isDueStage ? rv.dueLeft : rv.sweepLeft, all = isDueStage ? rv.dueTotal : rv.sweepTotal;
+      shown = list.length;
+      const wN = list.filter(k => itemOf(k).m === 'w').length;
       const box = $('#review-info');
-      fill(box, [[shown, rv.started && rv.left.length < rv.total ? `남은 문제 · 오늘 ${rv.total}` : '오늘 문제', editReviewToday]]);
+      fill(box, [[shown, isDueStage ? (shown < all ? `남은 복습 · 오늘 ${all}` : '복습일 된 문제') : rv.started && shown < all ? `남은 문제 · 오늘 ${all}` : '오늘 문제', isDueStage ? null : editReviewToday]]);
       const split = el('div', 'sw-split');
       const chips = [el('span', 'kw', `단어 ${wN}`), el('span', 'ke', `예문 ${shown - wN}`)];
       split.append(...(sweepFirst() === 'w' ? chips : chips.reverse())); // 먼저 푸는 문제를 앞에
       box.appendChild(split);
-      $('#btn-review').textContent = shown ? '총정리 시작' : '오늘 총정리 완료 ✓';
+      $('#btn-review').textContent = isDueStage ? (shown ? '복습 시작' : '오늘 복습 완료 ✓') : shown ? '총정리 시작' : '오늘 총정리 몫 완료 ✓';
       const sp = sweepPick();
-      note = sp && sp.rest ? '오늘은 쉬는 날이라 복습일이 된 문제만 있어요.' : sp ? sweepNote(sp) : '';
+      note = isDueStage ? `총정리 몫과 안 겹치는 복습일 된 문제예요. 어제 틀린 단어처럼 지금 흐린 단어가 많아요.`
+        : sp && sp.rest ? '오늘은 쉬는 날이라 총정리 몫이 없어요. 복습일 된 문제만 있어요.'
+          : sp ? sweepNote(sp) + (rv.dueLeft.length ? ` · 끝나면 복습 ${rv.dueLeft.length}개` : '') : '';
     } else {
       const dueIn = rv.left.filter(k => isDue(statsOf(itemOf(k).m)[itemOf(k).id], dateStr())).length;
       fill($('#review-info'), [[shown, '복습', editReviewToday], [dueIn, '복습일 된 단어']]);
@@ -2078,7 +2167,7 @@ function renderPlan() {
   }
   $('#today-note').textContent = note;
   // 시작할 게 있으면 카드 전체가 시작 버튼 (인디고로 칠함). 다 했거나 '더 하기'면 흰 카드
-  const go = { day: true, learn: !!learnLeft, review: !!rv.left.length, extra: false }[stage];
+  const go = { day: true, learn: !!learnLeft, review: !!(rv.both ? rv.sweepLeft : rv.left).length, due: !!rv.dueLeft.length, extra: false }[stage];
   $('#card-today').classList.toggle('go', go);
   // 코치가 켜져 있으면 하루 새 단어 수는 코치가 정함 (버튼은 흐리게)
   const ca = coachActive();
@@ -2153,6 +2242,114 @@ function renderSweep(on, rv) {
   $('#sr-num').textContent = `${sp.done.toLocaleString('ko-KR')} / ${sp.total.toLocaleString('ko-KR')}`;
   $('#sr-fill').style.width = `${(Math.min(sp.done, total) / total) * 100}%`;
   $('#sr-today').style.width = `${(Math.min(total, Math.max(sp.done, goalNow)) / total) * 100}%`;
+}
+
+// ---------- 코치와 총정리 일정 상의 ----------
+// 총정리 전날부터 상의를 마칠 때까지(talked = 그 총정리 첫날) 코치 탭에 느낌표. 코치 화면에 '총정리 일정을 상의합시다'와 카드:
+// 총정리 첫날(시작 전에만) · 1바퀴/2바퀴 날 나누기 · 문제 방식과 먼저 풀 문제. '이렇게 할게요'를 누르면 바뀌고 느낌표가 꺼짐
+function sweepTalkPending() {
+  const g = sweepGoal(), ex = settings.exam, today = dateStr();
+  if (!g || !ex || today >= ex || today < addDays(g, -1)) return false;
+  return cleanSweepKind(settings.sweepKind).talked !== g;
+}
+const canTalkSweep = () => { const g = sweepGoal(), ex = settings.exam; return !!(g && ex && dateStr() < ex && dateStr() >= addDays(g, -7)); };
+// 총정리 첫날 옮기기: 이 모드 목표일(코치면 총정리 날 수)을 맞추고, 두 모드·기기가 같이 쓰는 첫날(start)로 적어 둠
+function moveSweepStart(d) {
+  const ex = settings.exam;
+  if (coachActive()) {
+    Object.assign(settings, { coachReview: Math.max(1, daysBetween(d, ex)), coachFix: 0, coachTail: '' });
+    planCoach(true);
+    coachMoved = false;
+  } else {
+    settings.goal = d;
+    settings.prefsAt = Date.now();
+    saveSettings();
+  }
+}
+function sweepTalkSay() {
+  const g = sweepGoal(), today = dateStr(), L = daysBetween(today, settings.exam);
+  const when = today < g ? (addDays(today, 1) === g ? '내일부터' : `${fmtDay(g)}부터`) : '지금';
+  return today < g ? `${when} 총정리예요! 시험까지 ${L}일 남았어요. 총정리 일정을 상의합시다.` : `총정리 중이에요. 시험까지 ${L}일, 총정리 일정을 상의합시다.`;
+}
+// 상의 카드 (onDone(요약 글)): 고를 때마다 하루 몫을 다시 계산해 보여 줌
+function sweepTalkCard(onDone) {
+  const today = dateStr(), ex = settings.exam, rest = restNow(), n = rangeWords().length;
+  const g0 = sweepGoal(), sk = cleanSweepKind(settings.sweepKind);
+  const left = leftNew() + newToday();
+  let g = g0, lap = sk.lap1, kinds = { w: sk.w, e: sk.e, first: sk.first };
+  const box = el('div', 'chat-plan sweep-talk');
+  const opt = (label, sub, on, fn, extra = '') => {
+    const b = el('button', 'cp-choice' + (on ? ' on' : '') + extra);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', on);
+    b.append(el('b', null, label), el('span', null, sub));
+    b.addEventListener('click', fn);
+    return b;
+  };
+  const seg = (name, key, list) => {
+    const row = el('div', 'st-row');
+    row.appendChild(el('span', 'st-name', name));
+    const sg = el('div', 'seg');
+    for (const [v, l] of list) {
+      const b = el('button', kinds[key] === v ? 'on' : '', l);
+      b.type = 'button';
+      b.addEventListener('click', () => { kinds[key] = v; draw(); });
+      sg.appendChild(b);
+    }
+    row.appendChild(sg);
+    return row;
+  };
+  const draw = () => {
+    box.innerHTML = '';
+    box.appendChild(el('div', 'cp-title', '총정리 일정'));
+    // 1) 총정리 첫날 (시작 전에만): 하루 당기기 · 그대로 · 하루 · 이틀 미루기 (총정리는 적어도 이틀)
+    if (today < g0) {
+      box.appendChild(el('div', 'st-label', '총정리 시작'));
+      const row = el('div', 'cp-choices');
+      for (const k of [-1, 0, 1, 2]) {
+        const d = addDays(g0, k);
+        if (d <= today || d > addDays(ex, -2)) continue;
+        const ld = Math.max(1, studyDays(today, d, rest));
+        const sub = k === 0 ? '지금대로' : left ? `새 단어 하루 ${Math.ceil(left / ld)}개` : '새 단어는 다 배움';
+        row.appendChild(opt(`${fmtDay(d)}(${weekday(d)})부터`, `${sub} · 총정리 ${studyDays(d, ex, rest)}일`, d === g, () => { g = d; draw(); }));
+      }
+      box.appendChild(row);
+    }
+    // 2) 1바퀴(전체)와 2바퀴(약한 단어만) 날 나누기
+    const D = Math.max(1, studyDays(g, ex, rest)), auto = lapOneDays(D);
+    box.appendChild(el('div', 'st-label', `${D}일을 어떻게 나눌까요`));
+    const cands = [...new Set([auto, D, Math.round(D * 0.8), Math.round(D * 0.6), Math.round(D * 0.5)])].filter(x => x >= 1 && x <= D).sort((a, b) => b - a);
+    const cur = lapOneDays(D, lap);
+    const row2 = el('div', 'cp-choices');
+    for (const L1 of cands) {
+      const per = Math.ceil(n / L1);
+      const label = L1 === D ? `전체 한 바퀴 ${D}일` : `전체 ${L1}일 + 약한 단어 ${D - L1}일`;
+      row2.appendChild(opt(label + (L1 === auto ? ' · 추천' : ''), `1바퀴 하루 ${per}단어 · ${per * 2}문제`, L1 === cur, () => { lap = L1 === auto ? 0 : L1; draw(); }));
+    }
+    box.appendChild(row2);
+    // 3) 문제 방식과 먼저 풀 문제
+    box.appendChild(el('div', 'st-label', '문제'));
+    box.append(
+      seg('먼저 풀 문제', 'first', [['e', '예문 빈칸'], ['w', '단어 → 뜻']]),
+      seg('단어 → 뜻', 'w', [['type', '직접 입력'], ['choice', '4지선다']]),
+      seg('예문 빈칸', 'e', [['choice', '4지선다'], ['type', '직접 입력']]),
+    );
+    const ok = el('button', 'btn small cp-ok', '이렇게 할게요');
+    ok.type = 'button';
+    ok.addEventListener('click', () => {
+      if (g !== g0) moveSweepStart(g);
+      setSweep({ ...kinds, lap1: lap, talked: g, ...(g !== g0 ? { start: g, startExam: ex } : {}) }, { quiet: true });
+      const L1 = lapOneDays(Math.max(1, studyDays(g, ex, rest)), lap), Dn = Math.max(1, studyDays(g, ex, rest));
+      const kn = k => (k === 'type' ? '직접 입력' : '4지선다');
+      const said = `${fmtDay(g)}부터 총정리 · ` + (L1 === Dn ? `${Dn}일 동안 전체 한 바퀴` : `전체 ${L1}일 + 약한 단어 ${Dn - L1}일`)
+        + ` · ${kinds.first === 'w' ? '단어 → 뜻' : '예문 빈칸'} 먼저 · 단어 ${kn(kinds.w)} · 예문 ${kn(kinds.e)}`;
+      renderHome();
+      onDone(said);
+    });
+    box.appendChild(ok);
+  };
+  draw();
+  return box;
 }
 
 // 복습이 평소보다 많이 밀렸을 때 왜 쌓이는지와 맞는 페이스를 숫자로 (새 단어 하나는 하루 복습 5개쯤으로 돌아옴)
@@ -2241,8 +2438,7 @@ async function editReviewToday() {
   const done = Array.isArray(day.review) && !!day.both === both ? day.review.filter(k => byId.has(itemOf(k).id) && seenKey(k)) : [];
   const want = n < 0 ? 0 : n;
   const rest = reviewKeys(want).filter(k => !done.includes(k) && !seenKey(k));
-  day.review = [...done, ...(n < 0 ? rest : rest.slice(0, want))];
-  if (both) day.both = true; else delete day.both;
+  fixReview(day, [...done, ...(n < 0 ? rest : rest.slice(0, want))]);
   save(KEY.day, day);
   viewStage = 'review';
   renderPlan();
@@ -2347,11 +2543,11 @@ function onSeg(sel, fn) {
 }
 
 // ---------- 학습 세션 ----------
-async function startSession(mode, list, { mixed = false, label: givenLabel = '', keys = null } = {}) {
+async function startSession(mode, list, { mixed = false, label: givenLabel = '', keys = null, part = '' } = {}) {
   // 하던 학습이 있으면: 같은 학습이면 이어서, 다른 학습이면 물어보고 (말없이 덮어쓰지 않게)
   const saved = mode === 'retry' ? null : load(KEY.session, null);
   if (saved && saved.date === dateStr() && saved.pos > 0 && saved.pos < saved.queue.length) {
-    if (saved.mode === mode && (mode === 'today' || mode === 'review')) { resumeSession(); return; }
+    if (saved.mode === mode && (mode === 'today' || (mode === 'review' && (!part || (saved.part || '') === part)))) { resumeSession(); return; }
     if (!(await ask({
       title: '하던 학습을 그만두고 새로 시작할까요?',
       body: `${saved.label} · ${saved.done.length}/${saved.total}까지 했어요.\n맞히고 틀린 기록은 그대로 남고, 이어하기만 사라져요.`,
@@ -2380,16 +2576,22 @@ async function startSession(mode, list, { mixed = false, label: givenLabel = '',
     // 처음 시작할 때 오늘의 복습 목록을 고정 → 중간에 그만둬도 남은 단어만 이어서
     const day = loadDay();
     both = inSweep();
-    if (!Array.isArray(day.review) || !!day.both !== both) { day.review = reviewKeys(); if (both) day.both = true; else delete day.both; save(KEY.day, day); }
-    // 목록은 까먹었을 가능성이 큰 것부터라, 20개씩 묶어 그 안에서만 섞음 (밀린 게 많아 중간에 그만둬도 급한 것부터 한 셈)
-    const left = day.review.filter(k => byId.has(itemOf(k).id) && !seenKey(k));
+    if (!Array.isArray(day.review) || !!day.both !== both) fixReview(day, reviewKeys());
+    // 총정리: 몫(sweep)과 복습(due)을 따로 시작. part를 안 주면 몫이 남았으면 몫, 아니면 복습
+    const dueSet = new Set(both ? day.due || [] : []);
+    let left = day.review.filter(k => byId.has(itemOf(k).id) && !seenKey(k));
+    if (both) {
+      const sw = left.filter(k => !dueSet.has(k));
+      if (!part) part = sw.length ? 'sweep' : 'due';
+      left = part === 'due' ? left.filter(k => dueSet.has(k)) : sw;
+    }
     ids = [];
     // 총정리: 단어 20개씩 묶어 먼저 풀 모드의 묶음 먼저, 그 묶음의 다른 모드 문제는 다음 묶음 뒤에 (core.js sweepOrder)
     if (both) ids = sweepOrder(left.map(itemOf), { first: sweepFirst() }).map(x => sweepKey(x.m, x.id));
     // '복습은 외운 단어만 4지선다'면 묶음 안에서 4지선다를 먼저 (키보드가 한 번만 올라오게)
     else for (let i = 0; i < left.length; i += 20) ids.push(...mixOrder(shuffle(left.slice(i, i + 20))));
     if (!ids.length) { toast('오늘 복습은 다 했어요'); return; }
-    label = both ? '총정리' : '오늘의 복습';
+    label = !both ? '오늘의 복습' : part === 'due' ? '총정리 · 복습' : '총정리';
   } else if (mode === 'extraNew') {
     ids = extraNew(settings.extraN).map(w => w.id);
     if (!ids.length) { toast('배울 새 단어가 없어요'); return; }
@@ -2429,6 +2631,7 @@ async function startSession(mode, list, { mixed = false, label: givenLabel = '',
   if (startedFrom === 'list') session.from = 'list';
   if (mixed) session.mixed = true; // 복습에서 틀린 단어 다시 풀기도 복습처럼 ('복습은 외운 단어만 4지선다')
   if (both) session.both = true; // 총정리: queue가 'w:id'·'e:id' (두 모드 문제)
+  if (both && part) session.part = part; // 총정리 몫(sweep) · 복습(due)
   if (mode !== 'retry') setTint(mode === 'day' ? 'study' : null); // 틀린 단어 다시 풀기는 하던 색 그대로
   saveSession();
   show('quiz');
@@ -4057,7 +4260,8 @@ function finishSession() {
   // 틀린 게 있으면 그 단어만 한 번 더, 없으면 다음 할 일(오늘의 복습 · 더 하기)로
   const again = $('#btn-res-again');
   const f = flowState();
-  const nextStep = f.stage === 'review' ? ['오늘의 복습 하기', () => startSession('review')] : null;
+  const nextStep = f.stage === 'review' ? [f.rv.both ? '총정리 이어서 하기' : '오늘의 복습 하기', () => startSession('review', null, { part: f.rv.both ? 'sweep' : '' })]
+    : f.stage === 'due' ? [`복습 ${f.rv.dueLeft.length}개 하기`, () => startSession('review', null, { part: 'due' })] : null;
   if (s.mode === 'syn') {
     // 유반의어: 틀린 단어만 다시, 다 맞혔으면 같은 DAY를 새 문제로 한 번 더 (기록엔 영향 없음)
     $('#res-detail').textContent = `${s.total}단어를 다 풀었어요. 학습 기록에는 남지 않아요.`;
@@ -4433,6 +4637,7 @@ function goalNote() {
 }
 function setGoal(input) {
   const v = input.value, ex = settings.exam;
+  if (cleanSweepKind(settings.sweepKind).start) setSweep({ start: '', startExam: '' }, { quiet: true }); // 목표일을 직접 바꾸면 코치와 정한 총정리 첫날은 버림
   const bad = v && v < dateStr() ? '지난 날짜는 목표일로 정할 수 없어요'
     : v && ex && ex > dateStr() && addDays(v, 1) >= ex ? '목표일은 시험 전전날까지예요 (시험 전에 총정리할 날이 하루는 있어야 해요)' : '';
   if (bad) { toast(bad); fillGoalInput(input); return; }
@@ -5063,7 +5268,8 @@ function bind() {
   $('#exam-date').addEventListener('change', e => { if (examOk(e.target)) setExam(e.target.value); });
   $('#btn-exam-clear').addEventListener('click', () => { $('#exam-date').value = ''; setExam(''); });
   $('#btn-start').addEventListener('click', () => startSession('today'));
-  $('#btn-review').addEventListener('click', () => startSession('review'));
+  // 총정리면 지금 보이는 단계(몫 · 복습)로
+  $('#btn-review').addEventListener('click', () => startSession('review', null, { part: !inSweep() ? '' : $('#card-today').dataset.stage === 'due' ? 'due' : 'sweep' }));
   $('#btn-day').addEventListener('click', () => startSession('day'));
   $('#btn-solo-close').addEventListener('click', () => { soloDay = null; renderHome(); });
   $('#btn-day-reset').addEventListener('click', () => { if (soloDay != null) deleteDayRecords(soloDay); });

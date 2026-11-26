@@ -1151,7 +1151,8 @@ test('총정리: 몫의 단어는 두 모드 문제를 다, 복습일 된 단어
 
 test('총정리 두 바퀴: 앞 70%쯤의 날에 전체 한 바퀴, 남은 날은 약한 단어의 약한 쪽 문제만', async () => {
   const { pickBothSweep, lapOneDays, addDays } = await import('../js/core.js');
-  assert.deepEqual([1, 2, 3, 4, 5, 7, 10, 14].map(lapOneDays), [1, 2, 3, 3, 4, 5, 7, 10]);
+  assert.deepEqual([1, 2, 3, 4, 5, 7, 10, 14].map(d => lapOneDays(d)), [1, 2, 3, 3, 4, 5, 7, 10]);
+  assert.deepEqual([lapOneDays(10, 5), lapOneDays(10, 10), lapOneDays(10, 30), lapOneDays(3, 1)], [5, 10, 10, 1]);
   const words = Array.from({ length: 52 }, (_, i) => ({ id: `30|w${i}` }));
   const goal = '2026-11-10', exam = addDays(goal, 10); // 10일 → 1바퀴 7일(하루 8단어), 2바퀴 3일
   const T = d => new Date(`${d}T12:00:00`).getTime();
