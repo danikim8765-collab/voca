@@ -1140,7 +1140,9 @@ body[data-tint] {
 @media (prefers-reduced-motion: reduce) { .buddy-svg, .chat-char .buddy-svg, .chat-char.hop .buddy-svg, .res-buddy .buddy-svg, .fb-coach .buddy-svg, #coach-pick .coach-choice.on .buddy-svg, .talk-char .buddy-svg { animation: none; } }
 /* 코치와 이야기하기: 폰은 화면 가득, 넓은 화면은 가운데 카드 */
 /* 코치 탭: 메신저처럼 화면 가득 (위 코치 이름 · 가운데 이야기 · 아래 입력, 그 아래 탭) */
-#coach.screen.active { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; max-width: none; padding: 0 0 var(--tab-h); display: flex; }
+/* min-height 0: 모든 화면의 min-height 100dvh가 남아 있으면 키보드가 올라와 높이를 줄여도(app.js fit) 화면 높이 그대로라
+   아이폰·아이패드에서 입력 칸이 키보드 밑에 가려짐 (iOS의 100dvh는 키보드가 올라와도 안 줄어듦) */
+#coach.screen.active { position: fixed; top: 0; left: 0; right: 0; height: 100dvh; min-height: 0; max-width: none; padding: 0 0 var(--tab-h); display: flex; }
 body.kb-up #coach.screen.active { padding-bottom: 0; }
 .chat-card { display: flex; flex-direction: column; width: 100%; max-width: 760px; height: 100%; min-height: 0; margin: 0 auto; color: var(--text); }
 .chat-head { flex: none; display: flex; align-items: center; gap: 10px; padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 8px; }
@@ -1365,7 +1367,7 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
   .tab-name { display: block; font-size: 12px; font-weight: 600; }
   /* 탭 화면은 사이드바만큼 오른쪽으로 */
   body[data-screen="home"], body[data-screen="days"], body[data-screen="list"], body[data-screen="settings"] { padding-left: var(--rail-w); }
-  #coach.screen.active { left: var(--rail-w); }
+  #coach.screen.active { left: var(--rail-w); padding-bottom: env(safe-area-inset-bottom, 0px); } /* 아래 탭이 없으니 홈 표시줄만큼만 띄움 */
   body[data-screen="list"] .sticky-bottom { left: var(--rail-w); }
   body[data-screen="home"] .screen.active, body[data-screen="days"] .screen.active, body[data-screen="list"] .screen.active,
   body[data-screen="settings"] .screen.active { padding-bottom: 40px; }

@@ -1,6 +1,6 @@
 import {
   rowsToWords, makeBlanks, normalizeAnswer, displayAnswer, answerParts,
-  applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, daysBetween, pickDistractors, shuffle,
+  applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, DAY_START_HOUR, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
   willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey,
@@ -1600,7 +1600,7 @@ function openCoachChat() {
     // 학생 말과 바로 앞 코치 말에 나온 단어를 찾아 그 자료를 같이 (퀴즈를 내고 학생이 답할 때도 그 단어를 알게)
     const prevCoach = [...history].reverse().find(h => h.who === 'coach');
     const prevMe = [...before].reverse().find(m => m.who === 'me');
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), recent: recentText(prevMe ? prevMe.t : 0), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: fmtDay(today), onText: liveSet });
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), recent: recentText(prevMe ? prevMe.t : 0), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: nowLabel(today), onText: liveSet });
     // 받은 말을 끝까지 보여 준 뒤에 이야기에 넣음 (실패면 받다 만 말은 지움)
     await liveEnd(res ? res.text : '');
     busy = false;
@@ -1739,10 +1739,17 @@ function openCoachChat() {
 // AI가 사실에 없는 숫자를 말하면 버림(js/ai.js numbersOk). 안 되면 위의 기본 말 그대로
 const WEEKDAY = '일월화수목금토';
 const weekday = d => WEEKDAY[new Date(`${d}T00:00:00Z`).getUTCDay()];
+// 코치에게 넘기는 '지금': 앱의 오늘 + 시계 시각. 자정~새벽 4시면 시계 날짜가 앱의 오늘과 달라서 같이 적음
+function nowLabel(today = dateStr(), t = new Date()) {
+  const h = t.getHours(), m = String(t.getMinutes()).padStart(2, '0');
+  const clock = `${h < 12 ? (h < 6 ? '새벽' : '오전') : '오후'} ${h % 12 || 12}:${m}`;
+  const cal = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  return `오늘 ${fmtDay(today)} ${weekday(today)}요일, 시계는 ${cal === today ? '' : `${fmtDay(cal)} `}${clock}${cal === today ? '' : ` (새벽 ${DAY_START_HOUR}시 전이라 아직 ${fmtDay(today)}로 셈)`}`;
+}
 function coachFacts(both = false) {
   const today = dateStr(), ex = settings.exam, rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
-  const lines = [`오늘: ${fmtDay(today)} ${weekday(today)}요일`];
+  const lines = [`오늘: ${fmtDay(today)} ${weekday(today)}요일 (앱의 하루는 새벽 ${DAY_START_HOUR}시에 바뀜)`];
   if (both) {
     lines.push(`지금 보는 화면: ${WORD ? '단어 모드(영단어를 보고 뜻 맞히기)' : '예문 모드(두 예문의 빈칸에 들어갈 영단어 맞히기)'}. 코치는 예문·단어 모드가 하나예요.`);
     lines.push(`두 모드는 진도·학습 범위·하루 새 단어 일정이 따로이고, 시험일·쉬는 요일은 같이 써요. 아래 진도와 일정은 ${MODE_NAME} 것이고, ${OTHER_NAME} 것은 맨 아래에 따로 있어요. 일정 카드로 바꾸는 하루 개수·복습 날 수는 지금 보는 ${MODE_NAME}에만, 쉬는 요일은 두 모드에 같이 적용돼요.`);

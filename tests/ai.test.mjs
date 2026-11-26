@@ -502,7 +502,7 @@ test('토큰 아끼기: Claude는 지시문과 앞선 이야기를 캐시로, �
   assert.equal(blocks[1].text, '(11월 13일)\n학생: 안녕\n');
   assert.match(blocks.at(-1).text, /<message>퀴즈 내 줘<\/message>$/);
   // 조각을 이어 붙이면 다른 회사에 보내는 한 덩어리 글과 같음
-  assert.equal(userText(body), `<facts>\n시험까지 9일\n</facts>\n<weak>\n(아직 틀린 단어 기록이 없음)\n</weak>\n<memory>\n(아직 없음)\n</memory>\n앞선 이야기:\n${chatTranscript(history)}\n(11월 13일, 지금)\n학생이 방금 한 말:\n<message>퀴즈 내 줘</message>`);
+  assert.equal(userText(body), `<facts>\n시험까지 9일\n</facts>\n<weak>\n(아직 틀린 단어 기록이 없음)\n</weak>\n<memory>\n(아직 없음)\n</memory>\n앞선 이야기:\n${chatTranscript(history)}\n(지금: 11월 13일)\n학생이 방금 한 말:\n<message>퀴즈 내 줘</message>`);
   // 다음 번: 지난번에 보낸 조각이 그대로 앞에 있음 (캐시에서 읽힘)
   const next = [...history, { who: 'me', text: '퀴즈 내 줘', day: '11월 13일', t: 3 }, { who: 'coach', text: 'fatal의 뜻은?', day: '11월 13일', t: 4 }];
   await aiCoachChat({ char: 'cat', facts: '시험까지 9일', history: next, message: '치명적인', day: '11월 13일' });
