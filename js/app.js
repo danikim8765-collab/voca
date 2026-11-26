@@ -2266,10 +2266,42 @@ function moveSweepStart(d) {
     saveSettings();
   }
 }
+// 코치 추천: 시작일 · 1바퀴 날 수 · 문제 방식과 그 까닭 (카드의 '코치 추천' 줄과 '추천대로 고르기')
+const HEAVY_NEW = 40;      // 새 단어가 하루 이만큼 넘으면 벅참 (코치 일정의 'busy'와 같은 기준)
+const HEAVY_SWEEP = 300;   // 1바퀴 하루 문제가 이만큼 넘으면 벅참
+// keep: 시작일은 g0 그대로 두고 그날에 맞춘 1바퀴·문제 추천만 (카드에서 시작일을 고른 뒤)
+function sweepRec(g0 = sweepGoal(), keep = false) {
+  const today = dateStr(), ex = settings.exam, rest = restNow(), n = rangeWords().length;
+  const left = leftNew() + newToday();
+  const perNew = d => Math.ceil(left / Math.max(1, studyDays(today, d, rest)));
+  const ok = d => d > today && d <= addDays(ex, -2);
+  // 1) 시작일: 새 단어를 다 배웠으면 하루 당겨 총정리를 하루 더, 새 단어가 벅차면 하루 미룸, 아니면 그대로
+  let g = g0, start = '지금 일정이 알맞아요. 그대로 가요.';
+  if (today < g0 && !keep) {
+    const early = addDays(g0, -1), late = addDays(g0, 1);
+    if (!left && ok(early)) { g = early; start = `새 단어를 다 배웠으니 하루 당겨서 총정리를 하루 더 하는 걸 추천해요.`; }
+    else if (left && perNew(g0) > HEAVY_NEW && ok(late)) { g = late; start = `새 단어가 하루 ${perNew(g0)}개라 벅차요. 하루 미루면 ${perNew(late)}개로 줄어요. 대신 총정리가 하루 줄어요.`; }
+    else if (left) start = `남은 새 단어 ${left}개를 하루 ${perNew(g0)}개씩이면 돼요. 그대로 가요.`;
+  }
+  // 2) 1바퀴 날 수: 앞 70%쯤에 전체 한 바퀴, 남은 날은 약한 단어만. 하루 문제가 너무 많으면 1바퀴를 하루 늘림
+  const D = Math.max(1, studyDays(g, ex, rest));
+  let L1 = lapOneDays(D), lap = '';
+  if (D <= 3) lap = `총정리가 ${D}일이라 날을 쪼개지 말고 전체 한 바퀴에 집중하는 게 나아요.`;
+  else {
+    if (Math.ceil(n / L1) * 2 > HEAVY_SWEEP && L1 < D - 1) L1++;
+    lap = `범위를 한 번 다 보고, 남은 ${D - L1}일은 틀렸거나 헷갈리는 단어에 몰아요. 이미 잘 아는 단어를 또 보는 것보다 기억에 오래 남아요.`
+      + (L1 !== lapOneDays(D) ? ` 하루 문제가 많아서 전체 한 바퀴를 하루 늘렸어요.` : '')
+      + (Math.ceil(n / L1) * 2 > HEAVY_SWEEP ? ` 그래도 하루 ${Math.ceil(n / L1) * 2}문제는 많으니 벅차면 위쪽(전체 날이 긴 것)을 골라요.` : '');
+  }
+  // 3) 문제: 예문으로 먼저 떠올리고, 나중에 단어만 보고 뜻을 직접 써서 확인. 예문은 4지선다로 시간을 아낌
+  const kind = '예문 빈칸을 먼저 4지선다로 빠르게 풀고, 단어 → 뜻은 직접 입력으로 단어만 보고 바로 떠오르는지 확인해요. 보기를 보면 아는 것 같아도 막상 안 떠오르는 단어를 걸러 내요.';
+  return { g, lap1: L1 === lapOneDays(D) ? 0 : L1, L1, D, first: 'e', w: 'type', e: 'choice', why: { start, lap, kind } };
+}
 function sweepTalkSay() {
-  const g = sweepGoal(), today = dateStr(), L = daysBetween(today, settings.exam);
+  const g = sweepGoal(), today = dateStr(), L = daysBetween(today, settings.exam), r = sweepRec(g);
   const when = today < g ? (addDays(today, 1) === g ? '내일부터' : `${fmtDay(g)}부터`) : '지금';
-  return today < g ? `${when} 총정리예요! 시험까지 ${L}일 남았어요. 총정리 일정을 상의합시다.` : `총정리 중이에요. 시험까지 ${L}일, 총정리 일정을 상의합시다.`;
+  const recTxt = `제 추천은 ${r.g !== g ? `${fmtDay(r.g)}부터 시작해서 ` : ''}${r.L1 === r.D ? `${r.D}일 동안 전체 한 바퀴` : `전체 ${r.L1}일 + 약한 단어 ${r.D - r.L1}일`}, 예문 빈칸 먼저(4지선다) · 단어 → 뜻은 직접 입력이에요.`;
+  return (today < g ? `${when} 총정리예요! 시험까지 ${L}일 남았어요. 총정리 일정을 상의합시다.` : `총정리 중이에요. 시험까지 ${L}일, 총정리 일정을 상의합시다.`) + ' ' + recTxt;
 }
 // 상의 카드 (onDone(요약 글)): 고를 때마다 하루 몫을 다시 계산해 보여 줌
 function sweepTalkCard(onDone) {
@@ -2277,6 +2309,8 @@ function sweepTalkCard(onDone) {
   const g0 = sweepGoal(), sk = cleanSweepKind(settings.sweepKind);
   const left = leftNew() + newToday();
   let g = g0, lap = sk.lap1, kinds = { w: sk.w, e: sk.e, first: sk.first };
+  const rec0 = sweepRec(g0);
+  const recLine = t => { const p = el('div', 'st-rec'); p.append(el('b', null, '코치 추천'), el('span', null, t)); return p; };
   const box = el('div', 'chat-plan sweep-talk');
   const opt = (label, sub, on, fn, extra = '') => {
     const b = el('button', 'cp-choice' + (on ? ' on' : '') + extra);
@@ -2311,29 +2345,44 @@ function sweepTalkCard(onDone) {
         if (d <= today || d > addDays(ex, -2)) continue;
         const ld = Math.max(1, studyDays(today, d, rest));
         const sub = k === 0 ? '지금대로' : left ? `새 단어 하루 ${Math.ceil(left / ld)}개` : '새 단어는 다 배움';
-        row.appendChild(opt(`${fmtDay(d)}(${weekday(d)})부터`, `${sub} · 총정리 ${studyDays(d, ex, rest)}일`, d === g, () => { g = d; draw(); }));
+        row.appendChild(opt(`${fmtDay(d)}(${weekday(d)})부터` + (d === rec0.g ? ' · 추천' : ''), `${sub} · 총정리 ${studyDays(d, ex, rest)}일`, d === g, () => { g = d; draw(); }));
       }
-      box.appendChild(row);
+      box.append(row, recLine(rec0.why.start));
     }
     // 2) 1바퀴(전체)와 2바퀴(약한 단어만) 날 나누기
+    const rec = sweepRec(g, true); // 고른 시작일에 맞춘 추천
     const D = Math.max(1, studyDays(g, ex, rest)), auto = lapOneDays(D);
     box.appendChild(el('div', 'st-label', `${D}일을 어떻게 나눌까요`));
-    const cands = [...new Set([auto, D, Math.round(D * 0.8), Math.round(D * 0.6), Math.round(D * 0.5)])].filter(x => x >= 1 && x <= D).sort((a, b) => b - a);
+    const cands = [...new Set([auto, rec.L1, D, Math.round(D * 0.8), Math.round(D * 0.6), Math.round(D * 0.5)])].filter(x => x >= 1 && x <= D).sort((a, b) => b - a);
     const cur = lapOneDays(D, lap);
     const row2 = el('div', 'cp-choices');
     for (const L1 of cands) {
       const per = Math.ceil(n / L1);
       const label = L1 === D ? `전체 한 바퀴 ${D}일` : `전체 ${L1}일 + 약한 단어 ${D - L1}일`;
-      row2.appendChild(opt(label + (L1 === auto ? ' · 추천' : ''), `1바퀴 하루 ${per}단어 · ${per * 2}문제`, L1 === cur, () => { lap = L1 === auto ? 0 : L1; draw(); }));
+      row2.appendChild(opt(label + (L1 === rec.L1 ? ' · 추천' : ''), `1바퀴 하루 ${per}단어 · ${per * 2}문제`, L1 === cur, () => { lap = L1 === auto ? 0 : L1; draw(); }));
     }
-    box.appendChild(row2);
+    box.append(row2, recLine(rec.why.lap));
     // 3) 문제 방식과 먼저 풀 문제
     box.appendChild(el('div', 'st-label', '문제'));
     box.append(
       seg('먼저 풀 문제', 'first', [['e', '예문 빈칸'], ['w', '단어 → 뜻']]),
       seg('단어 → 뜻', 'w', [['type', '직접 입력'], ['choice', '4지선다']]),
       seg('예문 빈칸', 'e', [['choice', '4지선다'], ['type', '직접 입력']]),
+      recLine(rec.why.kind),
     );
+    // 추천대로 한 번에 고르기 (누른 뒤 '이렇게 할게요'로 정함)
+    const same = g === rec0.g && lapOneDays(Math.max(1, studyDays(g, ex, rest)), lap) === sweepRec(g, true).L1 && kinds.first === rec.first && kinds.w === rec.w && kinds.e === rec.e;
+    const recBtn = el('button', 'btn small secondary st-rec-btn', same ? '추천대로 골랐어요 ✓' : '추천대로 고르기');
+    recBtn.type = 'button';
+    recBtn.disabled = same;
+    recBtn.addEventListener('click', () => {
+      g = rec0.g;
+      const r = sweepRec(g, true);
+      lap = r.lap1;
+      kinds = { first: r.first, w: r.w, e: r.e };
+      draw();
+    });
+    box.appendChild(recBtn);
     const ok = el('button', 'btn small cp-ok', '이렇게 할게요');
     ok.type = 'button';
     ok.addEventListener('click', () => {

@@ -1488,3 +1488,9 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .sweep-talk .seg { margin: 0; flex: 0 1 220px; background: var(--fill); }
 .sweep-talk .seg button { font-size: 13px; padding: 7px 4px; white-space: nowrap; }
 .sweep-talk .cp-ok { margin-top: 10px; min-height: 44px; font-size: 15px; }
+/* 코치 추천 줄 (총정리 일정 카드) */
+.sweep-talk .st-rec { display: flex; gap: 8px; align-items: flex-start; padding: 9px 11px; border-radius: var(--r-md); background: var(--primary-soft); font-size: 13px; line-height: 1.5; color: var(--text2); }
+.sweep-talk .st-rec b { flex: none; color: var(--primary); font-weight: 800; }
+.sweep-talk .st-rec-btn { margin-top: 10px; min-height: 40px; }
+.sweep-talk .st-rec-btn:disabled { opacity: .6; }
+.sweep-talk .st-rec-btn + .cp-ok { margin-top: 6px; }
