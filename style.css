@@ -1463,3 +1463,6 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .sweep-strip.dense .sd small { visibility: hidden; }
 .sweep-strip.dense .sd.now small, .sweep-strip.dense .sd.exam small { visibility: visible; }
 .sweep-round:not([hidden]) + #stage-extra:not([hidden]) { margin-top: 18px; }
+/* 2바퀴(약한 단어만) 날: 남은 칸은 점선 고리 */
+.sd.lap2.next i { box-shadow: none; outline: 1.5px dashed var(--soft); outline-offset: -1.5px; }
+.sd.lap2.next small { opacity: .85; }

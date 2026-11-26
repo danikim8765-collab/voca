@@ -728,7 +728,7 @@ export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, r
   const days = daysBetween(today, exam); // 오늘부터 시험 전날까지
   const study = (a, b) => studyDays(a, b, rest);
   const left = Math.max(0, Math.min(total, remaining));
-  if (!left) return { goal: today, perDay: 0, learnDays: 0, reviewDays: days, days, finalPerDay: Math.ceil(total / Math.max(1, study(today, exam))), load: 'ok', auto: days };
+  if (!left) return { goal: today, perDay: 0, learnDays: 0, reviewDays: days, days, finalPerDay: Math.ceil(total / lapOneDays(Math.max(1, study(today, exam)))), load: 'ok', auto: days };
   const minReview = days >= 6 ? 2 : days >= 2 ? 1 : 0;
   let reviewDays = Math.min(days - 1, Math.max(minReview, Math.round(days * SWEEP_COST * total / (SWEEP_COST * total + NEW_COST * left))));
   let learnDays = days - reviewDays;
@@ -758,7 +758,7 @@ export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, r
     const lastDay = studyN === 1 ? left : last ? fix + over : over || fix;
     return {
       goal, perDay: fix, learnDays, reviewDays, days,
-      finalPerDay: reviewDays ? Math.ceil(total / Math.max(1, study(goal, exam))) : 0,
+      finalPerDay: reviewDays ? Math.ceil(total / lapOneDays(Math.max(1, study(goal, exam)))) : 0,
       load: loadOf(Math.max(fix, last ? lastDay : 0)), auto, ...extra, fits: true, lastDay, todayNew: studyN === 1 ? left : fix,
     };
   }
@@ -772,7 +772,7 @@ export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, r
   perDay = Math.ceil(left / Math.max(1, study(today, goal)));
   return {
     goal, perDay, learnDays, reviewDays, days,
-    finalPerDay: reviewDays ? Math.ceil(total / Math.max(1, study(goal, exam))) : 0,
+    finalPerDay: reviewDays ? Math.ceil(total / lapOneDays(Math.max(1, study(goal, exam)))) : 0,
     load: loadOf(perDay), auto,
   };
 }
@@ -819,16 +819,24 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
 
 /**
  * 총정리(목표일 ~ 시험 전날): 예문·단어 두 모드를 한 학습에서 같이 봄.
- * 학습 범위 전부를 남은 공부하는 날에 나눠 하루 몫씩(pickSrsReview와 같은 셈) — 몫의 단어는 두 모드 문제를 다(이번 바퀴에서 그 모드로 이미 본 건 빼고),
- * 그리고 두 모드 각각 복습일이 된 단어는 그 모드 문제로.
+ * 두 바퀴로 나눔 (공부하는 날이 4일 이상일 때):
+ *  - 1바퀴(앞 70%쯤의 날, lapOneDays): 학습 범위 전부를 그 날들에 나눠 하루 몫씩. 몫의 단어는 두 모드 문제를 다
+ *  - 2바퀴(남은 날): 약한 단어만 한 번 더, 그것도 약한 쪽 모드 문제만. 약한 = 그 모드 단계가 WEAK_STAGE 아래(틀리면 0단계라 1바퀴에서 틀린 단어도)이거나 그 모드로 안 배움
+ *    약한 단어는 날마다 다시 셈(복습으로 단계가 오르면 빠짐). 남은 약한 단어를 남은 날에 나눠 하루 몫
+ *  - 공부하는 날이 3일 이하면 1바퀴만
+ * 빠진 날 몫은 다음 날 같이. 거기에 두 모드 각각 복습일이 된 단어는 그 모드 문제로.
  *  stats: { e: 예문 모드 기록, w: 단어 모드 기록 }
- *  - 이번 바퀴에서 두 모드 다 본 단어는 몫에서 빠짐(이미 한 셈). 한쪽만 봤으면 남은 쪽만 나옴
- *  - 훑는 순서: 두 모드 중 약한 쪽 단계가 높은(둘 다 잘 아는) 단어부터, 두 모드 합쳐 덜 틀린 순, 어느 모드든 안 배운 단어는 뒤
+ *  - 그 바퀴에서 그 모드로 이미 본 문제는 빠짐(1바퀴는 두 모드 다 봐야 그 단어를 한 셈)
+ *  - 훑는 순서: 두 모드 중 약한 쪽 단계가 높은(둘 다 잘 아는) 단어부터, 두 모드 합쳐 덜 틀린 순, 어느 모드든 안 배운 단어는 뒤 → 약한 단어일수록 시험에 가까이
  *  - 오늘 이미 그 모드로 본 문제는 뺌(목록을 고정해 둔 쪽에서 셈하도록 앱이 따로 거르지만, 미리 보기에서도 맞게)
- * 반환 { items: [{ id, m: 'w'|'e' }], words: [단어(몫 → 복습일 된 것)], phase: 'final', days, size, round, idx, start: 이번 바퀴 시작일, left: 이번 바퀴에 남은 단어 수, n, rest? }
+ * 반환 { items: [{ id, m: 'w'|'e' }], words, phase: 'final', days, lap: 1|2, lap1Days, lap2Start(2바퀴 첫날, 없으면 ''), lapDays, start(이번 바퀴 첫날),
+ *        idx(이번 바퀴에서 오늘 전까지 공부한 날), size(하루 몫 단어 수), total(이번 바퀴 단어 수), done(오늘 본 것까지 이번 바퀴에서 끝낸 단어), left, n, rest? }
  * 쉬는 날은 몫 없이 복습일 된 문제만. goal·exam이 맞지 않으면 null
  */
 export const SWEEP_MODES = ['w', 'e']; // 몫 안에서 단어마다 두 문제 (푸는 순서는 sweepOrder의 first)
+export const LAP1_SHARE = 0.7; // 1바퀴(전체)에 쓰는 날의 몫
+export const WEAK_STAGE = 3;   // 이 단계 아래면 약한 단어 (기본 간격으로 7일 단계 아래)
+export const lapOneDays = d => (d >= 4 ? Math.min(d - 1, Math.max(1, Math.round(d * LAP1_SHARE))) : d);
 export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), goal, exam, rest = [] } = {}) {
   if (!goal || !exam || today < goal || goal >= exam || today >= exam) return null;
   rest = cleanRest(rest);
@@ -836,18 +844,36 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
   const day = s => (s && s.s ? dateStr(s.s) : '');
   const days = Math.max(1, studyDays(goal, exam, rest));
   const n = rangeWords.length;
-  const size = Math.max(1, Math.ceil(n / days));
-  const round = Math.max(1, Math.ceil(n / size));
+  const L1 = lapOneDays(days);
+  const lap2Start = L1 < days ? nthStudyDay(goal, L1, rest) : '';
   const k = studyDays(goal, today, rest);
-  const start = nthStudyDay(goal, Math.floor(k / round) * round, rest);
-  const idx = k % round;
-  const seenRound = s => { const d = day(s); return !!d && d >= start && d < today; };
+  const lap = k < L1 ? 1 : 2;
+  const start = lap === 1 ? goal : lap2Start;
+  const lapDays = lap === 1 ? L1 : days - L1;
+  const idx = lap === 1 ? k : k - L1;
+  const inLap = s => { const d = day(s); return !!d && d >= start && d < today; };
+  const inLapNow = s => { const d = day(s); return !!d && d >= start && d <= today; };
+  const weak = s => !s || (!s.g && (s.st || 0) < WEAK_STAGE);
   // 복습일이 된 문제 (두 모드 각각, 까먹었을 가능성이 큰 것부터)
   const dueOf = m => allWords.filter(w => { const s = st(m, w.id); return isDue(s, today) && s.f !== today && day(s) !== today; })
     .sort(byRisk(today, id => st(m, id)));
   const due = { w: dueOf('w'), e: dueOf('e') };
-  const base = { phase: 'final', days, size, round, idx, n, start };
-  const out = (chunk, left) => {
+  const left = [], miss = (a, b) => ((a ? a.w || 0 : 0) + (b ? b.w || 0 : 0)) / Math.max(1, (a ? (a.c || 0) + (a.w || 0) : 0) + (b ? (b.c || 0) + (b.w || 0) : 0));
+  let doneBefore = 0, done = 0;
+  rangeWords.forEach((w, i) => {
+    const sm = { w: st('w', w.id), e: st('e', w.id) };
+    // 이번 바퀴에서 볼 모드: 1바퀴는 둘 다, 2바퀴는 약한 쪽만 (이미 이번 바퀴에서 본 모드는 약하든 아니든 한 셈)
+    const want = SWEEP_MODES.filter(m => lap === 1 || weak(sm[m]) || inLapNow(sm[m]));
+    if (!want.length) return;
+    const need = want.filter(m => !inLap(sm[m]));
+    if (want.every(m => inLapNow(sm[m]))) done++;
+    if (!need.length) { doneBefore++; return; }
+    left.push({ w, need, rank: Math.min(sm.w ? sm.w.st || 0 : -1, sm.e ? sm.e.st || 0 : -1), miss: miss(sm.w, sm.e), i });
+  });
+  const total = left.length + doneBefore;
+  const size = Math.max(1, Math.ceil(total / Math.max(1, lapDays)));
+  const base = { phase: 'final', days, lap, lap1Days: L1, lap2Start, lapDays, start, idx, size, total, done, n };
+  const out = chunk => {
     const items = [], seen = new Set(), list = [], inList = new Set();
     const add = (w, m) => {
       const key = m + w.id;
@@ -858,18 +884,12 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
     };
     for (const { w, need } of chunk) for (const m of need) add(w, m);
     for (const m of SWEEP_MODES) for (const w of due[m]) add(w, m);
-    return { ...base, items, words: list, left };
+    return { ...base, items, words: list, left: left.length };
   };
-  if (isRestDay(today, rest)) return { ...out([], 0), rest: true };
-  const left = [], miss = (a, b) => ((a ? a.w || 0 : 0) + (b ? b.w || 0 : 0)) / Math.max(1, (a ? (a.c || 0) + (a.w || 0) : 0) + (b ? (b.c || 0) + (b.w || 0) : 0));
-  rangeWords.forEach((w, i) => {
-    const sw = st('w', w.id), se = st('e', w.id);
-    const need = SWEEP_MODES.filter(m => !seenRound(m === 'w' ? sw : se));
-    if (need.length) left.push({ w, need, rank: Math.min(sw ? sw.st || 0 : -1, se ? se.st || 0 : -1), miss: miss(sw, se), i });
-  });
+  if (isRestDay(today, rest)) return { ...out([]), rest: true };
   left.sort((a, b) => b.rank - a.rank || a.miss - b.miss || a.i - b.i);
-  const quota = Math.max(0, Math.min(n, size * (idx + 1)) - (n - left.length));
-  return out(left.slice(0, quota), left.length);
+  const quota = Math.max(0, Math.min(total, size * (idx + 1)) - doneBefore);
+  return out(left.slice(0, quota));
 }
 
 // 총정리 문제 순서: 단어 20개씩 묶어서 먼저 풀 모드(first, 처음 값은 예문)의 묶음을 먼저, 그 묶음의 다른 모드 문제는 다음 묶음 뒤에

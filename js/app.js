@@ -2101,10 +2101,12 @@ function sweepCheer() {
 }
 function sweepNote(sp) {
   const L = examLeft();
+  const head = L <= 1 ? '내일이 시험! 마지막 날이에요 · ' : L <= 3 ? '이제 정말 얼마 안 남았어요 · ' : '';
+  if (sp.lap === 2) return `${head}2바퀴째: 약한 단어 ${sp.total}개를 약한 쪽 문제로 한 번 더 (하루 ${sp.size}단어쯤)`;
   const per = `하루 ${sp.size}단어 × 단어·예문 두 문제`;
-  return L <= 1 ? `내일이 시험! 마지막 날이에요 · ${per}`
-    : L <= 3 ? `이제 정말 얼마 안 남았어요 · ${per}`
-      : `범위 ${sp.n}단어를 시험 전날까지 ${sp.days}일에 나눠 두 모드로 훑어요 · ${per}`;
+  return head + (sp.lap2Start
+    ? `${fmtDay(addDays(sp.lap2Start, -1))}까지 범위 ${sp.n}단어를 한 바퀴 · ${per} · 남은 ${sp.days - sp.lap1Days}일은 약한 단어만 한 번 더`
+    : `범위 ${sp.n}단어를 시험 전날까지 ${sp.days}일에 나눠 두 모드로 훑어요 · ${per}`);
 }
 function renderSweep(on, rv) {
   const card = $('#card-today'), box = $('#sweep-box'), round = $('#sweep-round');
@@ -2122,6 +2124,8 @@ function renderSweep(on, rv) {
   const strip = $('#sweep-strip');
   strip.innerHTML = '';
   const n = daysBetween(g, ex);
+  const sp = sweepPick();
+  const lap2 = sp ? sp.lap2Start : '';
   // 날이 많으면(2주 넘게) 오늘 앞쪽 지난 날은 줄여서 한 칸으로
   let from = 0;
   if (n > 14) from = Math.max(0, Math.min(daysBetween(g, today), n - 14));
@@ -2129,7 +2133,8 @@ function renderSweep(on, rv) {
   for (let i = from; i <= n; i++) {
     const d = addDays(g, i), isExam = d === ex;
     const kind = isExam ? 'exam' : d < today ? 'past' : d === today ? 'now' : 'next';
-    const c = el('span', `sd ${kind}` + (!isExam && isRestDay(d, rest) ? ' rest' : ''));
+    // 2바퀴(약한 단어만) 날은 점선 칸
+    const c = el('span', `sd ${kind}` + (!isExam && isRestDay(d, rest) ? ' rest' : '') + (!isExam && lap2 && d >= lap2 ? ' lap2' : '') + (d === lap2 ? ' lap2-first' : ''));
     const dot = el('i');
     if (isExam) dot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg>';
     else if (kind === 'past') dot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 12.5 4 4 8-9"/></svg>';
@@ -2139,20 +2144,15 @@ function renderSweep(on, rv) {
   strip.style.setProperty('--n', strip.children.length);
   strip.classList.toggle('dense', strip.children.length > 10);
   strip.setAttribute('aria-label', `총정리 ${n}일 중 ${Math.max(0, daysBetween(g, today))}일 지남, 시험까지 ${L}일`);
-  // 한 바퀴: 이번 바퀴에 두 모드로 다 본 단어 (오늘 본 것 포함) + 오늘 몫이 끝나면 닿을 곳
-  const sp = sweepPick();
+  // 이번 바퀴: 끝낸 단어(오늘 본 것 포함) + 오늘 몫이 끝나면 닿을 곳. 1바퀴 = 전체를 두 모드로, 2바퀴 = 약한 단어의 약한 쪽 문제
   if (!sp) { round.hidden = true; return; }
-  const rw = rangeWords(), W = statsOf('w'), E = statsOf('e');
-  const since = s => !!(s && s.s && dateStr(s.s) >= sp.start);
-  const done = rw.filter(w => since(W[w.id]) && since(E[w.id])).length;
-  const goalNow = Math.min(sp.n, sp.size * (sp.idx + 1));
-  const total = Math.max(1, sp.n);
-  const roundNo = Math.floor(studyDays(g, today, rest) / sp.round) + 1;
-  const rounds = Math.max(1, Math.floor(sp.days / sp.round));
-  $('#sr-label').textContent = rounds > 1 ? `${roundNo}바퀴째 · 두 모드로 다 본 단어` : '범위 한 바퀴 · 두 모드로 다 본 단어';
-  $('#sr-num').textContent = `${done.toLocaleString('ko-KR')} / ${sp.n.toLocaleString('ko-KR')}`;
-  $('#sr-fill').style.width = `${(done / total) * 100}%`;
-  $('#sr-today').style.width = `${(Math.max(done, goalNow) / total) * 100}%`;
+  const total = Math.max(1, sp.total);
+  const goalNow = Math.min(sp.total, sp.size * (sp.idx + 1));
+  const end = sp.lap === 1 && lap2 ? fmtDay(addDays(lap2, -1)) : '';
+  $('#sr-label').textContent = sp.lap === 1 ? (lap2 ? `1바퀴 · 전체 단어 · ${end}까지` : '범위 한 바퀴 · 두 모드로 다 본 단어') : '2바퀴 · 약한 단어만 한 번 더';
+  $('#sr-num').textContent = `${sp.done.toLocaleString('ko-KR')} / ${sp.total.toLocaleString('ko-KR')}`;
+  $('#sr-fill').style.width = `${(Math.min(sp.done, total) / total) * 100}%`;
+  $('#sr-today').style.width = `${(Math.min(total, Math.max(sp.done, goalNow)) / total) * 100}%`;
 }
 
 // 복습이 평소보다 많이 밀렸을 때 왜 쌓이는지와 맞는 페이스를 숫자로 (새 단어 하나는 하루 복습 5개쯤으로 돌아옴)

@@ -743,14 +743,14 @@ test('단어 코치 일정: 남은 날을 배우는 날과 훑는 날로 알맞�
   const slow = coachPlan({ today, exam: addDays(today, 90), total: 200, remaining: 200, review: 5 });
   assert.deepEqual([slow.reviewDays, slow.learnDays, slow.perDay], [5, 85, 3]);
   // 쉬는 요일: 하루 개수는 공부하는 날로 나눔 (2026-11-11은 수요일, 토요일 쉼)
-  const { studyDays, weekdayOf } = await import('../js/core.js');
+  const { studyDays, weekdayOf, lapOneDays } = await import('../js/core.js');
   assert.equal(weekdayOf('2026-11-14'), 6);
   assert.equal(studyDays(today, addDays(today, 14), [6]), 12);
   const sat = coachPlan({ today, exam: addDays(today, 14), total: 200, remaining: 200, review: 7, rest: [6] });
   assert.equal(sat.learnDays, 7);
   assert.equal(sat.perDay, Math.ceil(200 / studyDays(today, sat.goal, [6])));
   assert.ok(sat.perDay > long.perDay);
-  assert.equal(sat.finalPerDay, Math.ceil(200 / studyDays(sat.goal, addDays(today, 14), [6])));
+  assert.equal(sat.finalPerDay, Math.ceil(200 / lapOneDays(studyDays(sat.goal, addDays(today, 14), [6]))));
   // 일주일 내내 쉬면 쉬는 날이 없는 걸로
   assert.equal(coachPlan({ today, exam: addDays(today, 14), total: 200, remaining: 200, review: 7, rest: [0, 1, 2, 3, 4, 5, 6] }).perDay, long.perDay);
   // 배우는 기간이 쉬는 날뿐이면 늘림: 오늘(수)·내일(목) 쉬고 시험이 3일 뒤, 복습 2일 → 배우는 날을 늘림
@@ -1147,4 +1147,29 @@ test('총정리: 몫의 단어는 두 모드 문제를 다, 복습일 된 단어
   for (const x of words) assert.ok(oe.indexOf('e:' + x.id) < oe.indexOf('w:' + x.id));
   assert.deepEqual(parseSweepKey('w:my|abc'), { m: 'w', id: 'my|abc' });
   assert.deepEqual(parseSweepKey('26|a0'), { m: '', id: '26|a0' });
+});
+
+test('총정리 두 바퀴: 앞 70%쯤의 날에 전체 한 바퀴, 남은 날은 약한 단어의 약한 쪽 문제만', async () => {
+  const { pickBothSweep, lapOneDays, addDays } = await import('../js/core.js');
+  assert.deepEqual([1, 2, 3, 4, 5, 7, 10, 14].map(lapOneDays), [1, 2, 3, 3, 4, 5, 7, 10]);
+  const words = Array.from({ length: 52 }, (_, i) => ({ id: `30|w${i}` }));
+  const goal = '2026-11-10', exam = addDays(goal, 10); // 10일 → 1바퀴 7일(하루 8단어), 2바퀴 3일
+  const T = d => new Date(`${d}T12:00:00`).getTime();
+  const r = pickBothSweep(words, words, { e: {}, w: {} }, { today: goal, goal, exam });
+  assert.deepEqual([r.lap, r.lap1Days, r.lap2Start, r.size, r.total], [1, 7, addDays(goal, 7), 8, 52]);
+  assert.equal(r.items.length, 16);
+  // 1바퀴를 다 끝냄: 예문은 다 잘 앎(4단계), 단어 모드는 w0~w9만 약함(1단계) · 나머지는 3단계
+  const seen = T(addDays(goal, 6));
+  const e = {}, w = {};
+  words.forEach((x, i) => { e[x.id] = { st: 4, c: 3, w: 0, due: '2026-12-30', s: seen, f: '2026-11-01' }; w[x.id] = { st: i < 10 ? 1 : 3, c: 2, w: i < 10 ? 1 : 0, due: '2026-12-30', s: seen, f: '2026-11-10' }; });
+  const r2 = pickBothSweep(words, words, { e, w }, { today: addDays(goal, 7), goal, exam });
+  assert.deepEqual([r2.lap, r2.total, r2.size, r2.lapDays], [2, 10, 4, 3]);
+  assert.ok(r2.items.every(x => x.m === 'w')); // 약한 쪽(단어 문제)만
+  assert.deepEqual(r2.items.map(x => x.id), ['30|w0', '30|w1', '30|w2', '30|w3']);
+  // 2바퀴에서 본 단어는 단계가 올라 약하지 않아도 그 바퀴 몫으로 셈
+  const w3 = { ...w };
+  for (let i = 0; i < 4; i++) w3[`30|w${i}`] = { ...w[`30|w${i}`], st: 3, s: T(addDays(goal, 7)) };
+  const r3 = pickBothSweep(words, words, { e, w: w3 }, { today: addDays(goal, 8), goal, exam });
+  assert.deepEqual([r3.total, r3.done, r3.left], [10, 4, 6]);
+  assert.deepEqual(r3.items.map(x => x.id), ['30|w4', '30|w5', '30|w6', '30|w7']);
 });
