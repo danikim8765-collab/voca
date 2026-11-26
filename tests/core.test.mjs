@@ -1046,3 +1046,61 @@ test('초록 말풍선 앞 글자: 짧으면 1글자, 길면 2글자, 다른 비
   assert.equal(nearLetters('odd').prefix, 'o');
   assert.equal(nearLetters(''), null);
 });
+
+test('코치 이야기를 기기끼리 합침: 지운 기억·모두 지우기는 되살아나지 않고, 첫 인사는 하루에 하나', async () => {
+  const { mergeCoachChat } = await import('../js/core.js');
+  const phone = { items: [{ who: 'coach', text: '안녕(폰)', t: 1, g: '2026-11-25' }, { who: 'me', text: '폰에서 한 말', t: 2 }], notes: [{ text: '수요일은 학원', t: 1 }], gone: { '목표는 만점': 9 } };
+  const pc = { items: [{ who: 'coach', text: '안녕(PC)', t: 3, g: '2026-11-25' }, { who: 'me', text: 'PC에서 한 말', t: 4 }], notes: [{ text: '목표는 만점', t: 5 }, { text: '소리 내어 외움', t: 6 }], sum: { text: '요약', upTo: 2, at: 7 } };
+  const m = mergeCoachChat(phone, pc);
+  assert.deepEqual(m.items.map(x => x.text), ['안녕(폰)', '폰에서 한 말', 'PC에서 한 말']);
+  assert.deepEqual(m.notes.map(x => x.text), ['수요일은 학원', '소리 내어 외움']);
+  assert.equal(m.sum.text, '요약');
+  // 지운 뒤에 다시 적은 기억은 남음
+  assert.deepEqual(mergeCoachChat(m, { notes: [{ text: '목표는 만점', t: 20 }] }).notes.map(x => x.text), ['수요일은 학원', '소리 내어 외움', '목표는 만점']);
+  // 모두 지우기: 그 앞의 이야기·기억은 어느 쪽에서 왔든 버림
+  const wiped = { items: [{ who: 'coach', text: '다 지웠어요', t: 10 }], notes: [], wiped: 10, sum: { text: '', upTo: 10, at: 10 } };
+  const w = mergeCoachChat(pc, wiped);
+  assert.deepEqual(w.items.map(x => x.text), ['다 지웠어요']);
+  assert.deepEqual(w.notes, []);
+  assert.equal(w.sum.text, '');
+  // 같은 걸 다시 합쳐도 그대로
+  assert.deepEqual(mergeCoachChat(w, w), w);
+});
+
+test('학습 기록: 기기끼리 합치고 14일·800줄까지만', async () => {
+  const { mergeLog, cleanLog } = await import('../js/core.js');
+  const now = Date.UTC(2026, 10, 25, 12);
+  const a = [{ t: now - 1000, m: 'e', sid: 1, id: 'a', o: 'ok' }, { t: now - 20 * 86400000, m: 'e', sid: 0, id: 'old', o: 'ok' }];
+  const b = [{ t: now - 2000, m: 'w', sid: 2, id: 'b', o: 'wrong' }, { t: now - 1000, m: 'e', sid: 1, id: 'a', o: 'ok' }];
+  assert.deepEqual(mergeLog(a, b, { now }).map(e => e.id), ['b', 'a']);
+  assert.equal(cleanLog(Array.from({ length: 900 }, (_, i) => ({ t: now - i, m: 'e', id: `x${i}` })), { now }).length, 800);
+});
+
+test('코치에게 넘기는 최근 학습 기록: 학습마다 틀린 단어와 고른 답, 지난 말 뒤에 한 학습 표시', async () => {
+  const { activityDigest } = await import('../js/core.js');
+  const now = new Date(2026, 10, 25, 15, 0).getTime(), min = 60000;
+  const W = { a: { word: 'abandon', meaning: '버리다' }, c: { word: 'comply', meaning: '따르다; 준수하다' }, d: { word: 'defer', meaning: '미루다' } };
+  const log = [
+    { t: now - 90 * min, m: 'e', sid: 1, ev: 'start', label: '오늘의 복습', total: 3 },
+    { t: now - 89 * min, m: 'e', sid: 1, id: 'a', o: 'ok' },
+    { t: now - 88 * min, m: 'e', sid: 1, id: 'c', o: 'wrong', g: 'complain' },
+    { t: now - 87 * min, m: 'e', sid: 1, id: 'd', o: 'hint', k: 'hint' },
+    { t: now - 86 * min, m: 'e', sid: 1, id: 'c', o: 'ok' },
+    { t: now - 85 * min, m: 'e', sid: 1, ev: 'end', label: '오늘의 복습', total: 3 },
+    { t: now - 10 * min, m: 'w', sid: 2, ev: 'start', label: '새 단어', total: 20 },
+    { t: now - 9 * min, m: 'w', sid: 2, id: 'd', o: 'wrong', k: 'idk' },
+    { t: now - 8 * min, m: 'w', sid: 2, ev: 'ask', id: 'd', q: 'defer랑 delay 차이?' },
+  ];
+  const text = activityDigest(log, { now, word: id => W[id], mode: m => (m === 'w' ? '단어 모드' : '예문 모드'), since: now - 60 * min });
+  const lines = text.split('\n');
+  assert.match(lines[0], /예문 모드 '오늘의 복습' 3문제: 끝냄\. 단어 3개 중 맞힘 1, 힌트 1, 틀림 1$/);
+  assert.match(text, /틀린 단어: comply\(따르다\) → 'complain'\(이\)라고 함/);
+  assert.match(text, /힌트 쓴 단어: defer/);
+  assert.match(text, /단어 모드 '새 단어' 20문제: 푸는 중이거나 잠깐 멈춤.*\[코치와 마지막으로 이야기한 뒤\]/);
+  assert.match(text, /defer\(미루다\) → 모르겠어요/);
+  assert.match(text, /푼 순서\(마지막 1개, 맨 끝이 방금\): defer X/);
+  assert.match(text, /\[defer\] "defer랑 delay 차이\?"/);
+  // 이 기기에서 지금 푸는 학습이면 몇 문제째인지
+  assert.match(activityDigest(log, { now, word: id => W[id], live: { m: 'w', sid: 2, pos: 1, total: 20 } }), /지금 푸는 중 \(1\/20문제\)/);
+  assert.equal(activityDigest([], { now }), '');
+});

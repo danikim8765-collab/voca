@@ -1098,6 +1098,123 @@ export function mergeChats(a, b, { keep = 200, notes = 30 } = {}) {
   return { items: items.slice(-keep), notes: ns.slice(-notes) };
 }
 
+// ---------- 코치가 아는 학습 기록 · 기기끼리 맞추는 코치 이야기 ----------
+// 학습 기록(log): 문제를 풀 때마다, 학습을 시작·끝낼 때, 정답 화면에서 AI에게 물을 때 한 줄씩. 두 모드가 같이 씀.
+// { t: 시각, m: 'e'(예문)|'w'(단어), sid: 학습 하나의 번호, id?: 단어, o?: 'ok'|'hint'|'wrong', k?: 어떻게(idk·copied·partial·hint), g?: 학생이 고르거나 쓴 답,
+//   ev?: 'start'|'end'|'quit'|'ask', label?, total?, q?: AI에게 물은 말 }
+export const LOG_KEEP = 800, LOG_DAYS = 14;
+const logKey = e => `${e.t}|${e.m || ''}|${e.ev || ''}|${e.id || ''}`;
+export function cleanLog(log, { now = Date.now(), keep = LOG_KEEP, days = LOG_DAYS } = {}) {
+  const from = now - days * 86400000, seen = new Set(), out = [];
+  for (const e of (Array.isArray(log) ? log : []).filter(e => e && e.t >= from && e.t <= now + 86400000).sort((a, b) => a.t - b.t)) {
+    const k = logKey(e);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(e);
+  }
+  return out.slice(-keep);
+}
+export const mergeLog = (a, b, o = {}) => cleanLog([...(a || []), ...(b || [])], o);
+
+// 코치 이야기를 기기끼리 합치기. mergeChats에 더해
+// wiped: '이야기와 기억 모두 지우기'를 누른 시각 (그 앞의 이야기·기억은 어느 기기에서 왔든 버림)
+// gone: { 기억 글: 지운 시각 } 지운 기억이 다른 기기에서 되살아나지 않게 (지운 뒤에 다시 적은 건 남김)
+// sum: 앞선 이야기 요약 — 더 최근에 고친(at) 쪽. 그날 첫 인사(g: 날짜)는 기기마다 하나씩 생기니 하루에 하나만
+export function mergeCoachChat(a, b, { keep = 200, notes = 30 } = {}) {
+  a = a || {}; b = b || {};
+  const wiped = Math.max(a.wiped || 0, b.wiped || 0);
+  const gone = { ...(a.gone || {}) };
+  for (const [k, t] of Object.entries(b.gone || {})) gone[k] = Math.max(gone[k] || 0, t);
+  const m = mergeChats(a, b, { keep: Infinity, notes: Infinity });
+  const greet = new Set();
+  const items = m.items.filter(x => {
+    if ((x.t || 0) < wiped) return false;
+    if (!x.g) return true;
+    if (greet.has(x.g)) return false;
+    greet.add(x.g);
+    return true;
+  }).slice(-keep);
+  const ns = m.notes.filter(n => (n.t || 0) >= wiped && !(gone[n.text] >= (n.t || 0))).slice(-notes);
+  const at = s => (s ? s.at || s.upTo || 0 : -1);
+  const sum = at(a.sum) >= at(b.sum) ? a.sum || null : b.sum;
+  return { items, notes: ns, ...(sum ? { sum } : {}), ...(wiped ? { wiped } : {}), ...(Object.keys(gone).length ? { gone } : {}) };
+}
+// 동기화 파일(voca-coach.json) 하나: { chat, log }
+export function mergeCoachData(a, b, { now = Date.now() } = {}) {
+  return { v: 1, chat: mergeCoachChat(a && a.chat, b && b.chat), log: mergeLog(a && a.log, b && b.log, { now }) };
+}
+export function sameCoachData(x, y) {
+  const n = d => JSON.stringify([(d && d.chat) || {}, (d && d.log) || []]);
+  return n(x) === n(y);
+}
+
+/**
+ * 코치에게 넘기는 최근 학습 기록 (글자). 학습 하나씩 시각순으로, 틀린 단어와 고른 답까지.
+ * word(id) → { word, meaning } | null, mode('e'|'w') → '예문 모드', since: 코치와 마지막으로 이야기한 시각,
+ * live: { sid, pos, total } 지금 이 기기에서 풀고 있는 학습
+ */
+export function activityDigest(log, { now = Date.now(), word = () => null, mode = m => m, since = 0, live = null, max = 2400 } = {}) {
+  const hm = t => { const d = new Date(t); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+  const md = t => { const [, mm, dd] = dateStr(t).split('-'); return `${+mm}/${+dd}`; };
+  const today = dateStr(now);
+  const name = id => { const w = word(id); return w ? w.word : null; };
+  const mean = id => { const w = word(id); return w ? shortMeaning(String(w.meaning || '')).replace(/\s*\/\s*$/, '').slice(0, 20) : ''; };
+  // 학습 하나씩 묶기
+  const ses = new Map(), asks = [];
+  for (const e of log || []) {
+    if (e.ev === 'ask') { asks.push(e); continue; }
+    const key = `${e.m}|${e.sid || 0}`;
+    let s = ses.get(key);
+    if (!s) ses.set(key, s = { m: e.m, sid: e.sid, from: e.t, to: e.t, label: '', total: 0, ans: [], end: '', pos: 0 });
+    s.to = Math.max(s.to, e.t);
+    if (e.ev === 'start') { s.label = e.label || s.label; s.total = e.total || s.total; s.from = Math.min(s.from, e.t); }
+    else if (e.ev === 'end' || e.ev === 'quit') { s.end = e.ev; if (e.label) s.label = e.label; if (e.total) s.total = e.total; if (e.pos != null) s.pos = e.pos; }
+    else if (e.id) s.ans.push(e);
+  }
+  const list = [...ses.values()].filter(s => s.ans.length || s.end).sort((a, b) => a.from - b.from);
+  if (!list.length && !asks.length) return '';
+  const line = s => {
+    const fin = new Map(); // 단어마다: 한 번이라도 틀리면 틀림, 아니면 힌트, 아니면 맞힘
+    for (const a of s.ans) { const p = fin.get(a.id); fin.set(a.id, p === 'wrong' || a.o === 'wrong' ? 'wrong' : p === 'hint' || a.o === 'hint' ? 'hint' : 'ok'); }
+    const ids = [...fin.keys()], bad = ids.filter(i => fin.get(i) === 'wrong'), hint = ids.filter(i => fin.get(i) === 'hint');
+    const isLive = live && s.sid === live.sid && s.m === live.m;
+    const state = isLive ? `지금 푸는 중 (${live.pos}/${live.total || s.total}문제)`
+      : s.end === 'end' ? '끝냄' : s.end === 'quit' ? `중간에 그만둠${s.total ? ` (${s.pos || ids.length}/${s.total}문제)` : ''}`
+        : now - s.to < 15 * 60000 ? '푸는 중이거나 잠깐 멈춤' : '끝내지 않고 멈춤';
+    const head = `- ${md(s.from)} ${hm(s.from)}~${hm(s.to)} ${mode(s.m)} '${s.label || '학습'}'${s.total ? ` ${s.total}문제` : ''}: ${state}. 단어 ${ids.length}개 중 맞힘 ${ids.length - bad.length - hint.length}, 힌트 ${hint.length}, 틀림 ${bad.length}${s.from > since && since ? ' [코치와 마지막으로 이야기한 뒤]' : ''}`;
+    const out = [head];
+    const gave = id => { const a = [...s.ans].reverse().find(x => x.id === id && x.o === 'wrong'); return a && a.g ? ` → '${String(a.g).slice(0, 24)}'(이)라고 함` : a && a.k === 'idk' ? ' → 모르겠어요' : a && a.k === 'copied' ? ' → 정답 보고 씀' : ''; };
+    if (bad.length) out.push(`  틀린 단어: ${bad.filter(name).slice(0, 12).map(i => `${name(i)}(${mean(i)})${gave(i)}`).join(', ')}${bad.length > 12 ? ' …' : ''}`);
+    if (hint.length) out.push(`  힌트 쓴 단어: ${hint.filter(name).slice(0, 10).map(name).join(', ')}${hint.length > 10 ? ' …' : ''}`);
+    return out;
+  };
+  // 최근 사흘(오늘 포함)은 학습마다 자세히, 그 앞은 날마다 한 줄
+  const near = list.filter(s => dateStr(s.from) > addDays(today, -3));
+  const far = list.filter(s => dateStr(s.from) <= addDays(today, -3));
+  const days = new Map();
+  for (const s of far) {
+    const d = dateStr(s.from), x = days.get(d) || { n: 0, q: 0, bad: new Set() };
+    x.n++; x.q += new Set(s.ans.map(a => a.id)).size;
+    for (const a of s.ans) if (a.o === 'wrong') x.bad.add(a.id);
+    days.set(d, x);
+  }
+  const out = [];
+  for (const [d, x] of days) out.push(`- ${md(new Date(`${d}T12:00:00`).getTime())}: 학습 ${x.n}번, 단어 ${x.q}개, 틀림 ${x.bad.size}${x.bad.size ? ` (${[...x.bad].filter(name).slice(0, 5).map(name).join(', ')}${x.bad.size > 5 ? ' …' : ''})` : ''}`);
+  for (const s of near.slice(-10)) out.push(...line(s));
+  // 가장 최근 학습은 푼 순서대로 (방금 그 단어가 뭐였는지 물을 때)
+  const lastS = near[near.length - 1];
+  if (lastS && lastS.ans.length) {
+    const seq = lastS.ans.slice(-15).map(a => `${name(a.id) || '?'} ${a.o === 'ok' ? 'O' : a.o === 'hint' ? '힌트' : 'X'}`);
+    out.push(`  가장 최근 학습에서 푼 순서(마지막 ${seq.length}개, 맨 끝이 방금): ${seq.join(', ')}`);
+  }
+  const ask = asks.filter(e => e.t > now - 3 * 86400000).slice(-5);
+  if (ask.length) out.push(`- 정답 화면에서 AI에게 물어본 것: ${ask.map(e => `${md(e.t)} ${hm(e.t)} [${name(e.id) || '?'}] "${String(e.q || '').slice(0, 50)}"`).join(' / ')}`);
+  // 길면 오래된 줄부터 뺌
+  let text = out.join('\n');
+  while (text.length > max && out.length > 2) { out.shift(); text = out.join('\n'); }
+  return text;
+}
+
 export const samePrefs = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
 
 export function sameStats(x, y) {

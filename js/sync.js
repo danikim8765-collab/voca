@@ -27,8 +27,9 @@ export function isLimited(status, headers = {}, message = '') {
 
 // look: { get, set, merge, same } 화면 꾸미기 (get이 null이면 이 기기는 꾸미기를 주고받지 않음, js/look.js).
 // mine: { get, set, merge, same } 내 단어 묶음 (js/mywords.js).
+// extra: [{ file, get, set, merge, same }] 그 밖에 파일 하나씩 통째로 합치는 것 (코치 이야기·학습 기록 voca-coach.json). get이 null이면 그 파일은 건너뜀.
 // marks: { get, set } 모름 표시. coach: { get, set } 고른 코치 캐릭터 { char, at } (토큰을 넣어 동기화할 때만 다른 기기와 맞춰짐). other: { get, set } 다른 모드 진도(단어장에서 두 모드 기록을 합쳐 보여 주려고 받아만 둠)
-export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, look = null, other = null, mine = null }) {
+export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], marks = null, coach = null, look = null, other = null, mine = null, extra = [] }) {
   const FILE = file;
   const OTHER = FILES.find(f => f !== FILE);
   let conf = load(); // { token, gistId, login, last }
@@ -134,6 +135,14 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
         const mm = mine.merge(lm, rm);
         if (!mine.same(mm, lm)) mine.set(mm);
         if (!mine.same(mm, rm)) files[MY] = { content: JSON.stringify(mm) };
+      }
+      for (const x of extra) {
+        const lx = x.get();
+        if (!lx) continue;
+        const rx = await readFile(g, x.file);
+        const mx = x.merge(lx, rx);
+        if (!x.same(mx, lx)) x.set(mx);
+        if (!x.same(mx, rx)) files[x.file] = { content: JSON.stringify(mx) };
       }
       if (other && g.files && g.files[OTHER]) {
         const lo = other.get();
