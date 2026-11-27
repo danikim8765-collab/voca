@@ -829,22 +829,23 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
  *  - 그 바퀴에서 그 모드로 이미 본 문제는 빠짐(1바퀴는 두 모드 다 봐야 그 단어를 한 셈)
  *  - 훑는 순서: 두 모드 중 약한 쪽 단계가 높은(둘 다 잘 아는) 단어부터, 두 모드 합쳐 덜 틀린 순, 어느 모드든 안 배운 단어는 뒤 → 약한 단어일수록 시험에 가까이
  *  - 오늘 이미 그 모드로 본 문제는 뺌(목록을 고정해 둔 쪽에서 셈하도록 앱이 따로 거르지만, 미리 보기에서도 맞게)
- * 반환 { items: [{ id, m: 'w'|'e' }], words, phase: 'final', days, lap: 1|2, lap1Days, lap2Start(2바퀴 첫날, 없으면 ''), lapDays, start(이번 바퀴 첫날),
+ * 반환 { items: [{ id, m: 'w'|'e', due?: 몫과 안 겹치는 복습 }], words, phase: 'final', days, lap: 1|2, lap1Days, lap2Start(2바퀴 첫날, 없으면 ''), lapDays, start(이번 바퀴 첫날),
  *        idx(이번 바퀴에서 오늘 전까지 공부한 날), size(하루 몫 단어 수), total(이번 바퀴 단어 수), done(오늘 본 것까지 이번 바퀴에서 끝낸 단어), left, n, rest? }
  * 쉬는 날은 몫 없이 복습일 된 문제만. goal·exam이 맞지 않으면 null
  */
 export const SWEEP_MODES = ['w', 'e']; // 몫 안에서 단어마다 두 문제 (푸는 순서는 sweepOrder의 first)
 export const LAP1_SHARE = 0.7; // 1바퀴(전체)에 쓰는 날의 몫
 export const WEAK_STAGE = 3;   // 이 단계 아래면 약한 단어 (기본 간격으로 7일 단계 아래)
-export const lapOneDays = d => (d >= 4 ? Math.min(d - 1, Math.max(1, Math.round(d * LAP1_SHARE))) : d);
-export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), goal, exam, rest = [] } = {}) {
+// lap1: 코치와 정한 1바퀴 날 수(0 = 알아서). 공부하는 날 수(d) 안으로 맞춤 (d면 2바퀴 없음)
+export const lapOneDays = (d, lap1 = 0) => (lap1 > 0 ? Math.max(1, Math.min(d, Math.round(lap1))) : d >= 4 ? Math.min(d - 1, Math.max(1, Math.round(d * LAP1_SHARE))) : d);
+export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), goal, exam, rest = [], lap1 = 0 } = {}) {
   if (!goal || !exam || today < goal || goal >= exam || today >= exam) return null;
   rest = cleanRest(rest);
   const st = (m, id) => normalizeStat((stats[m] || {})[id]);
   const day = s => (s && s.s ? dateStr(s.s) : '');
   const days = Math.max(1, studyDays(goal, exam, rest));
   const n = rangeWords.length;
-  const L1 = lapOneDays(days);
+  const L1 = lapOneDays(days, lap1);
   const lap2Start = L1 < days ? nthStudyDay(goal, L1, rest) : '';
   const k = studyDays(goal, today, rest);
   const lap = k < L1 ? 1 : 2;
@@ -875,15 +876,15 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
   const base = { phase: 'final', days, lap, lap1Days: L1, lap2Start, lapDays, start, idx, size, total, done, n };
   const out = chunk => {
     const items = [], seen = new Set(), list = [], inList = new Set();
-    const add = (w, m) => {
+    const add = (w, m, isDue = false) => {
       const key = m + w.id;
       if (seen.has(key) || day(st(m, w.id)) === today) return;
       seen.add(key);
-      items.push({ id: w.id, m });
+      items.push(isDue ? { id: w.id, m, due: true } : { id: w.id, m });
       if (!inList.has(w.id)) { inList.add(w.id); list.push(w); }
     };
     for (const { w, need } of chunk) for (const m of need) add(w, m);
-    for (const m of SWEEP_MODES) for (const w of due[m]) add(w, m);
+    for (const m of SWEEP_MODES) for (const w of due[m]) add(w, m, true); // 몫과 안 겹치는 복습 (due: true, 앱은 총정리 뒤 '복습' 단계로)
     return { ...base, items, words: list, left: left.length };
   };
   if (isRestDay(today, rest)) return { ...out([]), rest: true };
