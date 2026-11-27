@@ -292,7 +292,7 @@ const sync = createSync({
     }
     if (m.prefs && (m.prefs.at || 0) > (settings.prefsAt || 0)) {
       const p = m.prefs;
-      Object.assign(settings, { newPerDay: p.newPerDay || 20, prefsAt: p.at });
+      Object.assign(settings, { newPerDay: Number.isFinite(p.newPerDay) ? p.newPerDay : 20, prefsAt: p.at }); // 0(쉬기)도 그대로
       // srs: true는 예전 버전 앱이 복습 주기·목표일을 받아 가게 하려고 보냄 (주기 복습 스위치는 없어짐)
       if ('srs' in p || 'srsPreset' in p) Object.assign(settings, { srsPreset: p.srsPreset || 'm', goal: p.goal || '' });
       if ('reviewMix' in p) settings.reviewMix = !!p.reviewMix;
@@ -769,7 +769,7 @@ function renderHome() {
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
     ...(coachActive()
       ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 총정리 중'])
-      : [`새 단어 ${settings.newPerDay}`, ...(!sweepOn() ? [] : dateStr() < goalDate() ? [`${fmtDay(addDays(goalDate(), -1))}까지`] : ['총정리 중'])]),
+      : [settings.newPerDay ? `새 단어 ${settings.newPerDay}` : '새 단어 쉬는 중', ...(!sweepOn() ? [] : dateStr() < goalDate() ? [`${fmtDay(addDays(goalDate(), -1))}까지`] : ['총정리 중'])]),
   ].join(' · ')));
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
