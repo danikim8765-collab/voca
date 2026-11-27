@@ -122,6 +122,8 @@ const settings = Object.assign({
   coach: false, coachGoal: '', coachBase: 0, coachKey: '', coachReview: 0, coachRest: [], coachFix: 0, coachTail: '',
   // 다시 나오기 (core.js AGAIN_*): 틀림·힌트 두 번·힌트 한 번마다 이번 학습에서 다시 나올 때. 두 모드가 같이 씀(againAt = 바꾼 시각)
   again: AGAIN_REC, againAt: 0,
+  // 방학 모드: 단어책 새 단어는 쉬고(오늘만 숫자를 눌러 더할 수 있음), 이미 배운 단어책 단어의 복습 간격은 두 배. 두 모드가 같이 씀(vacAt = 바꾼 시각)
+  vac: false, vacAt: 0,
   reviewMix: false, // 복습은 외운 단어만 4지선다 (core.js questionKind)
 }, load(KEY.settings, {}));
 // 잠깐 있던 문제 방식 '섞어서'(새 단어도 직접 입력) → 직접 입력 + 복습은 외운 단어만 4지선다
@@ -231,6 +233,21 @@ function setAgain(v) {
   shareAgain(settings.again, settings.againAt);
   sync.soon();
 }
+// 방학 모드도 두 모드가 같이 씀 (다시 나오기처럼 바꾼 시각을 따로)
+function shareVac(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if ((o.vacAt || 0) > at) return;
+  o.vac = !!v; o.vacAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+function setVac(on) {
+  settings.vac = !!on;
+  settings.vacAt = Date.now();
+  saveSettings();
+  shareVac(settings.vac, settings.vacAt);
+  sync.soon();
+  toast(on ? '방학 모드예요 · 단어책은 쉬고 내 단어에 집중해요' : '방학 모드를 껐어요 · 단어책을 다시 하루 몫대로 배워요');
+}
 // 총정리 문제 방식도 두 모드가 같이 씀 (다시 나오기처럼 바꾼 시각을 따로)
 function shareSweepKind(v, at) {
   const o = load(OTHER_P + 'settings.v1', {});
@@ -255,7 +272,7 @@ function setRest(v) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, bookResetAt, stats: allStats(), prefs: { reviewMix: !!settings.reviewMix, exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: true, srsPreset: settings.srsPreset, goal: settings.goal, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', ...(settings.sweepKindAt ? { sweepKind: cleanSweepKind(settings.sweepKind), sweepKindAt: settings.sweepKindAt } : {}), at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
+  getLocal: () => ({ v: 2, resetAt, bookResetAt, stats: allStats(), prefs: { reviewMix: !!settings.reviewMix, exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: true, srsPreset: settings.srsPreset, goal: settings.goal, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, vac: !!settings.vac, vacAt: settings.vacAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', ...(settings.sweepKindAt ? { sweepKind: cleanSweepKind(settings.sweepKind), sweepKindAt: settings.sweepKindAt } : {}), at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -279,6 +296,11 @@ const sync = createSync({
       Object.assign(settings, { again: cleanAgain(m.prefs.again), againAt: m.prefs.againAt });
       saveSettings();
       shareAgain(settings.again, settings.againAt);
+    }
+    if (m.prefs && 'vac' in m.prefs && (m.prefs.vacAt || 0) > (settings.vacAt || 0)) {
+      Object.assign(settings, { vac: !!m.prefs.vac, vacAt: m.prefs.vacAt });
+      saveSettings();
+      shareVac(settings.vac, settings.vacAt);
     }
     if (m.prefs && m.prefs.sweepKind && (m.prefs.sweepKindAt || 0) > (settings.sweepKindAt || 0)) {
       Object.assign(settings, { sweepKind: cleanSweepKind(m.prefs.sweepKind), sweepKindAt: m.prefs.sweepKindAt });
@@ -589,9 +611,9 @@ function putStat(m, id, st) {
 }
 const otherSettings = () => load(OTHER_P + 'settings.v1', {});
 const intervalsOf = m => (m === ME ? intervals() : PRESETS[otherSettings().srsPreset] || PRESETS.m);
-// 방학 모드: 하루 새 단어를 '쉬기'(0)로 두면(코치는 꺼져 있을 때) 단어책은 쉬는 중. 이미 배운 단어책 단어의 복습은 간격을 두 배로 늘려 덜 나오게
-// (개수를 자르지 않아서 밀리지 않음. 내 단어·독해에서 막힌 단어는 그대로). 쉬기를 풀면 그다음 복습부터 원래 간격
-const restBook = () => !coachActive() && settings.newPerDay === 0;
+// 방학 모드(학습 계획의 스위치): 단어책 새 단어는 0개(코치보다 먼저. 오늘만 숫자를 눌러 더할 수 있음). 이미 배운 단어책 단어의 복습은 간격을 두 배로 늘려 덜 나오게
+// (개수를 자르지 않아서 밀리지 않음. 내 단어·독해에서 막힌 단어는 그대로). 끄면 그다음 복습부터 원래 간격
+const restBook = () => !!settings.vac;
 const BOOK_REST_X = 2;
 const ivFor = (m, id) => { const iv = intervalsOf(m); return restBook() && gradDays(id) === GRAD_BOOK ? iv.map(d => d * BOOK_REST_X) : iv; };
 function dueLoadOf(m) {
@@ -646,7 +668,7 @@ const isWrongNote = s => isWrongRaw(s) && s.r !== dateStr();
 // 오늘 배운 새 단어 수: 단어책 몫(newToday)과 내 단어 몫(myNewToday)을 따로
 const newToday = () => { const t = dateStr(); return Object.entries(stats).filter(([id, s]) => s && s.f === t && !viaMy(id)).length; };
 const myNewToday = () => { const t = dateStr(); return Object.entries(stats).filter(([id, s]) => s && s.f === t && viaMy(id)).length; };
-const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : coachActive() ? coachDaily() : settings.newPerDay; };
+const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : settings.vac ? 0 : coachActive() ? coachDaily() : settings.newPerDay; };
 const newTargetMine = () => loadDay().newTarget != null; // 오늘 새 단어 수를 맨 위 숫자로 직접 정했는지
 // 오늘의 학습: 단어책 몫(fresh, 내 단어 대기열에 든 단어는 빼고) + 내 단어 몫(mine)
 function todayPlan() {
@@ -772,9 +794,9 @@ function renderHome() {
     settings.kind === 'type' ? '직접 입력' : '4지선다',
     ...(settings.reviewMix ? ['복습 섞어서'] : []),
     ...(!WORD && !settings.showKo ? ['해석 가림'] : []),
-    ...(coachActive()
+    ...(settings.vac ? ['방학 모드 · 단어책 쉼'] : coachActive()
       ? (dateStr() < goalDate() ? [`코치 · 새 단어 ${todayNewTarget()}`, `${fmtDay(lastLearnDay())}까지`] : ['코치 · 총정리 중'])
-      : [settings.newPerDay ? `새 단어 ${settings.newPerDay}` : '방학 모드 · 단어책 쉼', ...(!sweepOn() ? [] : dateStr() < goalDate() ? [`${fmtDay(addDays(goalDate(), -1))}까지`] : ['총정리 중'])]),
+      : [settings.newPerDay ? `새 단어 ${settings.newPerDay}` : '새 단어 쉬는 중', ...(!sweepOn() ? [] : dateStr() < goalDate() ? [`${fmtDay(addDays(goalDate(), -1))}까지`] : ['총정리 중'])]),
   ].join(' · ')));
   $('#wrong-count').textContent = wrong || '';
   $('#btn-wrong').disabled = !wrong || $('#range-practice').classList.contains('dim');
@@ -2093,11 +2115,12 @@ function renderPlan() {
   const go = { day: true, learn: !!learnLeft, review: !!rv.left.length, extra: false }[stage];
   $('#card-today').classList.toggle('go', go);
   // 코치가 켜져 있으면 하루 새 단어 수는 코치가 정함 (버튼은 흐리게)
-  const ca = coachActive();
-  $('#seg-new').classList.toggle('dim', ca);
-  $('#coach-new-note').hidden = !ca && !restBook();
-  if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
-  else if (restBook()) $('#coach-new-note').textContent = '방학 모드 · 단어책 복습은 간격을 두 배로 늘려 덜 나와요';
+  const ca = coachActive(), vac = restBook();
+  $('#seg-new').classList.toggle('dim', ca || vac);
+  $('#coach-new-note').hidden = !ca && !vac;
+  if (vac) $('#coach-new-note').textContent = '방학 모드라 단어책은 쉬어요';
+  else if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
+  $('#opt-vac').checked = vac;
   $('#opt-coach-plan').checked = !!settings.coach;
   renderCoach(stage);
 }
@@ -5489,6 +5512,7 @@ function bind() {
   // 단어 코치: 설정과 학습 계획 화면의 스위치, 일정 다시 짜기, 캐릭터를 누르면 폴짝
   $('#opt-coach').addEventListener('change', e => toggleCoach(e.target.checked));
   $('#opt-coach-plan').addEventListener('change', e => toggleCoach(e.target.checked));
+  $('#opt-vac').addEventListener('change', e => { setVac(e.target.checked); renderPlan(); });
   $('#btn-coach-talk').addEventListener('click', () => talkCoach());
   $('#btn-coach-replan').addEventListener('click', () => { if (planCoach(true)) { coachMoved = false; renderSrs(); toast('남은 날에 맞춰 일정을 다시 짰어요'); } });
   $('#cc-char').addEventListener('click', e => { const c = e.currentTarget; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); });
