@@ -1180,3 +1180,44 @@ test('총정리 두 바퀴: 앞 70%쯤의 날에 전체 한 바퀴, 남은 날�
   assert.deepEqual([r3.total, r3.done, r3.left], [10, 4, 6]);
   assert.deepEqual(r3.items.map(x => x.id), ['30|w4', '30|w5', '30|w6', '30|w7']);
 });
+
+test('총정리 유반의어: 유의어·반의어가 있는 단어는 몫에서 s 문제 하나 더, 2바퀴엔 틀렸던 것만', async () => {
+  const { pickBothSweep, sweepOrder, sweepKey, parseSweepKey, mergeSynRecs, sameSynRecs, addDays } = await import('../js/core.js');
+  const words = Array.from({ length: 4 }, (_, i) => ({ id: `26|s${i}` }));
+  const syn = w => w.id !== '26|s3'; // s3만 유의어가 없음
+  const goal = '2026-11-10', exam = addDays(goal, 2); // 공부하는 날 2일 → 1바퀴만, 하루 2단어
+  const r = pickBothSweep(words, words, { e: {}, w: {}, s: {} }, { today: goal, goal, exam, syn });
+  assert.deepEqual(r.items.map(x => sweepKey(x.m, x.id)), ['w:26|s0', 'e:26|s0', 's:26|s0', 'w:26|s1', 'e:26|s1', 's:26|s1']);
+  // syn을 안 주면 예전처럼 두 문제
+  assert.ok(!pickBothSweep(words, words, { e: {}, w: {} }, { today: goal, goal, exam }).items.some(x => x.m === 's'));
+  // 유반의어만 아직 안 풀었으면 그 단어는 끝난 게 아님
+  const T = d => new Date(`${d}T12:00:00`).getTime();
+  const seen = { st: 1, c: 1, w: 0, due: '2026-12-30', s: T(goal), f: goal };
+  const e = { '26|s0': seen, '26|s1': seen }, w = { '26|s0': seen, '26|s1': seen };
+  const r2 = pickBothSweep(words, words, { e, w, s: { '26|s0': { s: T(goal), st: 1 } } }, { today: addDays(goal, 1), goal, exam, syn });
+  assert.equal(r2.done, 1);
+  assert.deepEqual(r2.items.map(x => sweepKey(x.m, x.id)), ['s:26|s1', 'w:26|s2', 'e:26|s2', 's:26|s2', 'w:26|s3', 'e:26|s3']);
+  // 2바퀴: 단어·예문은 잘 알아도 유반의어를 틀렸으면 유반의어 문제만
+  const many = Array.from({ length: 10 }, (_, i) => ({ id: `27|t${i}` }));
+  const g2 = '2026-11-01', ex2 = addDays(g2, 10), at = T(addDays(g2, 3));
+  const good = { st: 4, c: 3, w: 0, due: '2026-12-30', s: at, f: '2026-10-01' };
+  const E = {}, W = {}, S = {};
+  many.forEach((x, i) => { E[x.id] = good; W[x.id] = good; S[x.id] = { s: at, st: i < 2 ? 0 : 1 }; });
+  const r3 = pickBothSweep(many, many, { e: E, w: W, s: S }, { today: addDays(g2, 7), goal: g2, exam: ex2, syn: () => true });
+  assert.deepEqual([r3.lap, r3.total, r3.size], [2, 2, 1]); // 약한 건 t0·t1의 유반의어뿐, 남은 3일에 나눠 하루 1개
+  assert.deepEqual(r3.items.map(x => sweepKey(x.m, x.id)), ['s:27|t0']);
+  // 순서: 유반의어는 그 묶음의 두 문제가 다 나온 뒤
+  const items = words.flatMap(x => [{ id: x.id, m: 'w' }, { id: x.id, m: 'e' }, { id: x.id, m: 's' }]);
+  const o = sweepOrder(items, { size: 1, rand: () => 0.99 }).map(x => sweepKey(x.m, x.id));
+  assert.equal(o.length, 12);
+  assert.equal(o.map(k => k[0]).join(''), 'eewewsewsws' + 's');
+  for (const x of words) assert.ok(o.indexOf('e:' + x.id) < o.indexOf('s:' + x.id) && o.indexOf('w:' + x.id) < o.indexOf('s:' + x.id));
+  assert.deepEqual(parseSweepKey('s:my|abc'), { m: 's', id: 'my|abc' });
+  assert.equal(sweepKey('s', '26|s0'), 's:26|s0');
+  // 기기끼리: 단어마다 더 나중에 푼 쪽
+  const a = { v: 1, recs: { x: { s: 5, st: 0 }, y: { s: 1, st: 1 } } }, b = { v: 1, recs: { x: { s: 9, st: 1 }, z: { s: 2, st: 0 } } };
+  const m = mergeSynRecs(a, b);
+  assert.deepEqual(m.recs, { x: { s: 9, st: 1 }, y: { s: 1, st: 1 }, z: { s: 2, st: 0 } });
+  assert.ok(sameSynRecs(m, mergeSynRecs(b, a)) && !sameSynRecs(m, a));
+  assert.deepEqual(mergeSynRecs(a, {}).recs, a.recs);
+});

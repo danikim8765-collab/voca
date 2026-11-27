@@ -3,7 +3,7 @@ import {
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, DAY_START_HOUR, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
-  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey, lapOneDays,
+  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey, lapOneDays, SYN_M, mergeSynRecs, sameSynRecs,
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, aiAddPrompt, aiNote, queueOrder, perLimit, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
@@ -34,6 +34,11 @@ const KEY = {
   day: P + 'day.v1', // 오늘의 복습 단어 목록 {date, review: [id]} (시작할 때 정해서 고정)
   bookResetAt: P + 'bookResetAt.v1', // '단어책 새로 시작'한 시각: 그 전 단어책 기록은 버림(내 단어 기록은 그대로)
 };
+// 총정리 유반의어 문제 기록 (두 모드가 같이 씀, 기기끼리는 voca-syn.json): { v: 1, recs: { id: { s: 푼 시각, st: 1 맞힘 · 0 틀림/힌트, c, w } } }
+// 복습 일정은 없고, 이번 바퀴에 풀었는지 · 2바퀴에 다시 볼지(마지막에 틀렸는지)만 셈
+const SYN_KEY = 'voca.syn.v1';
+let synRecs = null;
+const synStore = () => synRecs || (synRecs = (() => { const v = load(SYN_KEY, null); return v && v.recs ? v : { v: 1, recs: {} }; })());
 
 const $ = s => document.querySelector(s);
 const el = (tag, cls, text) => {
@@ -263,7 +268,7 @@ function setSweep(patch, { quiet = false } = {}) {
   sync.soon();
   if (!quiet) renderHome();
 }
-const setSweepKind = (m, v) => setSweep({ [m]: m === 'first' ? (v === 'w' ? 'w' : 'e') : v === 'type' ? 'type' : 'choice' });
+const setSweepKind = (m, v) => setSweep({ [m]: m === 'first' ? (v === 'w' ? 'w' : 'e') : m === SYN_M ? v : v === 'type' ? 'type' : 'choice' });
 function setRest(v) {
   settings.coachRest = cleanRest(v);
   settings.restAt = Date.now();
@@ -363,6 +368,13 @@ const sync = createSync({
     },
     merge: (l, r) => mergeCoachData(l, r),
     same: sameCoachData,
+  }, {
+    // 총정리 유반의어 기록: 단어마다 더 나중에 푼 쪽으로
+    file: 'voca-syn.json',
+    get: () => (Object.keys(synStore().recs).length ? synStore() : null),
+    set: m => { synRecs = mergeSynRecs(m, null); save(SYN_KEY, synRecs); if (current === 'home') renderHome(); },
+    merge: (l, r) => mergeSynRecs(l, r),
+    same: sameSynRecs,
   }],
   // 내 단어 (voca-mywords.json): 단어마다 더 최근에 고친 쪽으로
   mine: {
@@ -611,10 +623,11 @@ let otherMemo = null;
 function otherAll() { if (!otherMemo) otherMemo = load(OTHER_P + 'stats.v1', {}); return otherMemo; }
 const otherStats = () => { const all = otherAll(), out = {}; for (const [k, v] of Object.entries(all)) if (v && !v.del) out[k] = v; return out; };
 let otherLive = null; // otherStats()를 한 번 그린 동안 나눠 씀
-const statsOf = m => (m === ME ? stats : (otherLive || (otherLive = otherStats())));
+const statsOf = m => (m === ME ? stats : m === SYN_M ? synStore().recs : (otherLive || (otherLive = otherStats())));
 const dropOtherMemo = () => { otherMemo = null; otherLive = null; };
 function putStat(m, id, st) {
   if (m === ME) { delete tombs[id]; stats[id] = st; saveStats(); return; }
+  if (m === SYN_M) { synStore().recs[id] = st; save(SYN_KEY, synStore()); return; }
   const all = otherAll();
   all[id] = st;
   save(OTHER_P + 'stats.v1', all);
@@ -636,13 +649,15 @@ function dueLoadOf(m) {
 // 총정리 문제 하나: 'w:<id>' 단어 문제 · 'e:<id>' 예문 문제. 그 밖의 학습은 단어 id 그대로(지금 보는 모드)
 const itemOf = k => { const p = parseSweepKey(k); return { id: p.id, m: p.m || ME }; };
 const seenKey = k => { const { id, m } = itemOf(k); const s = statsOf(m)[id]; return !!(s && s.s && dateStr(s.s) === dateStr()); };
-const sweepPick = () => pickBothSweep(reviewPool(), rangeWords(), { [ME]: stats, [OTHER_M]: statsOf(OTHER_M) }, { today: dateStr(), goal: sweepGoal(), exam: settings.exam, rest: restNow(), lap1: cleanSweepKind(settings.sweepKind).lap1 });
-// 총정리 설정 (두 모드가 같이 씀, sweepKindAt = 바꾼 시각): 단어 문제(처음엔 직접 입력)·예문 문제(처음엔 4지선다), 먼저 풀 문제(first, 처음엔 예문),
+const sweepPick = () => pickBothSweep(reviewPool(), rangeWords(), { [ME]: stats, [OTHER_M]: statsOf(OTHER_M), [SYN_M]: statsOf(SYN_M) }, { today: dateStr(), goal: sweepGoal(), exam: settings.exam, rest: restNow(), lap1: cleanSweepKind(settings.sweepKind).lap1, syn: sweepKind('s') === 'off' ? null : hasSynAnt });
+// 총정리 설정 (두 모드가 같이 씀, sweepKindAt = 바꾼 시각): 단어 문제(처음엔 직접 입력)·예문 문제(처음엔 4지선다),
+// 유반의어 문제(s: 'ex' 예문 밑줄(처음 값) · 'word' 유의어 보고 단어 · 'off' 안 냄, 언제나 4지선다), 먼저 풀 문제(first, 처음엔 예문),
 // 1바퀴 날 수(lap1, 0 = 알아서 앞 70%쯤), 코치와 상의를 마친 총정리(talked = 그때의 총정리 첫날. 코치 탭 느낌표를 끔)
-const SWEEP_KIND0 = { w: 'type', e: 'choice', first: 'e' };
+const SWEEP_KIND0 = { w: 'type', e: 'choice', s: 'ex', first: 'e' };
 const cleanSweepKind = v => ({
   w: v && v.w === 'choice' ? 'choice' : v && v.w === 'type' ? 'type' : SWEEP_KIND0.w,
   e: v && v.e === 'type' ? 'type' : v && v.e === 'choice' ? 'choice' : SWEEP_KIND0.e,
+  s: v && (v.s === 'word' || v.s === 'off') ? v.s : SWEEP_KIND0.s,
   first: v && v.first === 'w' ? 'w' : 'e',
   lap1: v && Number.isFinite(+v.lap1) && +v.lap1 > 0 ? Math.round(+v.lap1) : 0,
   talked: v && /^\d{4}-\d\d-\d\d$/.test(v.talked || '') ? v.talked : '',
@@ -651,7 +666,7 @@ const cleanSweepKind = v => ({
   startExam: v && /^\d{4}-\d\d-\d\d$/.test(v.startExam || '') ? v.startExam : '',
 });
 const sweepFirst = () => cleanSweepKind(settings.sweepKind).first;
-const sweepKind = m => cleanSweepKind(settings.sweepKind)[m === 'w' ? 'w' : 'e'];
+const sweepKind = m => cleanSweepKind(settings.sweepKind)[m === 'w' || m === SYN_M ? m : 'e'];
 // 복습에 나오는 단어: 학습 범위 + 내 단어 + 범위 밖이어도 독해에서 막힌 단어책 단어
 let poolMemo = { rw: null, ver: -1, out: [] };
 function reviewPool() {
@@ -792,6 +807,7 @@ function renderHome() {
   setSeg('#seg-sweep-w', sweepKind('w'));
   setSeg('#seg-sweep-e', sweepKind('e'));
   setSeg('#seg-sweep-first', sweepFirst());
+  setSeg('#seg-sweep-s', sweepKind('s'));
   $('#exam-date').value = settings.exam || '';
   // 시험일 옆 D-n, 목표일(설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
   const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
@@ -822,7 +838,7 @@ function renderHome() {
   sumBox.innerHTML = '';
   const kn = k => (k === 'type' ? '직접 입력' : '4지선다');
   sumBox.append(el('b', 'plan-sum-range', lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`), el('span', 'plan-sum-desc', inSweep() ? [
-    `총정리 중 · 시험 ${fmtDay(settings.exam)}`, `단어 ${kn(sweepKind('w'))}`, `예문 ${kn(sweepKind('e'))}`,
+    `총정리 중 · 시험 ${fmtDay(settings.exam)}`, `단어 ${kn(sweepKind('w'))}`, `예문 ${kn(sweepKind('e'))}`, ...(sweepKind('s') === 'off' ? [] : ['유반의어']),
   ].join(' · ') : [
     settings.kind === 'type' ? '직접 입력' : '4지선다',
     ...(settings.reviewMix ? ['복습 섞어서'] : []),
@@ -2164,12 +2180,13 @@ function renderPlan() {
       const isDueStage = stage === 'due';
       const list = isDueStage ? rv.dueLeft : rv.sweepLeft, all = isDueStage ? rv.dueTotal : rv.sweepTotal;
       shown = list.length;
-      const wN = list.filter(k => itemOf(k).m === 'w').length;
+      const wN = list.filter(k => itemOf(k).m === 'w').length, sN = list.filter(k => itemOf(k).m === SYN_M).length;
       const box = $('#review-info');
       fill(box, [[shown, isDueStage ? (shown < all ? `남은 복습 · 오늘 ${all}` : '복습일 된 문제') : rv.started && shown < all ? `남은 문제 · 오늘 ${all}` : '오늘 문제', isDueStage ? null : editReviewToday]]);
       const split = el('div', 'sw-split');
-      const chips = [el('span', 'kw', `단어 ${wN}`), el('span', 'ke', `예문 ${shown - wN}`)];
+      const chips = [el('span', 'kw', `단어 ${wN}`), el('span', 'ke', `예문 ${shown - wN - sN}`)];
       split.append(...(sweepFirst() === 'w' ? chips : chips.reverse())); // 먼저 푸는 문제를 앞에
+      if (sN) split.appendChild(el('span', 'ks', `유반의어 ${sN}`)); // 유반의어는 언제나 두 문제 뒤에
       box.appendChild(split);
       $('#btn-review').textContent = isDueStage ? (shown ? '복습 시작' : '오늘 복습 완료 ✓') : shown ? '총정리 시작' : '오늘 총정리 몫 완료 ✓';
       const sp = sweepPick();
@@ -2274,7 +2291,7 @@ function renderSweep(on, rv) {
   const total = Math.max(1, sp.total);
   const goalNow = Math.min(sp.total, sp.size * (sp.idx + 1));
   const end = sp.lap === 1 && lap2 ? fmtDay(addDays(lap2, -1)) : '';
-  $('#sr-label').textContent = sp.lap === 1 ? (lap2 ? `1바퀴 · 전체 단어 · ${end}까지` : '범위 한 바퀴 · 두 모드로 다 본 단어') : '2바퀴 · 약한 단어만 한 번 더';
+  $('#sr-label').textContent = sp.lap === 1 ? (lap2 ? `1바퀴 · 전체 단어 · ${end}까지` : '범위 한 바퀴 · 문제를 다 본 단어') : '2바퀴 · 약한 단어만 한 번 더';
   $('#sr-num').textContent = `${sp.done.toLocaleString('ko-KR')} / ${sp.total.toLocaleString('ko-KR')}`;
   $('#sr-fill').style.width = `${(Math.min(sp.done, total) / total) * 100}%`;
   $('#sr-today').style.width = `${(Math.min(total, Math.max(sp.done, goalNow)) / total) * 100}%`;
@@ -2797,16 +2814,21 @@ function synCard(sq, w, answered) {
   return card;
 }
 
-function renderSynQuestion(w) {
+// 총정리의 유반의어 문제(key 's:id')도 이걸로: 문제 방식은 학습 계획의 '총정리 문제 > 유반의어'(예문 밑줄 · 유의어 보고 단어)
+function renderSynQuestion(w, key = w.id) {
+  const inSweepQ = session.mode !== 'syn';
+  const byExample = inSweepQ ? sweepKind('s') !== 'word' : !WORD;
   // 보기는 가까운 DAY 단어에서 (시험지처럼 아는 단어들로), 모자라면 전체에서
   const near = words.filter(x => Math.abs(x.day - w.day) <= 2);
-  const sq = makeSynQuestion(w, near, { byExample: !WORD }) || makeSynQuestion(w, words, { byExample: !WORD });
-  if (!sq) { // 낼 수 없는 단어는 건너뜀
+  const sq = makeSynQuestion(w, near, { byExample }) || makeSynQuestion(w, words, { byExample });
+  if (!sq) { // 낼 수 없는 단어는 건너뜀 (총정리에선 푼 걸로 적어 둬서 내일 또 고르지 않게)
+    if (inSweepQ && session.mode === 'review') putStat(SYN_M, w.id, { s: Date.now(), st: 1, c: 0, w: 0, x: 1 });
     session.queue.splice(session.pos, 1);
     session.total = Math.max(0, session.total - 1);
+    if (inSweepQ) saveSession();
     return session.pos < session.queue.length ? renderQuestion() : finishSession();
   }
-  q = { w, syn: sq, answered: false };
+  q = { w, key, m: inSweepQ ? SYN_M : '', syn: sq, answered: false, usedHint: inSweepQ && hintedId() === key };
   $('#feedback').hidden = true;
   $('#fb-head').hidden = true;
   const prompt = document.querySelector('.q-prompt');
@@ -2817,7 +2839,7 @@ function renderSynQuestion(w) {
   $('#quiz-bar').style.width = `${(session.done.length / session.total) * 100}%`;
   $('#quiz-count').textContent = `${session.done.length}/${session.total}`;
   $('#q-day').textContent = dayTag(w);
-  $('#q-again').hidden = !session.again[w.id];
+  $('#q-again').hidden = !session.again[key];
   const kt = $('#q-kind');
   kt.hidden = false;
   kt.className = `tag kind-tag ${sq.kind}`;
@@ -2885,26 +2907,35 @@ function comingAgain(id) {
   const words = AGAIN_WHEN[kind];
   return `${words[Math.floor(Math.random() * words.length)]} ${k === 1 ? '한 번 더' : '몇 번 더'}`;
 }
-// 유반의어 채점: 기록·동기화 없이 이번 테스트 안에서만 (다시 나오기는 설정의 '틀렸을 때'·'힌트 한 번'대로)
+// 유반의어 채점: 유반의어 테스트는 기록·동기화 없이 이번 테스트 안에서만 (다시 나오기는 설정의 '틀렸을 때'·'힌트 한 번'대로)
+// 총정리의 유반의어 문제는 처음 푼 결과만 유반의어 기록에 적음(복습 일정은 없음. 틀렸거나 힌트를 썼으면 2바퀴에 다시)
 function synAnswer(correct, given, kind) {
   q.answered = true;
-  const id = q.w.id;
+  const id = q.w.id, key = q.key || id, sweepQ = q.m === SYN_M;
+  const first = !session.wrong.includes(key) && !session.hinted.includes(key);
+  if (sweepQ && session.mode === 'review' && first) {
+    const before = statsOf(SYN_M)[id] || {};
+    const ok = !!correct && kind !== 'hint';
+    putStat(SYN_M, id, { s: Date.now(), st: ok ? 1 : 0, c: (before.c || 0) + (ok ? 1 : 0), w: (before.w || 0) + (ok ? 0 : 1) });
+  }
+  if (sweepQ && hintedId() === key) { const d = loadDay(); delete d.hint; save(KEY.day, d); }
   let label;
   if (!correct && kind !== 'hint') {
-    if (!session.wrong.includes(id)) session.wrong.push(id);
-    const when = againLater(id, 'wrong');
-    label = `${kind === 'idk' ? '모름' : '오답'}${when === '내일 다시' ? '' : ` · ${when}`}`; // 유반의어 테스트는 기록이 없어서 '내일'은 안 씀
+    if (!session.wrong.includes(key)) session.wrong.push(key);
+    const when = againLater(key, 'wrong');
+    label = `${kind === 'idk' ? '모름' : '오답'}${when === '내일 다시' ? '' : ` · ${when}`}`; // 유반의어는 복습 일정이 없어서 '내일'은 안 씀
   } else {
-    if (!session.done.includes(id)) session.done.push(id);
+    if (!session.done.includes(key)) session.done.push(key);
     if (kind === 'hint') {
-      const when = againLater(id, 'hint1');
+      const when = againLater(key, 'hint1');
       label = `힌트 사용${when === '내일 다시' ? '' : ` · ${when}`}`;
-      if (!session.hinted.includes(id)) session.hinted.push(id);
-    } else { const more = comingAgain(id); label = more ? `정답! · ${more}` : '정답!'; }
+      if (!session.hinted.includes(key)) session.hinted.push(key);
+    } else { const more = comingAgain(key); label = more ? `정답! · ${more}` : '정답!'; }
   }
   session.pos++;
-  logAct({ sid: sessId(session), id, o: correct ? 'ok' : kind === 'hint' ? 'hint' : 'wrong', ...(kind ? { k: kind } : {}), ...(!correct && typeof given === 'string' && given ? { g: given.slice(0, 30) } : {}) });
+  logAct({ sid: sessId(session), id, ...(sweepQ ? { q: SYN_M } : {}), o: correct ? 'ok' : kind === 'hint' ? 'hint' : 'wrong', ...(kind ? { k: kind } : {}), ...(!correct && typeof given === 'string' && given ? { g: given.slice(0, 30) } : {}) });
   showProgress();
+  if (sweepQ) { sync.soon(); saveSession(); }
   showSynFeedback(correct, given, kind, label);
 }
 
@@ -2977,7 +3008,7 @@ function renderQuestion() {
   const w = byId.get(id);
   if (!w) { session.pos++; return session.pos < session.queue.length ? renderQuestion() : finishSession(); }
   $('#q-kind').hidden = true;
-  if (session.mode === 'syn') return renderSynQuestion(w);
+  if (session.mode === 'syn' || m === SYN_M) return renderSynQuestion(w, key);
   showQKind(m);
   if (m === 'w') return renderWordQuestion(w, key);
   $('#btn-idk').hidden = true;
@@ -3802,7 +3833,7 @@ function showProgress() {
 }
 
 function answer(correct, given, kind) {
-  if (session.mode === 'syn') return synAnswer(correct, given, kind);
+  if (session.mode === 'syn' || (q && q.syn)) return synAnswer(correct, given, kind);
   hideCoach();
   q.answered = true;
   const w = q.w;
@@ -4358,8 +4389,8 @@ function finishSession() {
   $('#res-title').textContent = `${s.label} 끝`;
   $('#res-detail').textContent = '';
   if (s.both && s.mode === 'review') {
-    const wn = wrongKeys.filter(k => itemOf(k).m === 'w').length;
-    $('#res-detail').textContent = `단어 문제 ${wn}개 · 예문 문제 ${wrongKeys.length - wn}개를 틀렸거나 힌트를 봤어요.` + (inSweep() && settings.exam ? ` 시험까지 ${daysBetween(dateStr(), settings.exam)}일!` : '');
+    const wn = wrongKeys.filter(k => itemOf(k).m === 'w').length, sn = wrongKeys.filter(k => itemOf(k).m === SYN_M).length;
+    $('#res-detail').textContent = `단어 문제 ${wn}개 · 예문 문제 ${wrongKeys.length - wn - sn}개${sn ? ` · 유반의어 ${sn}개` : ''}를 틀렸거나 힌트를 봤어요.` + (inSweep() && settings.exam ? ` 시험까지 ${daysBetween(dateStr(), settings.exam)}일!` : '');
     if (!wrongKeys.length) $('#res-detail').textContent = inSweep() && settings.exam ? `시험까지 ${daysBetween(dateStr(), settings.exam)}일!` : '';
   }
   $('#res-total').textContent = s.total;
@@ -5524,6 +5555,7 @@ function bind() {
   onSeg('#seg-sweep-w', v => setSweepKind('w', v));
   onSeg('#seg-sweep-e', v => setSweepKind('e', v));
   onSeg('#seg-sweep-first', v => setSweepKind('first', v));
+  onSeg('#seg-sweep-s', v => setSweepKind('s', v));
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
   $('#today-flow').addEventListener('click', e => {

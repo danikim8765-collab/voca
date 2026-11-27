@@ -825,7 +825,9 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
  *    약한 단어는 날마다 다시 셈(복습으로 단계가 오르면 빠짐). 남은 약한 단어를 남은 날에 나눠 하루 몫
  *  - 공부하는 날이 3일 이하면 1바퀴만
  * 빠진 날 몫은 다음 날 같이. 거기에 두 모드 각각 복습일이 된 단어는 그 모드 문제로.
- *  stats: { e: 예문 모드 기록, w: 단어 모드 기록 }
+ *  stats: { e: 예문 모드 기록, w: 단어 모드 기록, s: 유반의어 기록 }
+ *  syn: 유반의어 문제도 낼 단어인지 (w => bool, 없으면 안 냄). 그런 단어는 몫에서 유반의어 문제(s)도 하나 더.
+ *    유반의어는 복습 일정이 없어서 복습일이 되는 일은 없고, 2바퀴엔 안 풀었거나 마지막에 틀렸던(힌트 포함) 것만 다시
  *  - 그 바퀴에서 그 모드로 이미 본 문제는 빠짐(1바퀴는 두 모드 다 봐야 그 단어를 한 셈)
  *  - 훑는 순서: 두 모드 중 약한 쪽 단계가 높은(둘 다 잘 아는) 단어부터, 두 모드 합쳐 덜 틀린 순, 어느 모드든 안 배운 단어는 뒤 → 약한 단어일수록 시험에 가까이
  *  - 오늘 이미 그 모드로 본 문제는 뺌(목록을 고정해 둔 쪽에서 셈하도록 앱이 따로 거르지만, 미리 보기에서도 맞게)
@@ -834,11 +836,12 @@ export function pickSrsReview(allWords, rangeWords, stats, { today = dateStr(), 
  * 쉬는 날은 몫 없이 복습일 된 문제만. goal·exam이 맞지 않으면 null
  */
 export const SWEEP_MODES = ['w', 'e']; // 몫 안에서 단어마다 두 문제 (푸는 순서는 sweepOrder의 first)
+export const SYN_M = 's'; // 총정리의 유반의어 문제 (유의어·반의어가 있는 단어만, 그 단어의 두 문제 뒤에)
 export const LAP1_SHARE = 0.7; // 1바퀴(전체)에 쓰는 날의 몫
 export const WEAK_STAGE = 3;   // 이 단계 아래면 약한 단어 (기본 간격으로 7일 단계 아래)
 // lap1: 코치와 정한 1바퀴 날 수(0 = 알아서). 공부하는 날 수(d) 안으로 맞춤 (d면 2바퀴 없음)
 export const lapOneDays = (d, lap1 = 0) => (lap1 > 0 ? Math.max(1, Math.min(d, Math.round(lap1))) : d >= 4 ? Math.min(d - 1, Math.max(1, Math.round(d * LAP1_SHARE))) : d);
-export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), goal, exam, rest = [], lap1 = 0 } = {}) {
+export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), goal, exam, rest = [], lap1 = 0, syn = null } = {}) {
   if (!goal || !exam || today < goal || goal >= exam || today >= exam) return null;
   rest = cleanRest(rest);
   const st = (m, id) => normalizeStat((stats[m] || {})[id]);
@@ -854,7 +857,8 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
   const idx = lap === 1 ? k : k - L1;
   const inLap = s => { const d = day(s); return !!d && d >= start && d < today; };
   const inLapNow = s => { const d = day(s); return !!d && d >= start && d <= today; };
-  const weak = s => !s || (!s.g && (s.st || 0) < WEAK_STAGE);
+  // 유반의어(s)는 단계가 없어서 마지막에 맞혔는지(st 1)만 봄
+  const weak = (s, m) => !s || (m === SYN_M ? !s.st : !s.g && (s.st || 0) < WEAK_STAGE);
   // 복습일이 된 문제 (두 모드 각각, 까먹었을 가능성이 큰 것부터)
   const dueOf = m => allWords.filter(w => { const s = st(m, w.id); return isDue(s, today) && s.f !== today && day(s) !== today; })
     .sort(byRisk(today, id => st(m, id)));
@@ -862,9 +866,10 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
   const left = [], miss = (a, b) => ((a ? a.w || 0 : 0) + (b ? b.w || 0 : 0)) / Math.max(1, (a ? (a.c || 0) + (a.w || 0) : 0) + (b ? (b.c || 0) + (b.w || 0) : 0));
   let doneBefore = 0, done = 0;
   rangeWords.forEach((w, i) => {
-    const sm = { w: st('w', w.id), e: st('e', w.id) };
-    // 이번 바퀴에서 볼 모드: 1바퀴는 둘 다, 2바퀴는 약한 쪽만 (이미 이번 바퀴에서 본 모드는 약하든 아니든 한 셈)
-    const want = SWEEP_MODES.filter(m => lap === 1 || weak(sm[m]) || inLapNow(sm[m]));
+    const modes = syn && syn(w) ? [...SWEEP_MODES, SYN_M] : SWEEP_MODES;
+    const sm = { w: st('w', w.id), e: st('e', w.id), s: modes.length > 2 ? (stats[SYN_M] || {})[w.id] : null };
+    // 이번 바퀴에서 볼 모드: 1바퀴는 다, 2바퀴는 약한 쪽만 (이미 이번 바퀴에서 본 모드는 약하든 아니든 한 셈)
+    const want = modes.filter(m => lap === 1 || weak(sm[m], m) || inLapNow(sm[m]));
     if (!want.length) return;
     const need = want.filter(m => !inLap(sm[m]));
     if (want.every(m => inLapNow(sm[m]))) done++;
@@ -878,7 +883,7 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
     const items = [], seen = new Set(), list = [], inList = new Set();
     const add = (w, m, isDue = false) => {
       const key = m + w.id;
-      if (seen.has(key) || day(st(m, w.id)) === today) return;
+      if (seen.has(key) || day(m === SYN_M ? (stats[SYN_M] || {})[w.id] : st(m, w.id)) === today) return;
       seen.add(key);
       items.push(isDue ? { id: w.id, m, due: true } : { id: w.id, m });
       if (!inList.has(w.id)) { inList.add(w.id); list.push(w); }
@@ -896,26 +901,30 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
 // 총정리 문제 순서: 단어 20개씩 묶어서 먼저 풀 모드(first, 처음 값은 예문)의 묶음을 먼저, 그 묶음의 다른 모드 문제는 다음 묶음 뒤에
 // (예문 먼저면 E1 E2 W1 E3 W2 … Wn). 같은 단어의 두 문제가 붙어 나오지 않고(앞 문제가 뒤 문제의 답을 보여 줘서),
 // 중간에 그만둬도 두 모드를 고르게 한 셈. 묶음 안에서는 섞음. items의 단어 순서(급한 것부터)대로 묶음
+// 유반의어 문제(s)는 예문에 밑줄로 그 단어를 보여 줘서, 그 묶음의 두 문제가 다 나온 뒤(한 묶음 더 뒤)에 (E1 E2 W1 E3 W2 S1 … Wn Sn-1 Sn)
 export function sweepOrder(items, { size = 20, rand = Math.random, first = 'e' } = {}) {
   const ids = [], by = new Map();
   for (const it of items) { if (!by.has(it.id)) { by.set(it.id, []); ids.push(it.id); } by.get(it.id).push(it); }
   const blocks = [];
+  const isFirst = x => (first === 'w' ? x.m === 'w' : x.m === 'e' || !x.m);
+  const isSyn = x => x.m === SYN_M;
   for (let i = 0; i < ids.length; i += size) {
     const part = ids.slice(i, i + size).flatMap(id => by.get(id));
-    const isFirst = x => (first === 'w' ? x.m === 'w' : x.m !== 'w');
-    blocks.push({ a: shuffle(part.filter(isFirst), rand), b: shuffle(part.filter(x => !isFirst(x)), rand) });
+    blocks.push({ a: shuffle(part.filter(isFirst), rand), b: shuffle(part.filter(x => !isFirst(x) && !isSyn(x)), rand), c: shuffle(part.filter(isSyn), rand) });
   }
-  const outList = [];
-  blocks.forEach((b, i) => { outList.push(...b.a); if (i) outList.push(...blocks[i - 1].b); });
-  if (blocks.length) outList.push(...blocks[blocks.length - 1].b);
+  const outList = [], n = blocks.length;
+  blocks.forEach((b, i) => { outList.push(...b.a); if (i) outList.push(...blocks[i - 1].b); if (i > 1) outList.push(...blocks[i - 2].c); });
+  if (n) outList.push(...blocks[n - 1].b);
+  if (n > 1) outList.push(...blocks[n - 2].c);
+  if (n) outList.push(...blocks[n - 1].c);
   return outList;
 }
 
-// 총정리 학습의 문제 하나: 'w:<id>' 단어 문제 · 'e:<id>' 예문 문제 (단어 id는 숫자나 'my|'로 시작해서 겹치지 않음)
-export const sweepKey = (m, id) => `${m === 'w' ? 'w' : 'e'}:${id}`;
+// 총정리 학습의 문제 하나: 'w:<id>' 단어 문제 · 'e:<id>' 예문 문제 · 's:<id>' 유반의어 문제 (단어 id는 숫자나 'my|'로 시작해서 겹치지 않음)
+export const sweepKey = (m, id) => `${m === 'w' || m === SYN_M ? m : 'e'}:${id}`;
 export function parseSweepKey(key) {
   const k = String(key);
-  return /^[we]:/.test(k) ? { m: k[0], id: k.slice(2) } : { m: '', id: k };
+  return /^[wes]:/.test(k) ? { m: k[0], id: k.slice(2) } : { m: '', id: k };
 }
 
 // 기억 유지 그래프용: 간격대로 복습했을 때 / 안 했을 때의 기억률(0~1)을 day 0..span에서 step 간격으로
@@ -1922,6 +1931,21 @@ export function makeSynQuestion(target, all, { byExample = true, rand = Math.ran
 
 // 유반의어 문제를 낼 수 있는 단어
 export const hasSynAnt = w => !!(synList(w).length || antList(w).length);
+
+// 총정리 유반의어 기록 { v: 1, recs: { id: { s: 푼 시각, st: 1 맞힘 · 0 틀림/힌트, c, w } } }: 두 모드·기기가 같이 씀.
+// 기기끼리는 단어마다 더 나중에 푼 쪽으로
+export function mergeSynRecs(a, b) {
+  const out = {};
+  for (const src of [a && a.recs, b && b.recs]) {
+    for (const [id, r] of Object.entries(src || {})) if (r && r.s > 0 && (!out[id] || r.s > out[id].s)) out[id] = r;
+  }
+  return { v: 1, recs: out };
+}
+export function sameSynRecs(a, b) {
+  const x = (a && a.recs) || {}, y = (b && b.recs) || {};
+  const kx = Object.keys(x);
+  return kx.length === Object.keys(y).length && kx.every(k => y[k] && y[k].s === x[k].s && y[k].st === x[k].st);
+}
 
 // ---------- 이번 학습에서 다시 나오기 ----------
 // 틀림(wrong) · 힌트 두 번(hint2: 직접 입력에서 정답 보고 따라 씀) · 힌트 한 번(hint1: 힌트 쓰고 맞힘, 부분 정답)마다
