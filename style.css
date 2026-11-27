@@ -1406,6 +1406,17 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .my-row .seg.my-act button { font-size: 13px; }
 .my-bad { margin-top: 10px; font-size: 13px; }
 .my-acts { margin-top: 10px; }
+.my-acts + .my-acts { margin-top: 8px; }
+.my-plan { margin-top: 10px; font-size: 13px; }
+.my-plan .my-plan-t { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+.my-plan .row { margin-top: 10px; }
+.my-ai .my-ai-row { margin-top: 10px; }
+.my-ai .my-shots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.my-ai .my-shots .shot { padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; }
+.my-ai .my-shots img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line, rgba(127,127,127,.3)); }
+.my-ai .my-ai-status { margin-top: 8px; font-size: 13px; }
+.my-alt { margin-top: 14px; }
+.my-alt > summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0; }
 .btn.danger-text { color: var(--bad); }
 
 /* ---------- 총정리 (목표일 ~ 시험 전날, app.js renderSweep) ----------

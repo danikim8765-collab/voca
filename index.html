@@ -384,25 +384,44 @@
     </div>
   </section>
 
-  <!-- 내 단어 올리기: Claude가 노트 사진을 정리해 준 글을 붙여넣거나 파일로 → 단어책과 맞춰 본 걸 확인 → 저장 (app.js openMyImport) -->
+  <!-- 내 단어 올리기: 사진·직접 친 목록을 AI가 정리하거나, Claude 채팅이 정리해 준 글을 붙여넣거나 파일로 → 단어책과 맞춰 본 걸 확인(카드로/노트에만) → 저장 (app.js openMyImport) -->
   <section id="myimport" class="screen">
     <header class="top">
       <button class="icon-btn" id="btn-my-back" aria-label="뒤로" data-icon="back"></button>
       <h1>내 단어 올리기</h1>
       <span></span>
     </header>
-    <div class="card" id="my-step-input">
-      <div class="label">1. Claude에게 정리 부탁하기</div>
-      <p class="muted">노트 사진과 같이 이 문구를 Claude 채팅에 보내면 올릴 수 있는 형식으로 정리해 줘요.</p>
-      <button class="btn secondary" id="btn-my-prompt">부탁 문구 복사</button>
-      <div class="label mt">2. 받은 글 붙여넣기</div>
-      <textarea id="my-text" class="type-input my-text" rows="7" placeholder="Claude가 준 코드 블록을 그대로 붙여넣어요" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
-      <div class="row two">
-        <button class="btn secondary" id="btn-my-file">파일 고르기</button>
-        <button class="btn primary" id="btn-my-check">확인하기</button>
+    <div id="my-step-input">
+      <!-- AI로 바로 정리: 설정 > AI의 키로 (사진은 Claude·Gemini). app.js runMyAi -->
+      <div class="card my-ai">
+        <div class="label">사진으로 올리기</div>
+        <p class="muted">모르는 단어에 동그라미·밑줄을 친 지문이나 손글씨 노트를 찍으면 AI가 단어·지문 문장·뜻을 정리해 줘요.</p>
+        <div class="row two my-ai-row">
+          <button class="btn secondary" id="btn-my-cam">사진 찍기</button>
+          <button class="btn secondary" id="btn-my-pics">사진 고르기</button>
+        </div>
+        <input type="file" id="my-cam" accept="image/*" capture="environment" hidden>
+        <input type="file" id="my-pics" accept="image/*" multiple hidden>
+        <div class="my-shots" id="my-shots" hidden></div>
+        <div class="label mt">단어만 쳐서 올리기</div>
+        <textarea id="my-typed" class="type-input my-text" rows="4" placeholder="한 줄에 하나씩 · 지문 문장을 붙이면 그 뜻으로&#10;mitigate&#10;concede | He conceded that he was wrong." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+        <button class="btn primary stretch my-ai-row" id="btn-my-ai">AI로 정리하기</button>
+        <p class="muted my-ai-status" id="my-ai-status" hidden></p>
       </div>
-      <input type="file" id="my-file" accept=".csv,.txt,text/csv,text/plain" hidden>
-      <p class="muted my-tip">단어책에 이미 있는 단어(studied → study처럼 형태만 달라도)는 새로 만들지 않고, 그 카드를 처음부터 다시 복습해요.</p>
+      <details class="card my-alt">
+        <summary>Claude 채팅에서 받은 글 붙여넣기</summary>
+        <div class="label mt">1. Claude에게 정리 부탁하기</div>
+        <p class="muted">노트 사진과 같이 이 문구를 Claude 채팅에 보내면 올릴 수 있는 형식으로 정리해 줘요.</p>
+        <button class="btn secondary" id="btn-my-prompt">부탁 문구 복사</button>
+        <div class="label mt">2. 받은 글 붙여넣기</div>
+        <textarea id="my-text" class="type-input my-text" rows="7" placeholder="Claude가 준 코드 블록을 그대로 붙여넣어요" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+        <div class="row two">
+          <button class="btn secondary" id="btn-my-file">파일 고르기</button>
+          <button class="btn primary" id="btn-my-check">확인하기</button>
+        </div>
+        <input type="file" id="my-file" accept=".csv,.txt,text/csv,text/plain" hidden>
+        <p class="muted my-tip">단어책에 이미 있는 단어(studied → study처럼 형태만 달라도)는 새로 만들지 않고, 그 카드를 처음부터 다시 복습해요.</p>
+      </details>
     </div>
     <div id="my-preview" hidden>
       <p class="muted list-note" id="my-sum"></p>
@@ -515,7 +534,7 @@
       <div class="label">내 단어</div>
       <p class="muted" id="my-info"></p>
       <div class="opt-row"><span>하루 새 내 단어</span>
-        <div class="seg" id="seg-my-per"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="30">30</button></div></div>
+        <div class="seg" id="seg-my-per"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="30">30</button><button data-v="all">전부</button></div></div>
       <div class="row two">
         <button class="btn primary" id="btn-my-open">내 단어 올리기</button>
         <button class="btn secondary" id="btn-my-prompt2">부탁 문구 복사</button>
