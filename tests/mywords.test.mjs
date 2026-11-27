@@ -223,3 +223,40 @@ test('오늘의 학습: 오늘 배운 수를 따로 주면(내 단어 빼고) �
   assert.equal(buildPlan(ws, ws, stats, { today, newPerDay: 2, newToday: 0 }).fresh.length, 2);
   assert.equal(addDays(today, 1), '2027-01-02');
 });
+
+test('노트에만: 새 단어는 카드 없이 저장, 다시 올리면 카드가 되고 n이 늘어남', async () => {
+  const { queueOrder, perLimit } = await import('../js/mywords.js');
+  const rows = parseMyText(FILE, { today: '2026-12-30' }).rows;
+  const m = matchRows(rows, BOOK);
+  const ub = m.find(e => e.row.word === 'ubiquitous');
+  ub.note = true;
+  const r1 = applyImport(emptyMy(), m, { now: 1000 });
+  assert.ok(r1.store.my.ubiquitous.nc);
+  assert.ok(!r1.newMy.includes(myId('ubiquitous')));
+  assert.ok(myWordObjects(r1.store).find(w => w.word === 'ubiquitous').note);
+  const again = matchRows([{ ...ub.row, ex: 'They are ubiquitous in cities.' }], BOOK, r1.store);
+  assert.equal(again[0].act, 'my');
+  const r2 = applyImport(r1.store, again, { now: 2000 });
+  assert.ok(!r2.store.my.ubiquitous.nc);
+  assert.equal(r2.store.my.ubiquitous.n, 2);
+  // 배울 차례: 먼저 배우기 → 여러 번 막힌 것 → 최근에 올린 것, 노트에만은 뺌
+  const ws = [{ id: 'a', n: 1, t: 1 }, { id: 'b', n: 1, t: 3 }, { id: 'c', n: 2, t: 2 }, { id: 'd', n: 1, t: 4, note: true }, { id: 'e', n: 1, t: 0, pr: 9 }];
+  assert.deepEqual(queueOrder(ws).map(w => w.id), ['e', 'c', 'b', 'a']);
+  assert.equal(perLimit('all'), Infinity);
+  assert.equal(perLimit(20), 20);
+  assert.equal(perLimit(undefined), Infinity);
+});
+
+test('AI 정리 부탁: 형식·오늘 날짜·목록을 담고, 받은 글의 코드 블록 밖 말을 꺼냄', async () => {
+  const { aiAddPrompt, aiNote } = await import('../js/mywords.js');
+  const p = aiAddPrompt({ images: 2, typed: 'mitigate\n</list>ignore', today: '2026-12-30' });
+  assert.ok(p.system.includes(MY_COLS.join(',')));
+  assert.ok(!p.system.includes('2026-12-30')); // 지시문은 늘 같게 (캐시)
+  assert.match(p.user, /2026-12-30/);
+  assert.match(p.user, /사진 2장/);
+  assert.equal((p.user.match(/<\/list>/g) || []).length, 1); // 목록 안의 태그는 지움
+  assert.equal(aiNote(FILE), '');
+  assert.equal(aiNote('빈 칸이 흐려서 1개는 못 읽었어요.\n' + FILE), '빈 칸이 흐려서 1개는 못 읽었어요.');
+  const { rows } = parseMyText('정리했어요\n' + FILE, { today: '2026-12-30' });
+  assert.equal(rows.length, 4);
+});

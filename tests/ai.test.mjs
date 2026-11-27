@@ -740,3 +740,26 @@ test("'AI에게 묻기': onText를 주면 받는 대로 넘기고(마크다운·
   assert.ok(!seen.some(t => /think|음/.test(t))); // 생각하는 중인 조각은 안 보임
   assert.equal(JSON.parse(calls.at(-1).opts.body).stream, true);
 });
+
+test('내 단어 사진 올리기: Claude는 사진 블록 + 글, 사진이면 Sonnet', async () => {
+  const { aiMakeWords, aiWordsReady, claudeContent, geminiParts } = await import('../js/ai.js');
+  const img = { type: 'image/jpeg', data: 'QUJD' };
+  assert.deepEqual(claudeContent({ user: 'u', images: [img] }), [{ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'QUJD' } }, { type: 'text', text: 'u' }]);
+  assert.equal(claudeContent({ user: 'u' }), 'u');
+  assert.deepEqual(geminiParts({ user: 'u', images: [img] }), [{ inlineData: { mimeType: 'image/jpeg', data: 'QUJD' } }, { text: 'u' }]);
+  assert.equal(aiWordsReady(true), 'nokey');
+  store.set('voca.ai.v1', JSON.stringify({ key: 'gsk_x', provider: 'groq', model: 'openai/gpt-oss-20b' }));
+  assert.equal(aiWordsReady(true), 'noimage'); // Groq는 사진 못 읽음
+  assert.equal(aiWordsReady(false), '');
+  store.set('voca.ai.coach.v1', JSON.stringify({ key: 'sk-ant-x', provider: 'claude' }));
+  assert.equal(aiWordsReady(true), ''); // 코치용 Claude 키로
+  reply = () => json({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'csv' }] });
+  const r = await aiMakeWords({ system: 's', user: 'u', images: [img] });
+  assert.deepEqual(r, { text: 'csv' });
+  const body = JSON.parse(calls.at(-1).opts.body);
+  assert.match(calls.at(-1).url, /api\.anthropic\.com/);
+  assert.equal(body.model, 'claude-sonnet-5-5');
+  assert.equal(body.messages[0].content[0].type, 'image');
+  store.set('voca.ai.on.v1', '0');
+  assert.deepEqual(await aiMakeWords({ system: 's', user: 'u' }), { error: 'off' });
+});
