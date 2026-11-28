@@ -1418,6 +1418,8 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
   .home-main > #resume-card { grid-column: 1 / -1; }
   .home-main > #card-today { grid-column: 1; grid-row: span 4; align-self: stretch; min-height: 360px; display: flex; flex-direction: column; padding: 28px; }
   #card-today > [id^="stage-"]:not([hidden]) { margin-top: auto; }
+  /* 총정리 홈: 오른쪽(총정리 계획·약한 단어)이 길어서 오늘 카드를 끝까지 늘이면 빈 주황이 너무 길어짐 → 내용만큼, 스크롤해도 따라오게 */
+  :root[data-view="sweep"] .home-main > #card-today { align-self: start; position: sticky; top: 24px; }
   #card-today .plan b { font-size: 64px; letter-spacing: -2px; }
   #card-today .today-head .label { font-size: 17px; }
   #card-today.go .today-go { font-size: 18px; }
@@ -1553,7 +1555,7 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 :root[data-view="sweep"] .sw-title { display: inline; color: #e8590c; }
 :root[data-view="sweep"] h1 .sub[data-only] { display: none !important; }
 /* 총정리 홈엔 오늘 카드·총정리 계획·약한 단어만 (모드마다 다른 암기 완료·다시 볼 단어·학습 계획 요약은 모드 홈에) */
-:root[data-view="sweep"] .home-main > :not(#resume-card):not(#card-today):not(.sw-only),
+:root[data-view="sweep"] .home-main > :not(#resume-card):not(#card-today):not(.sw-only) { display: none !important; }
 .mode-switch[data-mode="none"] .mode-thumb { opacity: 0; }
 /* 모드 홈: 오늘 카드 대신 총정리 띠 (DAY 단독 학습 카드는 그대로) */
 :root.sweep-on:not([data-view="sweep"]) #card-today:not(.solo-mode) { display: none; }
@@ -1698,3 +1700,13 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 /* 총정리 홈: 이어하기도 불 색 */
 :root[data-view="sweep"] #resume-card #btn-resume { background: linear-gradient(135deg, #ff9a1f 0%, #f76707 55%, #e8430b 100%); color: #fff; }
 :root[data-view="sweep"] #resume-card { box-shadow: inset 0 0 0 2px color-mix(in srgb, #f76707 35%, transparent); }
+
+/* ---------- 옛 주소(github.io)에서 열었을 때 새 주소 안내 (app.js renderMoved) ---------- */
+.moved-card { border: 1.5px solid var(--primary); background: var(--primary-soft); display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.moved-card[hidden] { display: none; }
+.moved-card .mv-text { display: flex; flex-direction: column; gap: 4px; }
+.moved-card .mv-text b { font-size: 16px; color: var(--text); }
+.moved-card .mv-text small { font-size: 13.5px; line-height: 1.5; color: var(--text2); }
+.moved-card .mv-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.moved-card .mv-go { margin: 0; background: var(--primary); color: var(--on-primary); text-decoration: none; }
+.moved-card .mv-url { font-size: 13px; color: var(--muted); }

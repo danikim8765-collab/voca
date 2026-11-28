@@ -209,10 +209,13 @@
 - 꾸미기 값으로 바뀌는 건 토큰으로: 글자 크기 `calc(19px * var(--fz))`, 키 높이 `calc(46px * var(--key-k))`, 강조 색은 `--primary`·`--primary-soft`·`--on-primary`·`--blank`
 - 화면별 CSS는 `body[data-screen="home"]`처럼 (`body:has(...)`는 DOM이 바뀔 때마다 문서 전체를 다시 따져서 느려서 안 씀)
 
-## 배포 (GitHub Pages)
+## 배포 (Cloudflare Pages)
 
-Settings → Pages → Build and deployment → Source: **Deploy from a branch**, Branch: **main** / **(root)** → Save.
-1~2분 뒤 `https://<계정>.github.io/voca/` 에서 열려요.
+앱 주소: **https://lexioative.pages.dev** (2026-11-28부터. GitHub 아이디가 주소에 안 보이게 옮김)
+
+- Cloudflare 대시보드 → Workers & Pages → Pages 프로젝트 `lexioative`가 이 저장소의 **main**에 연결돼 있어요(빌드 명령 없음, 출력 폴더 `/`). main에 머지되면 1~2분 뒤 저절로 올라가요.
+- 예전 주소 `https://<계정>.github.io/voca/`도 GitHub Pages로 그대로 열리지만, 홈·계정 화면 위에 "앱 주소가 바뀌었어요" 안내가 떠요(`js/app.js` `renderMoved`). 진도는 주소마다 따로 저장돼서, 로그인해 둬야 새 주소에서 이어져요.
+- 계정 서버의 `ORIGINS`에 두 주소가 다 들어 있어요(`server/README.md`).
 
 ## 테스트
 

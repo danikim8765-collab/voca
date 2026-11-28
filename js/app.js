@@ -5427,7 +5427,30 @@ function openAccount(mode, extra = {}) {
   };
 }
 
+// ---------- 새 주소 안내 ----------
+// 앱이 GitHub Pages(…github.io)에서 Cloudflare Pages로 옮김. 옛 주소에서 열면 홈·계정 화면 위에 안내.
+// 진도는 주소(사이트)마다 따로 저장돼서, 로그인해 둬야 새 주소에서 이어짐 → 로그인 상태에 맞춰 말을 바꿈
+const MOVED_TO = 'https://lexioative.pages.dev/';
+const onOldHost = /\.github\.io$/i.test(location.hostname);
+function renderMoved() {
+  if (!onOldHost) return;
+  const acct = sync.enabled && sync.kind === 'account';
+  const sub = acct ? `새 주소에서도 ${sync.name ? `'${sync.name}' 계정으로` : '같은 아이디로'} 로그인하면 진도가 그대로 이어져요`
+    : sync.enabled ? '새 주소에선 계정으로 로그인해야 진도가 이어져요. 여기서 먼저 \'계정으로 옮기기\'를 해 주세요'
+    : '진도는 주소마다 따로 저장돼요. 여기서 먼저 로그인(또는 회원가입)해 두면 새 주소에서 그대로 이어져요';
+  for (const box of document.querySelectorAll('.moved-card')) {
+    const text = el('div', 'mv-text');
+    text.append(el('b', null, '앱 주소가 바뀌었어요'), el('small', null, sub));
+    const go = el('a', 'btn small mv-go', '새 주소로 가기');
+    go.href = MOVED_TO + (WORD ? '?m=word' : '');
+    const row = el('div', 'mv-row');
+    row.append(go, el('span', 'mv-url', MOVED_TO.replace(/^https:\/\/|\/$/g, '')));
+    box.replaceChildren(text, row);
+    box.hidden = false;
+  }
+}
 function renderSyncStatus() {
+  renderMoved();
   const badge = $('#sync-badge');
   badge.hidden = !sync.enabled;
   badge.className = 'sync-badge ' + sync.status;
