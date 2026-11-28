@@ -331,6 +331,8 @@ button { cursor: pointer; }
 }
 #settings .opt-row > span { font-size: 16px; font-weight: 500; color: var(--text); }
 .set-row .t { flex: 1 1 auto; min-width: 0; word-break: keep-all; }
+/* 설명(.d)은 이름 칸 너비를 늘리지 않고 그 안에서 줄을 바꿈 → 설명이 길어도 고르기 버튼은 오른쪽에 (예전엔 다음 줄로 밀렸음) */
+.set-row .t .d { width: 0; min-width: 100%; }
 :is(#settings, #plan) .switch-row > span { flex: 1 1 0; min-width: 0; word-break: keep-all; } /* 설명이 길어도 스위치는 오른쪽에 */
 .set-row .d, :is(#settings, #plan) .switch-row .muted, :is(#settings, #plan) .switch-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
 :is(#settings, #plan, #home) .set-row .seg { flex: none; margin: 0 0 0 auto; padding: 3px; gap: 2px; background: var(--fill); border-radius: 10px; }
@@ -1847,6 +1849,12 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 :root[data-skin="neon"] .today.go .today-go .chev { font-size: 20px; margin-top: -1px; }
 :root[data-skin="neon"] .today.go .stretch { background: transparent; box-shadow: none; }
 /* DAY 단독 학습: 오늘 카드 빛을 주황으로 */
+/* 총정리 오늘 카드: 오리지널처럼 시험이 다가올수록 달아오름 (보라 → 주황 → 빨강), 총정리 홈은 언제나 불 색 */
+:root[data-skin="neon"] #card-today.go.sweep-mode[data-heat="near"] { --primary: #b26bff; --neon2: #ff5ac8; --halo: 178, 107, 255; --halo2: 255, 90, 200; --heat: #b26bff; --on-primary: #12051f; }
+:root[data-skin="neon"] #card-today.go.sweep-mode[data-heat="hot"],
+:root[data-skin="neon"][data-view="sweep"] #card-today.go.sweep-mode { --primary: #ff9a3d; --neon2: #ff4f8b; --halo: 255, 154, 61; --halo2: 255, 79, 139; --heat: #ff9a3d; --on-primary: #1c0a00; }
+:root[data-skin="neon"] #card-today.go.sweep-mode[data-heat="last"],
+:root[data-skin="neon"][data-view="sweep"] #card-today.go.sweep-mode[data-heat="last"] { --primary: #ff5a5f; --neon2: #ff3ecf; --halo: 255, 90, 95; --halo2: 255, 62, 207; --heat: #ff5a5f; --on-primary: #1c0306; }
 :root[data-skin="neon"] #card-today.go.solo-mode { --primary: var(--solo); --neon2: #ff5ac8; --halo: 255, 154, 61; --halo2: 255, 90, 200; --on-primary: var(--on-solo); }
 :root[data-skin="neon"] .today.go .stretch:active { background: rgba(var(--halo), .06); }
 :root[data-skin="neon"] .today.go .edit-ic { color: var(--muted); }
