@@ -682,6 +682,36 @@ test('뜻 채점: [ ] 안의 바꿔 쓸 수 있는 말도 정답', async () => {
   assert.equal(gradeMeaning('행복하다', '1. 차별하다 2. 식별[구별]하다', 'easy').score, 0);
 });
 
+test('뜻 채점: 어미에 붙은 오타 · 두 글자 줄기의 모음 오타 (예전엔 어미를 떼고 두 글자가 돼서 못 봐줬음)', async () => {
+  const { gradeMeaning } = await import('../js/core.js');
+  const g = (u, a, s = 'easy') => gradeMeaning(u, a, s);
+  // 어미 안의 오타는 뜻을 안 바꿔서 확실히 봐줌 (maybe 아님) + 바른 철자를 알려 줌
+  assert.equal(g('포기하디', '포기하다').score, 2);
+  assert.equal(g('포기하디', '포기하다').maybe, undefined);
+  assert.deepEqual(g('포기하디', '포기하다').typo, [['포기하디', '포기하다']]);
+  assert.equal(g('명확헌', '명확한, 분명한').score, 2);
+  // 두 글자 줄기의 둘째 글자 모음만 다름: 대개 오타라 봐주되 maybe (AI가 되면 AI에게 물음)
+  for (const [u, a] of [['포귀하다', '포기하다'], ['명학한', '명확한'], ['즐거다', '즐기다'], ['악회되다', '악화되다[시키다]'], ['정학한', '정확한']]) {
+    const r = g(u, a);
+    assert.equal(r.score, 2, u);
+    assert.equal(r.maybe, true, u);
+    assert.equal(r.typo[0][0], u);
+  }
+  // 보통: 갈래마다 하나씩은 그대로, 오타 갈래도 맞은 걸로 셈
+  assert.equal(g('포귀하다, 그만두다', '1. 버리다, 포기하다 2. 그만두다', 'mid').score, 2);
+  assert.equal(g('포귀하다', '1. 버리다, 포기하다 2. 그만두다', 'mid').score, 1);
+  // 받침·첫소리가 다르거나 첫 글자가 다르면 다른 말 (수입 ↔ 수익, 방해 ↔ 방패, 최고 ↔ 최소, 열정 ↔ 결정, 고대 ↔ 기대)
+  for (const [u, a] of [['수익하다', '수입하다'], ['방패하다', '방해하다'], ['최소의', '최고의'], ['결정', '열정'], ['기대의', '고대의'], ['줄기다', '즐기다'], ['섦득하다', '설득하다'], ['설듣하다', '설득하다']]) {
+    assert.equal(g(u, a).score, 0, u);
+  }
+  // 정확히 쓰면 typo 없음
+  assert.equal(g('포기하다', '포기하다').typo, undefined);
+  assert.equal(g('치명적인', '1. 치명적인 2. 결정적인, 중대한').typo, undefined);
+  // 세 글자 넘는 줄기의 오타는 전처럼 확실히 봐줌 (maybe 아님)
+  assert.equal(g('치멍적인', '1. 치명적인 2. 결정적인, 중대한').maybe, undefined);
+  assert.deepEqual(g('치멍적인', '1. 치명적인 2. 결정적인, 중대한').typo, [['치멍적인', '치명적인']]);
+});
+
 test('4지선다 보기: 예문에서 쓰인 품사와 같은 단어부터 (문장 구조로 답이 드러나지 않게)', () => {
   const mk = (word, meaning, ex1ko = '') => ({ id: `1|${word}`, day: 1, word, blank: word, meaning, ex1ko });
   const pool = [
@@ -1179,4 +1209,58 @@ test('총정리 두 바퀴: 앞 70%쯤의 날에 전체 한 바퀴, 남은 날�
   const r3 = pickBothSweep(words, words, { e, w: w3 }, { today: addDays(goal, 8), goal, exam });
   assert.deepEqual([r3.total, r3.done, r3.left], [10, 4, 6]);
   assert.deepEqual(r3.items.map(x => x.id), ['30|w4', '30|w5', '30|w6', '30|w7']);
+});
+
+test('날마다 공부량(loads): 쉬기는 쉬는 날로, 가볍게·몰아서는 그 무게로 총정리 몫을 나눔', async () => {
+  const { pickBothSweep, withLoads, cleanLoads, isRestDay, studyDays, dayWeight, weightBetween, cleanRest } = await import('../js/core.js');
+  // 정리: 날짜와 무게만 남김
+  assert.deepEqual(cleanLoads({ '2026-12-01': 0.5, '2026-12-02': 3, 'x': 1, '2026-11-01': 0 }, '2026-11-28'), { '2026-12-01': 0.5 });
+  const r = withLoads([6], { '2026-12-01': 0, '2026-12-05': 1 }); // 12/5는 토요일인데 보통으로 정함
+  assert.equal(isRestDay('2026-12-01', r), true);
+  assert.equal(isRestDay('2026-12-05', r), false);
+  assert.equal(isRestDay('2026-12-12', r), true); // 다른 토요일은 그대로 쉼
+  assert.deepEqual(cleanRest(r).loads, r.loads); // 정리해도 붙어 있음
+  assert.equal(studyDays('2026-11-30', '2026-12-07', r), 6); // 7일 중 12/1 하루만 쉼 (12/5 토는 공부)
+  assert.equal(dayWeight('2026-12-02', withLoads([], { '2026-12-02': 1.5 })), 1.5);
+  assert.equal(weightBetween('2026-12-01', '2026-12-04', withLoads([], { '2026-12-01': 0.5, '2026-12-03': 1.5 })), 3);
+
+  // 총정리 12단어 · 4일(화~금). 정한 게 없으면 하루 3단어씩
+  const words = Array.from({ length: 12 }, (_, i) => ({ id: `26|a${i}` }));
+  const opt = { goal: '2026-12-01', exam: '2026-12-05', lap1: 4 };
+  const quota = (today, rest) => pickBothSweep(words, words, { e: {}, w: {} }, { ...opt, today, rest }).words.length;
+  assert.equal(quota('2026-12-01', []), 3);
+  // 화·수 가볍게(0.5), 목 몰아서(1.5), 금 보통 → 무게 합 3.5: 화 12×0.5/3.5 → 2개, 목까지 누적 12×2.5/3.5 → 9개
+  const L = withLoads([], { '2026-12-01': 0.5, '2026-12-02': 0.5, '2026-12-03': 1.5 });
+  assert.equal(quota('2026-12-01', L), 2);
+  // 쉬기로 정한 날은 몫 없음
+  const R = pickBothSweep(words, words, { e: {}, w: {} }, { ...opt, today: '2026-12-02', rest: withLoads([], { '2026-12-02': 0 }) });
+  assert.equal(R.rest, true);
+  assert.equal(R.words.length, 0);
+});
+
+test('dayForecast: 코치 제안 카드의 날짜 칸 (배우는 날 · 총정리 · 시험)', async () => {
+  const { dayForecast, withLoads } = await import('../js/core.js');
+  // 배우는 날 3일(30단어) → 총정리 4일(12단어) → 시험
+  const base = { today: '2026-11-28', exam: '2026-12-05', goal: '2026-12-01', coach: true, learnLeft: 30, total: 12, lap1: 4, weak: 0 };
+  const f = dayForecast({ ...base, rest: [] });
+  assert.deepEqual(f.map(x => x.kind), ['learn', 'learn', 'learn', 'sweep', 'sweep', 'sweep', 'sweep', 'exam']);
+  assert.deepEqual(f.slice(0, 3).map(x => x.words), [10, 10, 10]);
+  assert.deepEqual(f.slice(3, 7).map(x => x.problems), [6, 6, 6, 6]); // 하루 3단어 × 두 문제
+  // 일요일(11/29) 가볍게 → 배우는 날 무게 2.5: 토 30×1/2.5 = 12, 일 18×0.5/1.5 = 6, 월 12
+  const g = dayForecast({ ...base, rest: withLoads([], { '2026-11-29': 0.5, '2026-12-03': 1.5 }) });
+  assert.deepEqual(g.slice(0, 3).map(x => x.words), [12, 6, 12]);
+  assert.equal(g.slice(3, 7).reduce((n, x) => n + x.words, 0), 12); // 총정리는 다 나눠짐
+  assert.ok(g[5].words > g[3].words); // 몰아서 날이 더 많음
+  // 코치가 아니면 하루 새 단어 수 × 무게
+  const h = dayForecast({ ...base, coach: false, perDay: 20, learnLeft: 100, rest: withLoads([], { '2026-11-29': 0.5 }) });
+  assert.deepEqual(h.slice(0, 3).map(x => x.words), [20, 10, 20]);
+});
+
+test('코치가 부를 이름(who)은 기기끼리 더 최근에 정한 쪽으로, 모두 지우기와 상관없이 남음', async () => {
+  const { mergeCoachChat } = await import('../js/core.js');
+  const a = { items: [], notes: [], who: { name: '민지', at: 5 } };
+  const b = { items: [], notes: [], who: { name: '', skip: 1, at: 3 }, wiped: 10 };
+  assert.deepEqual(mergeCoachChat(a, b).who, { name: '민지', at: 5 });
+  assert.deepEqual(mergeCoachChat(b, a).who, { name: '민지', at: 5 });
+  assert.equal(mergeCoachChat({ items: [] }, { items: [] }).who, undefined);
 });

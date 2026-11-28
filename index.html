@@ -16,6 +16,15 @@
       document.documentElement.setAttribute('data-mode', word ? 'word' : 'ex');
       // 컴퓨터(마우스·키보드): 화면 키보드 없이 실제 키보드로, 넓으면 두 칸 배치
       if (window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) document.documentElement.classList.add('desk');
+      // 총정리 기간이면 첫 화면부터 총정리 홈 (?v=mode = 모드 홈을 골라서 들어옴). 기간은 앱이 저장해 둔 값으로 미리 짐작하고, 앱이 뜨면 다시 맞춤 (app.js applyView)
+      try {
+        var sp = (localStorage.getItem('voca.sweep.span') || '').split('|'), t = new Date(Date.now() - 4 * 3600e3);
+        var today = t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2);
+        if (sp[0] && sp[1] && sp[0] <= today && today < sp[1]) {
+          document.documentElement.classList.add('sweep-on');
+          if (!/[?&]v=mode(&|$)/.test(location.search)) document.documentElement.setAttribute('data-view', 'sweep');
+        }
+      } catch (e) {}
       if (word) {
         document.title = 'VOCA 단어 암기';
         document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f7f6f1');
@@ -47,7 +56,7 @@
   <!-- 홈 -->
   <section id="home" class="screen active">
     <header class="top">
-      <h1>VOCA <span class="sub" data-only="ex">빈칸 암기</span><span class="sub" data-only="word">단어 암기</span></h1>
+      <h1>VOCA <span class="sub" data-only="ex">빈칸 암기</span><span class="sub" data-only="word">단어 암기</span><span class="sub sw-title">총정리</span></h1>
       <span class="head-right"><span id="sync-badge" class="sync-badge" hidden></span><nav class="mode-switch" aria-label="학습 모드"><span class="mode-thumb" aria-hidden="true"></span><a href="./" data-m="ex" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="./?m=word" data-m="wd" aria-label="단어 (뜻 암기)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav></span>
     </header>
 
@@ -72,6 +81,7 @@
         <div class="today-head">
           <div class="label" id="today-title">오늘의 학습</div>
           <span class="tag" id="exam-dday" hidden></span>
+          <span class="tag load-tag" id="load-tag" hidden></span>
           <button class="btn ghost small" id="btn-solo-close" hidden>정규 학습으로</button>
         </div>
         <div class="flow" id="today-flow"><span data-s="learn">학습</span><i>›</i><span data-s="review">복습</span><i>›</i><span data-s="extra">더 하기</span></div>
@@ -116,6 +126,31 @@
           </div>
         </div>
         <div class="muted" id="today-note"></div>
+      </div>
+
+      <!-- 총정리 기간에 모드 홈(예문·단어)에서: 오늘 몫은 총정리 홈에 있다고 알려 줌 (누르면 총정리 홈) -->
+      <button class="card sweep-banner" id="sweep-banner" type="button">
+        <svg class="sb-fire" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c.6 3.2 2.6 4.9 4.3 6.8 1.6 1.8 2.7 3.6 2.7 6.1A7 7 0 0 1 12 22a7 7 0 0 1-7-6.6c0-2.6 1.3-4.3 2.6-5.7.2 1.6.9 2.9 2.1 3.5-.3-3.9.9-7.6 2.3-10.7Z" fill="#ffe066"/><path d="M12 12.2c.4 1.7 1.6 2.6 2.4 3.6.6.7 1 1.5 1 2.5a3.4 3.4 0 0 1-6.8 0c0-1.5.8-2.6 1.6-3.4.1.7.5 1.3 1 1.6-.1-1.6.2-3 .8-4.3Z" fill="#fff9db"/></svg>
+        <span class="sb-text"><b>총정리 기간이에요</b><small id="sweep-banner-sub">오늘 몫은 총정리 홈에서</small></span>
+        <i class="chev" aria-hidden="true">›</i>
+      </button>
+
+      <!-- 총정리 홈에만: 총정리 계획(학습 계획 화면에서 총정리에 필요한 것만) · 약한 단어 (app.js renderSweepHome) -->
+      <div class="card sw-only" id="sw-plan">
+        <div class="label">총정리 계획</div>
+        <div class="swp-rows">
+          <div class="swp-row"><span>범위</span><b id="swp-range"></b></div>
+          <div class="swp-row"><span>시험</span><b id="swp-exam"></b></div>
+          <div class="swp-row"><span>총정리</span><b id="swp-span"></b></div>
+        </div>
+        <div id="swp-kinds-slot"></div>
+        <button class="btn ghost small swp-more" id="btn-swp-more" type="button">범위·시험일·목표일 바꾸기 ›</button>
+      </div>
+      <div class="card sw-only" id="sw-weak">
+        <div class="label">약한 단어</div>
+        <div class="prog-num"><b id="sww-n">0</b><span id="sww-of"></span></div>
+        <div class="sww-split" id="sww-split"></div>
+        <p class="muted sww-note" id="sww-note"></p>
       </div>
 
       <!-- 학습 계획 요약: 누르면 학습 계획 화면(범위·문제 방식·하루 개수·시험일) -->
@@ -246,6 +281,13 @@
             <button data-v="choice">4지선다</button>
           </div>
         </div>
+        <div class="set-row" id="row-sweep-strict"><span class="t">단어 채점<small class="d">직접 입력한 뜻을 얼마나 엄하게</small></span>
+          <div class="seg" id="seg-sweep-strict">
+            <button data-v="easy">느슨</button>
+            <button data-v="mid">보통</button>
+            <button data-v="hard">엄격</button>
+          </div>
+        </div>
         <div class="set-row"><span class="t">예문 빈칸<small class="d">예문에 들어갈 단어</small></span>
           <div class="seg" id="seg-sweep-e">
             <button data-v="choice">4지선다</button>
@@ -302,7 +344,7 @@
 
     <div class="sheet" id="feedback" hidden>
       <div class="sheet-inner">
-        <div class="grab"></div>
+        <button class="grab" id="fb-grab" type="button" aria-label="정답 칸 접기·펼치기" title="아래로 끌면 접혀요" aria-expanded="true"></button>
         <div class="fb-word">
           <div>
             <div class="w" id="fb-word"></div>
@@ -630,10 +672,16 @@
       </div>
     </div>
     <div class="card" id="set-sync" data-tab="etc">
-      <div class="label">다른 기기와 진도 맞추기</div>
+      <div class="label">계정 · 다른 기기와 진도 맞추기</div>
       <div id="sync-off">
-        <p class="muted">폰과 아이패드에서 같은 진도로 하고 싶을 때만 쓰면 돼요.</p>
-        <details class="set-more"><summary>연결하는 방법</summary>
+        <p class="muted">계정에 로그인하면 폰·패드·컴퓨터의 진도가 맞춰져요.</p>
+        <!-- 계정 서버(js/account.js ACCOUNT_API_DEFAULT)가 준비됐을 때만 -->
+        <div id="acct-ready" class="row two">
+          <button class="btn primary" id="btn-acct-login" type="button">로그인</button>
+          <button class="btn secondary" id="btn-acct-signup" type="button">회원가입</button>
+        </div>
+        <p class="muted" id="acct-wait" hidden>계정 서버를 준비하고 있어요. 그동안은 아래 GitHub 연결로 맞출 수 있어요.</p>
+        <details class="set-more"><summary>GitHub 토큰으로 연결 (예전 방식)</summary>
         <ol class="steps">
           <li><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=VOCA%20sync" target="_blank" rel="noopener">토큰 만들기 페이지 열기</a> (GitHub 로그인 필요)</li>
           <li><b>Expiration</b>을 <b>No expiration</b>으로 바꾸고 맨 아래 <b>Generate token</b> 누르기 (gist는 이미 체크돼 있어요)</li>
@@ -648,10 +696,16 @@
         <p id="sync-info" class="sync-info"></p>
         <div class="row two">
           <button class="btn secondary" id="btn-sync-now">지금 동기화</button>
-          <button class="btn secondary" id="btn-sync-copy">토큰 복사</button>
+          <button class="btn secondary" id="btn-sync-copy" data-only-kind="gist">토큰 복사</button>
+          <button class="btn secondary" id="btn-acct-pw" type="button" data-only-kind="account">비밀번호 바꾸기</button>
         </div>
-        <p class="muted">토큰은 비밀번호처럼 다른 사람에게 보내지 마세요.</p>
-        <button class="btn ghost small" id="btn-sync-off">연결 끊기</button>
+        <p class="muted" data-only-kind="gist">토큰은 비밀번호처럼 다른 사람에게 보내지 마세요.</p>
+        <!-- GitHub로 맞추던 기기: 계정 서버가 준비됐으면 계정으로 옮기기 (진도는 이 기기 것을 그대로 올림) -->
+        <button class="btn primary" id="btn-acct-move" type="button" data-only-kind="gist" hidden>계정으로 옮기기</button>
+        <div class="row acct-end">
+          <button class="btn ghost small" id="btn-sync-off">연결 끊기</button>
+          <button class="btn ghost small danger-text" id="btn-acct-delete" type="button" data-only-kind="account">계정 지우기</button>
+        </div>
       </div>
     </div>
     <div class="card" id="set-data" data-tab="etc">
@@ -759,6 +813,33 @@
     </div>
   </div>
 
+  <!-- 계정: 로그인 · 회원가입 · 비밀번호 찾기(복구 코드) · 비밀번호 바꾸기 · 계정 지우기 · 복구 코드 보여 주기 (app.js openAccount) -->
+  <div class="dialog" id="acct" role="dialog" aria-modal="true" aria-labelledby="ac-title" hidden>
+    <form class="dialog-card acct-card" id="ac-form" novalidate>
+      <div class="dlg-title" id="ac-title"></div>
+      <div class="dlg-body" id="ac-sub" hidden></div>
+      <label class="ac-field" data-f="id"><span>아이디</span><input id="ac-id" class="type-input" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="20" placeholder="영어 소문자·숫자·_ 3~20자"></label>
+      <label class="ac-field" data-f="name"><span>이름</span><input id="ac-name" class="type-input" autocomplete="name" maxlength="20" placeholder="친구들이 알아볼 이름"></label>
+      <label class="ac-field" data-f="old"><span>지금 비밀번호</span><input id="ac-old" class="type-input" type="password" autocomplete="current-password"></label>
+      <label class="ac-field" data-f="rec"><span>복구 코드</span><input id="ac-rec" class="type-input" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX"></label>
+      <label class="ac-field" data-f="pw"><span id="ac-pw-label">비밀번호</span><input id="ac-pw" class="type-input" type="password" autocomplete="current-password" placeholder="6자 이상"></label>
+      <label class="ac-field" data-f="pw2"><span>비밀번호 확인</span><input id="ac-pw2" class="type-input" type="password" autocomplete="new-password"></label>
+      <label class="ac-field" data-f="invite"><span>초대 코드</span><input id="ac-invite" class="type-input" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="받은 초대 코드"></label>
+      <div class="ac-code" id="ac-code" hidden></div>
+      <button class="link-btn ac-copy" id="ac-copy" type="button" hidden>복구 코드 복사하기</button>
+      <p class="ac-err" id="ac-err" role="alert" hidden></p>
+      <div class="dlg-actions">
+        <button class="btn dlg-cancel" id="ac-cancel" type="button">취소</button>
+        <button class="btn dlg-ok" id="ac-ok" type="submit">확인</button>
+      </div>
+      <div class="ac-links">
+        <button class="link-btn" id="ac-to-recover" type="button">비밀번호를 잊었어요</button>
+        <button class="link-btn" id="ac-to-signup" type="button">계정이 없어요 · 회원가입</button>
+        <button class="link-btn" id="ac-to-login" type="button">계정이 있어요 · 로그인</button>
+      </div>
+    </form>
+  </div>
+
   <div class="dialog" id="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-body" hidden>
     <div class="dialog-card">
       <div class="dlg-icon" id="dlg-icon" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 1.8h7a2 2 0 0 0 2-1.8l1-12M9 7V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V7"/></svg></div>
@@ -795,6 +876,9 @@
   var nav = document.querySelector('.mode-switch');
   if (!nav) return;
   var self = document.documentElement.getAttribute('data-mode') === 'word' ? 'wd' : 'ex';
+  var root = document.documentElement;
+  // 총정리 홈에선 둘 다 안 눌린 채 (none). 앱이 화면을 바꾸면 window.vocaNav.sync()로 다시 맞춤
+  var cur = function () { return root.getAttribute('data-view') === 'sweep' ? 'none' : self; };
   var smooth = !!window.CSSViewTransitionRule && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   function set(m) {
     nav.setAttribute('data-mode', m);
@@ -804,18 +888,25 @@
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
   }
-  set(self);
+  set(cur());
+  window.vocaNav = { sync: function () { set(cur()); } };
   nav.addEventListener('click', function (e) {
     var a = e.target.closest('a');
     if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
     e.preventDefault();
-    if (a.getAttribute('data-m') === self) return;
-    if (smooth) { location.href = a.href; return; }
+    if (a.getAttribute('data-m') === self) {
+      // 총정리 홈에서 지금 페이지의 모드를 누르면 페이지를 바꾸지 않고 그 모드 홈으로 (app.js가 받음)
+      if (cur() === 'none') { set(self); window.dispatchEvent(new CustomEvent('voca:modehome')); }
+      return;
+    }
+    // 총정리 기간에 다른 모드로 가면 그 모드의 홈으로 (총정리 홈 말고)
+    var href = a.href + (root.classList.contains('sweep-on') ? (a.href.indexOf('?') < 0 ? '?' : '&') + 'v=mode' : '');
+    if (smooth) { location.href = href; return; }
     set(a.getAttribute('data-m'));
-    setTimeout(function () { location.href = a.href; }, 170);
+    setTimeout(function () { location.href = href; }, 170);
   });
   // 뒤로가기로 돌아왔을 때(페이지 캐시) 흰 칸을 원래 자리로
-  window.addEventListener('pageshow', function (e) { if (e.persisted) set(self); });
+  window.addEventListener('pageshow', function (e) { if (e.persisted) set(cur()); });
 })();
 </script>
 </body>
