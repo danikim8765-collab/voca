@@ -830,7 +830,7 @@ function renderHome() {
   setSeg('#seg-sweep-strict', sweepStrict());
   $('#row-sweep-strict').hidden = sweepKind('w') !== 'type'; // 단어 문제가 4지선다면 채점할 게 없음
   $('#exam-date').value = settings.exam || '';
-  // 시험일 옆 D-n, 목표일(설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
+  // 시험일 옆 D-n, 목표일(코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
   const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   $('#exam-dn').textContent = dn == null ? '' : dn > 0 ? `D-${dn}` : dn === 0 ? 'D-day' : '지났어요';
   $('#exam-dn').hidden = dn == null;
@@ -3027,6 +3027,8 @@ function settingsRows() {
   };
   detail('다시 나올 때', [$('#again-preset'), $('#again-rows')], () => { const on = $('#again-preset button.on'); return on ? txt(on) : '직접 고름'; });
   detail('단축키 바꾸기', [$('#key-rows'), $('#btn-keys-reset')], () => '');
+  // 복습 간격: 한 줄(고른 간격 이름) → 누르면 기억 유지 그래프와 다섯 간격을 시트에서
+  detail('복습 간격', [$('#srs-opts')], () => { const on = $('#srs-presets .preset.on .p-name'); return on ? on.textContent : ''; });
   // 2) 이름표 + 고르기 버튼 → 한 줄
   for (const seg of document.querySelectorAll('#settings .card .seg')) {
     if (seg.closest('.in-sheet') || seg.id === 'again-preset') continue;
@@ -5512,7 +5514,7 @@ function renderSyncStatus() {
   }
 }
 
-// 목표일 칸 (학습 계획 화면·설정 > 복습, 시험일 위): 새 단어를 보는 마지막 날을 고름. 저장은 그다음 날(총정리를 시작하는 날)로.
+// 목표일 칸 (학습 계획 화면, 시험일 위): 새 단어를 보는 마지막 날을 고름. 저장은 그다음 날(총정리를 시작하는 날)로.
 // 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고, 바꾸면 그날에 맞춰 총정리 날 수를 정해 다시 짬(하루 개수 고정은 풀림). 비우면 코치가 다시 정함
 const goalShown = () => { const g = goalDate(); return g ? addDays(g, -1) : ''; };
 function fillGoalInput(input) {
@@ -5675,7 +5677,7 @@ function tone(notes, vol = .06, type = 'sine') {
   // 잠들어 있었으면 깨어난 다음에 (멈춘 시계에 맞춰 놓으면 깨어날 때 한꺼번에 밀려서 남)
   if (ctx.state === 'running') play(); else ctx.resume().then(play, () => {});
 }
-// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 소리). test = 스위치를 켤 때 한 번 들려 주기
+// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 화면 · 소리). test = 스위치를 켤 때 한 번 들려 주기
 function answerFx(state, test = false) {
   const lk = LOOK.get();
   if (state === 'ok' && (lk.sound || test)) tone([[880, .09], [1320, .16]], .07);
@@ -6115,7 +6117,7 @@ function exportMy() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
-// 설정 > 복습 > 내 단어 (두 모드 공용 설정, 기기끼리 맞춤)
+// 내 단어 (학습 계획 '하루 새 내 단어', 두 모드 공용 설정, 기기끼리 맞춤)
 function renderMySettings() {
   const c = cfg();
   setSeg('#seg-my-per', String(c.per));
