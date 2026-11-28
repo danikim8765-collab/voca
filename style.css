@@ -110,7 +110,7 @@ body::before {
 /* 홈 화면은 단색 (퀴즈로 들어가면 그라데이션이 서서히 나타남). body[data-screen]은 app.js show()가 정함
    (body:has(...)는 DOM이 바뀔 때마다 문서 전체를 다시 따져서 느림) */
 body[data-screen="home"]::before, body[data-screen="settings"]::before, body[data-screen="days"]::before,
-body[data-screen="list"]::before, body[data-screen="coach"]::before { opacity: 0; } /* 아래 탭 화면은 바탕색 그대로 */
+body[data-screen="list"]::before, body[data-screen="coach"]::before, body[data-screen="account"]::before { opacity: 0; } /* 아래 탭 화면은 바탕색 그대로 */
 @media (prefers-reduced-motion: reduce) { body::before { transition: none; } }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
@@ -373,9 +373,6 @@ button { cursor: pointer; }
 #settings .set-tabs { gap: 20px; padding: 0 4px; border-radius: 0; background: var(--bg); box-shadow: 0 0 0 8px var(--bg), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px var(--bg), inset 0 -1px 0 var(--line); }
 #settings .set-tabs button { flex: none; white-space: nowrap; padding: 10px 0 11px; border-radius: 0; font-size: 16px; font-weight: 700; color: var(--muted); background: none; }
 #settings .set-tabs button.on { background: none; color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
-/* 홈 맨 아래 고급 기능 스위치 */
-#home-adv { margin-top: 28px; }
-.desk #home-adv { grid-column: 1 / -1; }
 .x-desc { display: block; margin-top: 2px; font-size: 13px; font-weight: 400; color: var(--muted); }
 /* 설정: 동기화 연결 방법 같은 긴 설명은 접어 둠 */
 .set-more { margin-top: 12px; }
@@ -1424,7 +1421,6 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
   #card-today .plan b { font-size: 64px; letter-spacing: -2px; }
   #card-today .today-head .label { font-size: 17px; }
   #card-today.go .today-go { font-size: 18px; }
-  #home-adv { margin-top: 16px; }
 }
 
 /* ---------- 내 단어 (app.js openMyImport · wordItem) ---------- */
@@ -1558,7 +1554,6 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 :root[data-view="sweep"] h1 .sub[data-only] { display: none !important; }
 /* 총정리 홈엔 오늘 카드·총정리 계획·약한 단어만 (모드마다 다른 암기 완료·다시 볼 단어·학습 계획 요약은 모드 홈에) */
 :root[data-view="sweep"] .home-main > :not(#resume-card):not(#card-today):not(.sw-only),
-:root[data-view="sweep"] #home-adv { display: none !important; }
 .mode-switch[data-mode="none"] .mode-thumb { opacity: 0; }
 /* 모드 홈: 오늘 카드 대신 총정리 띠 (DAY 단독 학습 카드는 그대로) */
 :root.sweep-on:not([data-view="sweep"]) #card-today:not(.solo-mode) { display: none; }
@@ -1684,3 +1679,22 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .ac-links .link-btn { min-height: 32px; }
 #set-sync .acct-end { justify-content: space-between; margin-top: 4px; }
 #btn-acct-move { width: 100%; margin-top: 8px; }
+
+/* ---------- 계정 화면 · 홈 위 사람 단추 (app.js openAccountScreen) ---------- */
+.acct-btn { position: relative; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: var(--fill); color: var(--text2); flex: none; cursor: pointer; }
+.acct-btn svg { width: 19px; height: 19px; }
+.acct-btn.on { background: var(--primary); color: var(--on-primary); }
+.acct-btn.on svg { display: none; }
+.acct-btn b { font-size: 14px; font-weight: 800; line-height: 1; }
+.acct-welcome { text-align: center; padding: 24px 8px 8px; }
+.aw-logo { font-size: 40px; font-weight: 900; letter-spacing: -1px; }
+.aw-lead { margin: 10px 0 18px; color: var(--text2); font-size: 15px; line-height: 1.6; }
+#account #set-sync #acct-ready .btn { min-height: 52px; font-size: 16px; }
+.acct-skip { text-align: center; margin: 18px 0 0; font-size: 14px; }
+.acct-skip .link-btn { color: var(--muted); font-weight: 600; }
+.ac-keep { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text2); cursor: pointer; }
+.ac-keep input { width: 18px; height: 18px; accent-color: var(--primary); margin: 0; }
+.ac-keep small { color: var(--muted); font-size: 12px; }
+/* 총정리 홈: 이어하기도 불 색 */
+:root[data-view="sweep"] #resume-card #btn-resume { background: linear-gradient(135deg, #ff9a1f 0%, #f76707 55%, #e8430b 100%); color: #fff; }
+:root[data-view="sweep"] #resume-card { box-shadow: inset 0 0 0 2px color-mix(in srgb, #f76707 35%, transparent); }

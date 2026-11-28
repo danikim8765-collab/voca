@@ -57,7 +57,7 @@
   <section id="home" class="screen active">
     <header class="top">
       <h1>VOCA <span class="sub" data-only="ex">빈칸 암기</span><span class="sub" data-only="word">단어 암기</span><span class="sub sw-title">총정리</span></h1>
-      <span class="head-right"><span id="sync-badge" class="sync-badge" hidden></span><nav class="mode-switch" aria-label="학습 모드"><span class="mode-thumb" aria-hidden="true"></span><a href="./" data-m="ex" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="./?m=word" data-m="wd" aria-label="단어 (뜻 암기)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav></span>
+      <span class="head-right"><span id="sync-badge" class="sync-badge" hidden></span><button class="acct-btn" id="btn-account" type="button" aria-label="계정" title="계정"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c.8-3.6 3.6-5.6 7-5.6s6.2 2 7 5.6"/></svg><b id="acct-initial" hidden></b></button><nav class="mode-switch" aria-label="학습 모드"><span class="mode-thumb" aria-hidden="true"></span><a href="./" data-m="ex" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="./?m=word" data-m="wd" aria-label="단어 (뜻 암기)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav></span>
     </header>
 
     <div id="load-status" class="status">단어를 불러오는 중…</div>
@@ -180,10 +180,6 @@
       </div>
 
      </div>
-    <!-- 고급 기능 스위치 하나: 끄면 클래식(단어 외우기만, 설정 탭도 없음). 켜면 아래에 설정 탭이 생김 (app.js applyAdv) -->
-    <div class="card" id="home-adv">
-      <label class="switch-row"><span>고급 기능<small class="x-desc">켜면 설정 탭이 생겨요 · 단어 코치 · AI · 동기화 등</small></span><input type="checkbox" role="switch" class="switch" id="opt-adv"></label>
-    </div>
     </div>
   </section>
 
@@ -479,6 +475,55 @@
   </section>
 
   <!-- 설정 -->
+  <!-- 계정: 처음 열면 여기부터(로그인 · 회원가입 · 로그인 없이 쓰기), 홈 위 사람 단추와 설정 > 연결에서도 (app.js openAccountScreen) -->
+  <section id="account" class="screen">
+    <header class="top">
+      <button class="icon-btn" id="btn-account-back" aria-label="뒤로" data-icon="back"></button>
+      <h1>계정</h1>
+      <span></span>
+    </header>
+    <div class="acct-welcome" id="acct-welcome" hidden>
+      <div class="aw-logo" aria-hidden="true">VOCA</div>
+      <p class="aw-lead">로그인하면 폰·패드·컴퓨터 어디서든<br>같은 진도로 이어서 공부해요</p>
+    </div>
+    <div class="card" id="set-sync">
+      <div id="sync-off">
+        <!-- 계정 서버(js/account.js ACCOUNT_API_DEFAULT)가 준비됐을 때만 -->
+        <div id="acct-ready" class="row two">
+          <button class="btn primary" id="btn-acct-login" type="button">로그인</button>
+          <button class="btn secondary" id="btn-acct-signup" type="button">회원가입</button>
+        </div>
+        <p class="muted" id="acct-wait" hidden>계정 서버를 준비하고 있어요. 그동안은 아래 GitHub 연결로 맞출 수 있어요.</p>
+        <details class="set-more"><summary>GitHub 토큰으로 연결 (예전 방식)</summary>
+        <ol class="steps">
+          <li><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=VOCA%20sync" target="_blank" rel="noopener">토큰 만들기 페이지 열기</a> (GitHub 로그인 필요)</li>
+          <li><b>Expiration</b>을 <b>No expiration</b>으로 바꾸고 맨 아래 <b>Generate token</b> 누르기 (gist는 이미 체크돼 있어요)</li>
+          <li>나온 토큰(<code>ghp_…</code>)을 복사해서 아래에 붙여넣고 <b>연결</b></li>
+          <li>다른 기기에서도 같은 토큰을 붙여넣기 (연결된 기기의 "토큰 복사" 버튼 사용)</li>
+        </ol>
+        <input id="sync-token" class="type-input" type="password" placeholder="ghp_로 시작하는 토큰" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button class="btn primary" id="btn-sync-connect">연결</button>
+        </details>
+      </div>
+      <div id="sync-on" hidden>
+        <p id="sync-info" class="sync-info"></p>
+        <div class="row two">
+          <button class="btn secondary" id="btn-sync-now">지금 동기화</button>
+          <button class="btn secondary" id="btn-sync-copy" data-only-kind="gist">토큰 복사</button>
+          <button class="btn secondary" id="btn-acct-pw" type="button" data-only-kind="account">비밀번호 바꾸기</button>
+        </div>
+        <p class="muted" data-only-kind="gist">토큰은 비밀번호처럼 다른 사람에게 보내지 마세요.</p>
+        <!-- GitHub로 맞추던 기기: 계정 서버가 준비됐으면 계정으로 옮기기 (진도는 이 기기 것을 그대로 올림) -->
+        <button class="btn primary" id="btn-acct-move" type="button" data-only-kind="gist" hidden>계정으로 옮기기</button>
+        <div class="row acct-end">
+          <button class="btn ghost small" id="btn-sync-off">연결 끊기</button>
+          <button class="btn ghost small danger-text" id="btn-acct-delete" type="button" data-only-kind="account">계정 지우기</button>
+        </div>
+      </div>
+    </div>
+    <p class="acct-skip" id="acct-skip-wrap" hidden><button class="link-btn" id="btn-acct-skip" type="button">로그인 없이 이 기기에서만 쓰기</button></p>
+  </section>
+
   <section id="settings" class="screen">
     <header class="top">
       <button class="icon-btn" id="btn-settings-back" aria-label="뒤로" data-icon="back"></button>
@@ -671,43 +716,11 @@
       </div>
       </div>
     </div>
-    <div class="card" id="set-sync" data-tab="etc">
-      <div class="label">계정 · 다른 기기와 진도 맞추기</div>
-      <div id="sync-off">
-        <p class="muted">계정에 로그인하면 폰·패드·컴퓨터의 진도가 맞춰져요.</p>
-        <!-- 계정 서버(js/account.js ACCOUNT_API_DEFAULT)가 준비됐을 때만 -->
-        <div id="acct-ready" class="row two">
-          <button class="btn primary" id="btn-acct-login" type="button">로그인</button>
-          <button class="btn secondary" id="btn-acct-signup" type="button">회원가입</button>
-        </div>
-        <p class="muted" id="acct-wait" hidden>계정 서버를 준비하고 있어요. 그동안은 아래 GitHub 연결로 맞출 수 있어요.</p>
-        <details class="set-more"><summary>GitHub 토큰으로 연결 (예전 방식)</summary>
-        <ol class="steps">
-          <li><a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=VOCA%20sync" target="_blank" rel="noopener">토큰 만들기 페이지 열기</a> (GitHub 로그인 필요)</li>
-          <li><b>Expiration</b>을 <b>No expiration</b>으로 바꾸고 맨 아래 <b>Generate token</b> 누르기 (gist는 이미 체크돼 있어요)</li>
-          <li>나온 토큰(<code>ghp_…</code>)을 복사해서 아래에 붙여넣고 <b>연결</b></li>
-          <li>다른 기기에서도 같은 토큰을 붙여넣기 (연결된 기기의 "토큰 복사" 버튼 사용)</li>
-        </ol>
-        <input id="sync-token" class="type-input" type="password" placeholder="ghp_로 시작하는 토큰" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-        <button class="btn primary" id="btn-sync-connect">연결</button>
-        </details>
-      </div>
-      <div id="sync-on" hidden>
-        <p id="sync-info" class="sync-info"></p>
-        <div class="row two">
-          <button class="btn secondary" id="btn-sync-now">지금 동기화</button>
-          <button class="btn secondary" id="btn-sync-copy" data-only-kind="gist">토큰 복사</button>
-          <button class="btn secondary" id="btn-acct-pw" type="button" data-only-kind="account">비밀번호 바꾸기</button>
-        </div>
-        <p class="muted" data-only-kind="gist">토큰은 비밀번호처럼 다른 사람에게 보내지 마세요.</p>
-        <!-- GitHub로 맞추던 기기: 계정 서버가 준비됐으면 계정으로 옮기기 (진도는 이 기기 것을 그대로 올림) -->
-        <button class="btn primary" id="btn-acct-move" type="button" data-only-kind="gist" hidden>계정으로 옮기기</button>
-        <div class="row acct-end">
-          <button class="btn ghost small" id="btn-sync-off">연결 끊기</button>
-          <button class="btn ghost small danger-text" id="btn-acct-delete" type="button" data-only-kind="account">계정 지우기</button>
-        </div>
-      </div>
-    </div>
+    <!-- 계정은 따로 '계정' 화면 (홈 위 사람 단추와 같은 곳) -->
+    <button class="card plan-sum set-acct-link" id="btn-set-account" data-tab="etc" type="button">
+      <span class="plan-sum-main"><span class="label">계정 · 다른 기기와 진도 맞추기</span><span class="plan-sum-text" id="set-acct-sum"></span></span>
+      <i class="chev" aria-hidden="true">›</i>
+    </button>
     <div class="card" id="set-data" data-tab="etc">
       <div class="label">백업 · 앱 정보</div>
       <div class="row two">
@@ -729,11 +742,11 @@
     </div>
   </section>
 
-  <!-- 아래 탭: 진도 · 단어장 · 홈(가운데) · 코치 · 설정. 안 쓰는 탭(코치 끔, 고급 기능 끔)은 숨기고 홈이 가운데 오게 다시 놓음 (app.js renderTabs) -->
+  <!-- 아래 탭: 진도 · 단어장 · 홈(가운데) · 코치 · 설정. 코치를 끄면 코치 탭을 숨기고 홈이 가운데 오게 다시 놓음 (app.js renderTabs) -->
   <nav class="tabbar" id="tabbar" aria-label="메뉴">
     <button type="button" data-tab="days" data-icon="tabDays" aria-label="DAY별 진도" title="DAY별 진도"><span class="tab-name" aria-hidden="true">진도</span></button>
     <button type="button" data-tab="list" data-icon="tabBook" aria-label="단어장" title="단어장"><span class="tab-name" aria-hidden="true">단어장</span></button>
-    <button type="button" data-tab="home" data-icon="tabHome" aria-label="홈" title="홈"><span class="tab-name" aria-hidden="true">홈</span></button>
+    <button type="button" data-tab="home" class="on" aria-current="page" data-icon="tabHome" aria-label="홈" title="홈"><span class="tab-name" aria-hidden="true">홈</span></button>
     <button type="button" data-tab="coach" data-icon="tabCoach" aria-label="코치" title="코치"><span class="tab-name" aria-hidden="true">코치</span></button>
     <button type="button" data-tab="settings" data-icon="gear" aria-label="설정" title="설정"><span class="tab-name" aria-hidden="true">설정</span></button>
   </nav>
@@ -825,6 +838,7 @@
       <label class="ac-field" data-f="pw"><span id="ac-pw-label">비밀번호</span><input id="ac-pw" class="type-input" type="password" autocomplete="current-password" placeholder="6자 이상"></label>
       <label class="ac-field" data-f="pw2"><span>비밀번호 확인</span><input id="ac-pw2" class="type-input" type="password" autocomplete="new-password"></label>
       <label class="ac-field" data-f="invite"><span>초대 코드</span><input id="ac-invite" class="type-input" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="받은 초대 코드"></label>
+      <label class="ac-keep" id="ac-keep-row"><input type="checkbox" id="ac-keep" checked> 로그인 상태 유지 <small>(남의 기기면 끄세요)</small></label>
       <div class="ac-code" id="ac-code" hidden></div>
       <button class="link-btn ac-copy" id="ac-copy" type="button" hidden>복구 코드 복사하기</button>
       <p class="ac-err" id="ac-err" role="alert" hidden></p>

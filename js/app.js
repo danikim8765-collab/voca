@@ -137,7 +137,6 @@ const ui = Object.assign({
   choiceLayout: DESK ? 'list' : 'grid', // 4지선다 선지 배치: grid(2×2) · list(한 줄씩)
   lean: 'mid', // 폰 4지선다 선지 쏠림: left(왼쪽 칸 넓게) · mid · right(오른쪽 칸 넓게). 한 손으로 누를 때
 }, load(UI_KEY, {}));
-const uiWasSaved = Object.keys(load(UI_KEY, {})).length > 0; // 이 기기에서 전에 앱을 써 봤는지 (고급 기능 처음 값)
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
 function applyHomeLayout() {
   const range = $('#card-range'), kind = $('#card-kind'), prog = $('#range-progress'), sum = $('#plan-sum-card'), pc = $('#prog-card');
@@ -482,11 +481,11 @@ function show(id, push = true) {
   });
   window.scrollTo(0, 0);
 }
-// 아래 탭: 진도 · 단어장 · 홈 · 코치 · 설정. 코치를 끄면 코치 탭, 고급 기능을 끄면 설정 탭을 숨기고 홈이 가운데 오게 다시 놓음
+// 아래 탭: 진도 · 단어장 · 홈 · 코치 · 설정. 코치를 끄면 코치 탭을 숨기고 홈이 가운데 오게 다시 놓음
 let coachLeave = null; // 코치 탭을 떠날 때 할 일 (채팅 정리)
 function renderTabs() {
   const bar = $('#tabbar');
-  const shown = { days: true, list: true, coach: !!settings.coach && advOn(), settings: advOn() };
+  const shown = { days: true, list: true, coach: !!settings.coach, settings: true };
   const side = ['days', 'list', 'coach', 'settings'].filter(k => shown[k]);
   const order = [...side];
   order.splice(Math.floor(side.length / 2), 0, 'home');
@@ -806,7 +805,7 @@ function setRange(from, to) {
 }
 
 function renderHome() {
-  applyAdv();
+  renderTabs();
   if (!words.length) return;
   const last = days[days.length - 1];
   if (!days.includes(settings.from)) settings.from = days[0];
@@ -5261,22 +5260,52 @@ function clearLocalProgress() {
   keys.forEach(k => localStorage.removeItem(k));
 }
 // 로그인·가입·복구가 끝나서 토큰을 받았을 때: 다른 계정 진도가 이 기기에 있으면 물어보고 연결
-async function useAccount(r) {
+const ALIVE_KEY = 'voca.account.alive'; // '로그인 상태 유지'를 껐을 때: 이 창(탭)이 열려 있는 동안만 (sessionStorage)
+const SKIP_KEY = 'voca.account.skip';   // 처음 화면에서 '로그인 없이 쓰기'를 고름
+async function useAccount(r, keep = true) {
+  if (!keep) { try { sessionStorage.setItem(ALIVE_KEY, '1'); } catch {} }
   const prev = load(OWNER_KEY, '');
   if (prev && prev !== r.user.id && hasLocalProgress()) {
     const wipe = await ask({ title: '이 기기의 진도를 어떻게 할까요?', body: `이 기기에는 다른 계정(${prev})의 진도가 있어요.\n지우면 ${r.user.id} 계정의 진도를 받아 와요. 합치면 이 기기 진도가 ${r.user.id} 계정에 더해져요.`, ok: '지우고 받아 오기', cancel: '합치기' });
     if (wipe) {
       clearLocalProgress();
       save(OWNER_KEY, r.user.id);
-      localStorage.setItem('voca.sync.v1', JSON.stringify({ kind: 'account', token: r.token, login: r.user.id, name: r.user.name || '', server: accountApi(), last: 0 }));
+      localStorage.setItem('voca.sync.v1', JSON.stringify({ kind: 'account', token: r.token, login: r.user.id, name: r.user.name || '', server: accountApi(), last: 0, ...(keep ? {} : { temp: true }) }));
       location.reload();
       return;
     }
   }
   save(OWNER_KEY, r.user.id);
-  await sync.connectAccount({ token: r.token, user: r.user, server: accountApi() });
+  try { localStorage.removeItem(SKIP_KEY); } catch {}
+  await sync.connectAccount({ token: r.token, user: r.user, server: accountApi(), temp: !keep });
   renderSyncStatus();
-  if (current === 'home') renderHome();
+  if (current === 'account' && accountGate) { accountGate = false; goHome(false); } // 처음 화면에서 로그인했으면 바로 홈으로
+  else if (current === 'home') renderHome();
+}
+// ---------- 계정 화면 (홈 위 사람 단추 · 설정 > 연결 · 처음 열 때) ----------
+let accountGate = false, accountFrom = null;
+function openAccountScreen({ gate = false, from = null } = {}) {
+  accountGate = gate;
+  accountFrom = from;
+  const off = !sync.enabled;
+  $('#acct-welcome').hidden = !off;
+  $('#acct-skip-wrap').hidden = !(gate && off);
+  $('#btn-account-back').hidden = gate; // 처음 화면은 '로그인 없이 쓰기'로만 나감
+  renderSyncStatus();
+  show('account', !gate);
+}
+// 처음 열 때: 계정 서버가 있고, 로그인도 GitHub 연결도 안 했고, '로그인 없이 쓰기'를 고른 적이 없으면 로그인 화면부터
+// '로그인 상태 유지'를 끄고 로그인했으면, 앱(창)을 새로 열 때 로그아웃하고 다시 물어봄
+let accountChecked = false;
+function accountOnStart() {
+  if (accountChecked) return;
+  accountChecked = true;
+  if (sync.kind === 'account' && sync.temp) {
+    let alive = false;
+    try { alive = sessionStorage.getItem(ALIVE_KEY) === '1'; } catch {}
+    if (!alive) { acctLogout(sync.token); sync.disconnect(); }
+  }
+  if (!sync.enabled && accountReady() && !load(SKIP_KEY, false)) openAccountScreen({ gate: true });
 }
 // 계정 창. mode: login | signup | recover | password | delete | code(복구 코드 보여 주기)
 function openAccount(mode, extra = {}) {
@@ -5310,6 +5339,9 @@ function openAccount(mode, extra = {}) {
   $('#ac-copy').hidden = mode !== 'code';
   $('#ac-copy').onclick = async () => { try { await navigator.clipboard.writeText(extra.code || ''); toast('복사했어요. 메모 앱 같은 데 붙여 두세요'); } catch { toast('길게 눌러 복사해 주세요'); } };
   $('#ac-cancel').hidden = mode === 'code';
+  $('#ac-keep-row').hidden = !['login', 'signup', 'recover'].includes(mode);
+  $('#ac-keep').checked = true;
+  if (mode === 'login' && !$('#ac-id').value) $('#ac-id').value = load(OWNER_KEY, '') || ''; // 이 기기에서 마지막으로 쓴 아이디
   $('#ac-to-recover').hidden = mode !== 'login';
   $('#ac-to-signup').hidden = mode !== 'login';
   $('#ac-to-login').hidden = mode !== 'signup' && mode !== 'recover';
@@ -5317,7 +5349,7 @@ function openAccount(mode, extra = {}) {
   const showErr = m => { err.textContent = m; err.hidden = false; };
   const prevFocus = document.activeElement;
   d.hidden = false;
-  const first = d.querySelector('.ac-field:not([hidden]) input');
+  const first = [...d.querySelectorAll('.ac-field:not([hidden]) input')].find(x => !x.value);
   setTimeout(() => (first || ok).focus(), 30);
   let busy = false;
   const close = () => {
@@ -5361,16 +5393,18 @@ function openAccount(mode, extra = {}) {
     try {
       if (mode === 'login') {
         const r = await acctLogin({ id, password: pw });
+        const keep = $('#ac-keep').checked;
         close(); modalDone(() => {});
-        await useAccount(r);
+        await useAccount(r, keep);
         toast(`${r.user.name || r.user.id}님, 반가워요. 진도를 맞췄어요`, 3000);
       } else if (mode === 'signup' || mode === 'recover') {
         const r = mode === 'signup'
           ? await acctSignup({ id, name: $('#ac-name').value, password: pw, invite: $('#ac-invite').value })
           : await acctRecover({ id, recovery: $('#ac-rec').value, password: pw });
+        const keep = $('#ac-keep').checked;
         close();
         // 복구 코드를 먼저 보여 주고(꼭 적어 두게), 확인하면 연결
-        modalDone(() => openAccount('code', { code: r.recovery, then: async () => { await useAccount(r); toast(mode === 'signup' ? '가입했어요. 이제 다른 기기에서도 로그인하면 진도가 맞춰져요' : '새 비밀번호로 바꿨어요', 3500); } }));
+        modalDone(() => openAccount('code', { code: r.recovery, then: async () => { await useAccount(r, keep); toast(mode === 'signup' ? '가입했어요. 이제 다른 기기에서도 로그인하면 진도가 맞춰져요' : '새 비밀번호로 바꿨어요', 3500); } }));
       } else if (mode === 'password') {
         const r = await acctChangePw({ token: sync.token, id: sync.login, old: $('#ac-old').value, password: pw });
         close();
@@ -5405,6 +5439,14 @@ function renderSyncStatus() {
   badge.setAttribute('aria-label', said);
   $('#sync-off').hidden = sync.enabled;
   $('#sync-on').hidden = !sync.enabled;
+  // 홈 위 사람 단추: 로그인했으면 이름 첫 글자
+  const ini = $('#acct-initial'), nm = sync.kind === 'account' ? (sync.name || sync.login) : '';
+  ini.hidden = !nm;
+  ini.textContent = nm ? [...nm][0].toUpperCase() : '';
+  $('#btn-account').classList.toggle('on', !!nm);
+  $('#btn-account').setAttribute('aria-label', nm ? `계정: ${nm}` : '계정');
+  $('#set-acct-sum').textContent = sync.kind === 'account' ? `${nm}(${sync.login})로 로그인됨` : sync.kind === 'gist' ? `GitHub ${sync.login}에 연결됨` : '로그인하면 기기끼리 진도가 맞춰져요';
+  if (current === 'account') { $('#acct-welcome').hidden = sync.enabled; $('#acct-skip-wrap').hidden = !(accountGate && !sync.enabled); }
   $('#acct-ready').hidden = !accountReady();
   $('#acct-wait').hidden = accountReady();
   const kind = sync.kind;
@@ -5641,30 +5683,6 @@ function renderLook() {
   }
 }
 
-// 고급 기능 (홈 맨 아래 스위치 하나, 기기마다 ui.adv): 끄면 클래식. 단어 외우기만 하고 설정 버튼도 없음.
-// 처음 쓰는 기기는 꺼진 채로, 전에 쓰던 기기는 켜진 채로 시작 (갑자기 설정이 사라지지 않게)
-const advOn = () => {
-  if (typeof ui.adv !== 'boolean') { ui.adv = uiWasSaved || !!settings.coach || !!settings.goal || aiSwitch() || sync.enabled; save(UI_KEY, ui); }
-  return ui.adv;
-};
-function applyAdv() {
-  const adv = advOn();
-  $('#opt-adv').checked = adv;
-  renderTabs();
-}
-// 고급 기능을 끄면 쓰던 코치·AI도 같이 끔 (설정에 못 들어가니까. 꾸미기·동기화 연결은 그대로)
-function setAdv(on) {
-  ui.adv = !!on;
-  save(UI_KEY, ui);
-  if (on) toast('설정 탭에서 필요한 기능을 켜세요');
-  else {
-    const off = [];
-    if (settings.coach) { setCoach(false); off.push('단어 코치'); }
-    if (aiSwitch()) { setAiSwitch(false); off.push('AI'); }
-    if (off.length) toast(`${off.join('·')}도 껐어요`);
-  }
-  renderHome();
-}
 function renderSettings() {
   renderLook();
   renderKeys();
@@ -6175,7 +6193,6 @@ function bind() {
     $('#set-tabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', b.dataset.v === t));
   };
   onSeg('#set-tabs', v => { showSetTab(v); scrollTo(0, 0); });
-  $('#opt-adv').addEventListener('change', e => setAdv(e.target.checked));
   showSetTab(setTab);
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
@@ -6390,6 +6407,13 @@ function bind() {
     renderSyncStatus();
   });
   $('#btn-acct-login').addEventListener('click', () => openAccount('login'));
+  $('#btn-account').addEventListener('click', () => openAccountScreen());
+  $('#btn-set-account').addEventListener('click', () => openAccountScreen({ from: 'settings' }));
+  $('#btn-account-back').addEventListener('click', () => {
+    if (accountFrom === 'settings') { accountFrom = null; renderSettings(); renderSyncStatus(); show('settings', false); }
+    else goHome();
+  });
+  $('#btn-acct-skip').addEventListener('click', () => { save(SKIP_KEY, true); accountGate = false; goHome(false); });
   $('#btn-acct-signup').addEventListener('click', () => openAccount('signup'));
   $('#btn-acct-pw').addEventListener('click', () => openAccount('password'));
   $('#btn-acct-delete').addEventListener('click', () => openAccount('delete'));
@@ -6639,10 +6663,10 @@ if (quickTexts.length) {
   setWords(rowsToWords(quickTexts));
   applyHighlightMap(load('voca.highlights.v1', {}));
   dataInfo = describeData(quickTexts, 0, []);
-  boot(); renderSyncStatus(); sync.now();
+  boot(); accountOnStart(); renderSyncStatus(); sync.now();
 }
 loadData(quickTexts.length ? quickTexts : null).then(changed => {
-  if (!quickTexts.length) { boot(); renderSyncStatus(); sync.now(); }
+  if (!quickTexts.length) { boot(); accountOnStart(); renderSyncStatus(); sync.now(); }
   else if (changed) boot();
 }).catch(err => {
   if (!quickTexts.length) $('#load-status').textContent = '단어를 불러오지 못했어요: ' + err.message;
