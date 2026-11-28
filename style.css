@@ -1698,3 +1698,13 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 /* 총정리 홈: 이어하기도 불 색 */
 :root[data-view="sweep"] #resume-card #btn-resume { background: linear-gradient(135deg, #ff9a1f 0%, #f76707 55%, #e8430b 100%); color: #fff; }
 :root[data-view="sweep"] #resume-card { box-shadow: inset 0 0 0 2px color-mix(in srgb, #f76707 35%, transparent); }
+
+/* ---------- 옛 주소(github.io)에서 열었을 때 새 주소 안내 (app.js renderMoved) ---------- */
+.moved-card { border: 1.5px solid var(--primary); background: var(--primary-soft); display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.moved-card[hidden] { display: none; }
+.moved-card .mv-text { display: flex; flex-direction: column; gap: 4px; }
+.moved-card .mv-text b { font-size: 16px; color: var(--text); }
+.moved-card .mv-text small { font-size: 13.5px; line-height: 1.5; color: var(--text2); }
+.moved-card .mv-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.moved-card .mv-go { margin: 0; background: var(--primary); color: var(--on-primary); text-decoration: none; }
+.moved-card .mv-url { font-size: 13px; color: var(--muted); }
