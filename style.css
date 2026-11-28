@@ -331,8 +331,9 @@ button { cursor: pointer; }
 }
 #settings .opt-row > span { font-size: 16px; font-weight: 500; color: var(--text); }
 .set-row .t { flex: 1 1 auto; min-width: 0; word-break: keep-all; }
-/* 설명(.d)은 이름 칸 너비를 늘리지 않고 그 안에서 줄을 바꿈 → 설명이 길어도 고르기 버튼은 오른쪽에 (예전엔 다음 줄로 밀렸음) */
-.set-row .t .d { width: 0; min-width: 100%; }
+/* 설명(.d)이 있는 줄: 이름 ─ 고르기 버튼을 한 줄에, 설명은 그 아래 전체 폭으로 (예전엔 설명이 길면 버튼이 다음 줄로 밀리거나 설명이 좁은 칸에 여러 줄로 접혔음) */
+.set-row .t:has(> .d) { display: contents; }
+.set-row .t:has(> .d) > .d { order: 3; flex: 1 0 100%; min-width: 0; margin-top: -6px; }
 :is(#settings, #plan) .switch-row > span { flex: 1 1 0; min-width: 0; word-break: keep-all; } /* 설명이 길어도 스위치는 오른쪽에 */
 .set-row .d, :is(#settings, #plan) .switch-row .muted, :is(#settings, #plan) .switch-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
 :is(#settings, #plan, #home) .set-row .seg { flex: none; margin: 0 0 0 auto; padding: 3px; gap: 2px; background: var(--fill); border-radius: 10px; }
@@ -1155,6 +1156,25 @@ body[data-tint] {
 #coach-pick .coach-choice.on .buddy-svg { animation: buddy-hop .4s ease-out; }
 #settings .coach-choices { margin: 6px 0 12px; }
 #settings .coach-btns .btn { flex: 1; margin: 0; }
+/* 학습 계획 '하루 분량'의 코치 부분 (예전 설정 > 복습에서 옮김) */
+#plan .coach-plan { margin: 2px 0 8px; font-size: 13px; line-height: 1.55; color: var(--muted); padding: 10px 12px; background: var(--fill); border-radius: var(--r-md); }
+#plan .srs-warn { margin: 4px 0 8px; }
+#plan .coach-btns { gap: 8px; margin: 0 0 4px; }
+#plan .coach-btns:not(:has(.btn:not([hidden]))) { display: none; }
+#plan .coach-btns .btn { margin: 0; }
+#plan .rest-row { min-height: 0; padding-bottom: 2px; }
+#plan .rest-chips { margin: 4px 0 8px; }
+/* 코치 탭 머리: 이름을 누르면 코치 바꾸기 (› 로 눌린다는 표시) */
+button.chat-who { border: 0; background: none; padding: 4px 0; margin: 0; color: inherit; font: inherit; cursor: pointer; }
+button.chat-who b::after { content: ' ›'; color: var(--muted); font-weight: 600; }
+button.chat-who:active { opacity: .6; }
+/* 설정 > 연결: 처음부터 다시(지우는 버튼끼리 맨 아래 따로) */
+.reset-card .reset-note { margin: 10px 0 12px; font-size: 13px; }
+.reset-card .row.two .btn { margin: 0; }
+#settings .card.reset-card { padding-bottom: 16px; }
+#settings .data-more { margin-top: 4px; }
+#settings .data-more > summary { padding: 12px 0; }
+#settings .data-more #data-info { margin: 0 0 4px; font-size: 13px; }
 /* 일정 상의하기 창 */
 .talk-card { max-width: 340px; }
 .talk-say { display: flex; align-items: flex-end; gap: 8px; margin: 12px 0 4px; text-align: left; }
@@ -1164,6 +1184,8 @@ body[data-tint] {
 .talk-opts { margin-top: 4px; text-align: left; }
 .rest-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
 .rest-chip { min-width: 38px; justify-content: center; }
+#plan .rest-chips { flex-wrap: nowrap; gap: 5px; }
+#plan .rest-chip { flex: 1 1 0; min-width: 0; padding: 0; }
 .res-say { position: relative; max-width: 420px; margin: 4px auto 10px; padding: 10px 14px; background: var(--fill); border-radius: var(--r-lg); font-size: 15px; line-height: 1.55; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
 .res-say.wait { text-align: center; color: var(--muted); }
 .talk-opts .preset { padding: 10px 2px; }
@@ -1524,7 +1546,12 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 :root[data-view="sweep"] .home-main > :not(#resume-card):not(#card-today):not(.sw-only),
 .mode-switch[data-mode="none"] .mode-thumb { opacity: 0; }
 /* 모드 홈: 오늘 카드 대신 총정리 띠 (DAY 단독 학습 카드는 그대로) */
-:root.sweep-on:not([data-view="sweep"]) #card-today:not(.solo-mode) { display: none; }
+/* 모드 홈의 오늘 카드는 '더 하기'로 보임 (app.js renderPlan modeView). 폰·패드 세로에선 '총정리 기간이에요' 띠를 먼저 */
+@media (max-width: 999px) {
+  :root.sweep-on:not([data-view="sweep"]) .home-main { display: flex; flex-direction: column; }
+  :root.sweep-on:not([data-view="sweep"]) .home-main > #sweep-banner { order: -1; }
+  :root.sweep-on:not([data-view="sweep"]) .home-main > #resume-card { order: -2; }
+}
 :root.sweep-on:not([data-view="sweep"]) .sweep-banner { display: flex; }
 .sweep-banner {
   align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; cursor: pointer; font: inherit;
