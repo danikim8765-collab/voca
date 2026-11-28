@@ -17,6 +17,7 @@
 
 - 주소: `https://voca-account.lexioative.workers.dev` (Worker `voca-account`, D1 `voca`)
 - 2026-11-28에 Claude가 Cloudflare API로 올렸어요. 아래 대시보드 순서와 결과는 같아요.
+- 2026-11-28(두 번째): 관리자 초기화를 넣어 다시 올림. `ADMINS = ssfw4756`(관리자 아이디). 초대 코드·사람 수·앱 주소 설정은 그대로 둠.
 - 초대 코드(`INVITE`)는 Cloudflare 비밀 값이라 여기 안 적어요. 바꾸려면 대시보드 → Workers & Pages → voca-account → Settings → Variables and Secrets에서 고쳐요.
 
 ## 처음 설정 (대시보드에서, 컴퓨터나 폰 브라우저)
