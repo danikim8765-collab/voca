@@ -56,15 +56,18 @@ function cors(req, env) {
   return {
     'Access-Control-Allow-Origin': allow,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Body-Gzip',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
 }
 const json = (req, env, body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...cors(req, env) } });
 
+// 앱이 올리는 진도는 gzip으로 줄여서 옴(X-Body-Gzip: 1): 문제마다 동기화해도 폰 데이터를 덜 쓰게
 async function readBody(req) {
-  const t = await req.text();
+  const t = req.headers.get('X-Body-Gzip') === '1' && req.body
+    ? await new Response(req.body.pipeThrough(new DecompressionStream('gzip'))).text()
+    : await req.text();
   if (t.length > TOTAL_MAX + 100000) throw new Err(413, 'too_big', '보낸 내용이 너무 커요');
   try { return t ? JSON.parse(t) : {}; } catch { throw bad('bad_json', '잘못된 요청이에요'); }
 }
@@ -168,10 +171,18 @@ async function changePassword(req, env, me) {
   return { ok: true, recovery: rec };
 }
 
-async function getFiles(env, me) {
-  const r = await env.DB.prepare('SELECT name, body, at FROM files WHERE user = ?').bind(me.user).all();
-  const files = {};
-  for (const f of r.results || []) files[f.name] = { content: f.body, at: f.at };
+// have = 앱이 이미 가진 파일과 그 시각 ('이름:시각,이름:시각'). 시각이 같은 파일은 내용 없이 시각만 (문제마다 동기화해도 다 받지 않게).
+// have가 없으면(예전 앱) 전부
+async function getFiles(env, me, have = '') {
+  const known = new Map();
+  for (const p of String(have).split(',')) { const i = p.lastIndexOf(':'); if (i > 0) known.set(p.slice(0, i), Number(p.slice(i + 1))); }
+  const r = await env.DB.prepare('SELECT name, at FROM files WHERE user = ?').bind(me.user).all();
+  const files = {}, need = [];
+  for (const f of r.results || []) { if (known.get(f.name) === f.at) files[f.name] = { at: f.at }; else need.push(f.name); }
+  if (need.length) {
+    const b = await env.DB.prepare(`SELECT name, body, at FROM files WHERE user = ? AND name IN (${need.map(() => '?').join(',')})`).bind(me.user, ...need).all();
+    for (const f of b.results || []) files[f.name] = { content: f.body, at: f.at };
+  }
   return { files };
 }
 // files: { 이름: 내용(글자) | null(지움) }
@@ -231,7 +242,7 @@ export async function handle(req, env) {
     }
     if (m === 'POST' && path === '/api/logout') { await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(me.token).run(); return json(req, env, { ok: true }); }
     if (m === 'POST' && path === '/api/password') return json(req, env, await changePassword(req, env, me));
-    if (m === 'GET' && path === '/api/files') return json(req, env, await getFiles(env, me));
+    if (m === 'GET' && path === '/api/files') return json(req, env, await getFiles(env, me, new URL(req.url).searchParams.get('have') || ''));
     if (m === 'PUT' && path === '/api/files') return json(req, env, await putFiles(req, env, me));
     if (m === 'DELETE' && path === '/api/account') return json(req, env, await deleteAccount(req, env, me));
     throw new Err(404, 'not_found', '없는 주소예요');

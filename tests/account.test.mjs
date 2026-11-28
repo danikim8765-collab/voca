@@ -20,7 +20,13 @@ const stmt = (sql, args = []) => ({
 const env = { DB: { prepare: sql => stmt(sql), batch: async l => { l.forEach(s => s._exec()); return []; } }, INVITE: 'voca-friends' };
 const SERVER = 'https://acct.test';
 let calls = 0;
-globalThis.fetch = async (url, opts = {}) => { calls++; return handle(new Request(url, opts), env); };
+const log = [];
+globalThis.fetch = async (url, opts = {}) => {
+  calls++;
+  const res = await handle(new Request(url, opts), env);
+  log.push({ url, method: opts.method || 'GET', gzip: !!(opts.headers && opts.headers['X-Body-Gzip']), bytes: (await res.clone().text()).length });
+  return res;
+};
 store.set('voca.account.api', SERVER);
 
 const acct = await import('../js/account.js');
@@ -88,6 +94,38 @@ test('가입 → 두 기기가 같은 계정으로 진도를 맞춤 → 로그�
   await s.now();
   assert.equal(s.status, 'error');
   assert.match(s.error, /다시 로그인/);
+});
+
+test('문제마다 동기화해도 가볍게: 바뀐 게 없으면 내용 없이 시각만 받고, 올릴 땐 줄여서, 다른 기기 것은 받아 옴', async () => {
+  const r = await acct.signup({ id: 'light', name: '가벼움', password: 'light-pw1', invite: 'voca-friends' });
+  const big = Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`26|w${i}`, { st: 2, c: 2, w: 0, due: '2026-12-01', s: Date.now() - i }]));
+  let mine = big;
+  store.set('voca.sync.v1', '{}');
+  const prefs = { exam: '', examAt: 0, coachRest: [], restAt: 0 }; // 앱이 늘 보내는 설정 칸
+  const s = createSync({ getLocal: () => ({ v: 2, resetAt: 0, stats: mine, prefs }), applyMerged: m => { mine = m.stats; } });
+  await s.connectAccount({ token: r.token, user: r.user, server: SERVER });
+  const up = log.filter(x => x.method === 'PUT').at(-1);
+  assert.ok(up && up.gzip, '처음 올릴 때 줄여서');
+  // 바뀐 게 없으면: 받기 한 번, 내용 없이 작게
+  log.length = 0;
+  await s.now();
+  assert.deepEqual(log.map(x => x.method), ['GET']);
+  assert.match(log[0].url, /have=/);
+  assert.ok(log[0].bytes < 200, `받은 양 ${log[0].bytes}`);
+  // 다른 기기(같은 계정)에서 바뀐 건 받아 와서 합침
+  const other = await acct.login({ id: 'light', password: 'light-pw1' });
+  const got = await acct.api('/api/files', { token: other.token });
+  const p = JSON.parse(got.files['voca-progress.json'].content);
+  p.stats['26|new'] = { st: 1, c: 1, w: 0, due: '2026-12-02', s: Date.now() + 1000 };
+  await acct.api('/api/files', { method: 'PUT', token: other.token, body: { files: { 'voca-progress.json': JSON.stringify(p) } } });
+  await s.now();
+  assert.ok(mine['26|new'], '다른 기기 것');
+  // 한 문제 풀면 그 파일만 줄여서 올림
+  mine = { ...mine, '26|w0': { ...mine['26|w0'], st: 3, s: Date.now() + 2000 } };
+  log.length = 0;
+  await s.now();
+  assert.deepEqual(log.map(x => x.method), ['GET', 'PUT']);
+  assert.ok(log[1].gzip);
 });
 
 test('복구 코드로 새 비밀번호 · 비밀번호 바꾸기 · 계정 지우기', async () => {
