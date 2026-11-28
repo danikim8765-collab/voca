@@ -18,6 +18,7 @@
 - 주소: `https://voca-account.lexioative.workers.dev` (Worker `voca-account`, D1 `voca`)
 - 2026-11-28에 Claude가 Cloudflare API로 올렸어요. 아래 대시보드 순서와 결과는 같아요.
 - 2026-11-28(두 번째): 관리자 초기화를 넣어 다시 올림. `ADMINS = ssfw4756`(관리자 아이디). 초대 코드·사람 수·앱 주소 설정은 그대로 둠.
+- `ORIGINS`: `https://lexioative.pages.dev,https://danikim8765-collab.github.io` (새 앱 주소 + 예전 주소. 쉼표로 여러 개)
 - 초대 코드(`INVITE`)는 Cloudflare 비밀 값이라 여기 안 적어요. 바꾸려면 대시보드 → Workers & Pages → voca-account → Settings → Variables and Secrets에서 고쳐요.
 
 ## 처음 설정 (대시보드에서, 컴퓨터나 폰 브라우저)
@@ -38,7 +39,7 @@
 6. **설정 값**
    - Worker → **Settings → Variables and Secrets** → **Add**
    - `INVITE`: 종류 **Secret**. 친구들에게 줄 초대 코드예요(예: `voca-친구들-2026`). 여러 개면 쉼표로 이어요.
-   - `ORIGINS`: 종류 Text. 앱 주소예요(GitHub Pages 주소, 예: `https://아이디.github.io`). 비우면 어디서든 부를 수 있어요.
+   - `ORIGINS`: 종류 Text. 앱 주소예요(예: `https://lexioative.pages.dev`. 여러 개면 쉼표로). 비우면 어디서든 부를 수 있어요.
    - `MAX_USERS`: 종류 Text. 가입할 수 있는 사람 수예요(안 넣으면 30).
    - `ADMINS`: 종류 Text. 관리자 아이디예요(여러 명이면 쉼표로). 이 아이디로 로그인하면 앱의 계정 화면에 '관리자' 카드가 보이고, 비밀번호를 잊은 친구의 초기화 코드를 만들 수 있어요.
 7. **주소 알려 주기**
