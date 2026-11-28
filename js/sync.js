@@ -239,6 +239,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     get enabled() { return !!conf.token; },
     get kind() { return conf.token ? conf.kind || 'gist' : ''; }, // 'account' | 'gist' | ''
     get name() { return conf.name || ''; },                       // 계정 이름 (가입할 때 적은 것)
+    get temp() { return !!conf.temp; },                           // '로그인 상태 유지'를 껐음
     get status() { return status; },
     get error() { return error; },
     get login() { return conf.login || ''; },
@@ -264,9 +265,10 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
       return user.login;
     },
     // 계정 서버로 로그인했을 때 (가입·로그인·복구가 준 토큰과 사용자). 바로 한 번 합침
-    async connectAccount({ token, user, server }) {
+    // temp: '로그인 상태 유지'를 껐을 때 (앱을 닫았다 열면 로그아웃, app.js)
+    async connectAccount({ token, user, server, temp = false }) {
       clearTimeout(pauseTimer); clearTimeout(timer); timer = null;
-      conf = { kind: 'account', token, login: user.id, name: user.name || '', server, last: 0 };
+      conf = { kind: 'account', token, login: user.id, name: user.name || '', server, last: 0, ...(temp ? { temp: true } : {}) };
       acache = {}; acacheUser = user.id;
       save();
       setStatus('idle');

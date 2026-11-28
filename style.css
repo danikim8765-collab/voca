@@ -110,7 +110,7 @@ body::before {
 /* 홈 화면은 단색 (퀴즈로 들어가면 그라데이션이 서서히 나타남). body[data-screen]은 app.js show()가 정함
    (body:has(...)는 DOM이 바뀔 때마다 문서 전체를 다시 따져서 느림) */
 body[data-screen="home"]::before, body[data-screen="settings"]::before, body[data-screen="days"]::before,
-body[data-screen="list"]::before, body[data-screen="coach"]::before { opacity: 0; } /* 아래 탭 화면은 바탕색 그대로 */
+body[data-screen="list"]::before, body[data-screen="coach"]::before, body[data-screen="account"]::before { opacity: 0; } /* 아래 탭 화면은 바탕색 그대로 */
 @media (prefers-reduced-motion: reduce) { body::before { transition: none; } }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
@@ -1684,3 +1684,22 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .ac-links .link-btn { min-height: 32px; }
 #set-sync .acct-end { justify-content: space-between; margin-top: 4px; }
 #btn-acct-move { width: 100%; margin-top: 8px; }
+
+/* ---------- 계정 화면 · 홈 위 사람 단추 (app.js openAccountScreen) ---------- */
+.acct-btn { position: relative; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: var(--fill); color: var(--text2); flex: none; cursor: pointer; }
+.acct-btn svg { width: 19px; height: 19px; }
+.acct-btn.on { background: var(--primary); color: var(--on-primary); }
+.acct-btn.on svg { display: none; }
+.acct-btn b { font-size: 14px; font-weight: 800; line-height: 1; }
+.acct-welcome { text-align: center; padding: 24px 8px 8px; }
+.aw-logo { font-size: 40px; font-weight: 900; letter-spacing: -1px; }
+.aw-lead { margin: 10px 0 18px; color: var(--text2); font-size: 15px; line-height: 1.6; }
+#account #set-sync #acct-ready .btn { min-height: 52px; font-size: 16px; }
+.acct-skip { text-align: center; margin: 18px 0 0; font-size: 14px; }
+.acct-skip .link-btn { color: var(--muted); font-weight: 600; }
+.ac-keep { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text2); cursor: pointer; }
+.ac-keep input { width: 18px; height: 18px; accent-color: var(--primary); margin: 0; }
+.ac-keep small { color: var(--muted); font-size: 12px; }
+/* 총정리 홈: 이어하기도 불 색 */
+:root[data-view="sweep"] #resume-card #btn-resume { background: linear-gradient(135deg, #ff9a1f 0%, #f76707 55%, #e8430b 100%); color: #fff; }
+:root[data-view="sweep"] #resume-card { box-shadow: inset 0 0 0 2px color-mix(in srgb, #f76707 35%, transparent); }
