@@ -24,16 +24,27 @@ export async function passKey(id, password) {
 }
 
 // 서버 부르기. 실패면 Error { status, code, message(사람이 읽을 말) }
-export async function api(path, { method = 'GET', body, token, server = accountApi(), timeout = 15000 } = {}) {
+// 글자를 gzip으로 (브라우저가 지원할 때만, 아니면 null)
+export async function gzipText(text) {
+  if (typeof CompressionStream === 'undefined') return null;
+  try { return new Uint8Array(await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()); } catch { return null; }
+}
+// gzip: true면 보낼 내용을 줄여서 (문제마다 동기화할 때 폰 데이터 아끼기. 서버가 X-Body-Gzip을 보고 풂)
+export async function api(path, { method = 'GET', body, token, server = accountApi(), timeout = 15000, gzip = false } = {}) {
   if (!server) { const e = new Error('계정 서버가 아직 준비되지 않았어요'); e.status = 0; e.code = 'no_server'; throw e; }
   const headers = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  let payload = body === undefined ? undefined : JSON.stringify(body);
+  if (payload !== undefined) {
+    const z = gzip && payload.length > 1024 ? await gzipText(payload) : null;
+    if (z) { payload = z; headers['Content-Type'] = 'application/octet-stream'; headers['X-Body-Gzip'] = '1'; }
+    else headers['Content-Type'] = 'application/json';
+  }
   if (token) headers.Authorization = `Bearer ${token}`;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   let res;
   try {
-    res = await fetch(server + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', signal: ctrl.signal });
+    res = await fetch(server + path, { method, headers, body: payload, cache: 'no-store', signal: ctrl.signal });
   } catch {
     const e = new Error(ctrl.signal.aborted ? '서버 답이 너무 늦어요. 잠시 뒤에 다시 해 주세요' : '인터넷 연결을 확인해 주세요');
     e.status = 0; e.code = 'network';

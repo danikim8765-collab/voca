@@ -16,6 +16,8 @@ const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; }
 // GitHub는 '쓰기'(Gist 고치기)를 한 시간에 500번쯤까지만 받고, 넘으면 한동안 막음(403·429).
 // 그래서 문제 풀 때 저절로 올리는 건 15초에 한 번까지만 (기기 둘이 동시에 풀어도 한 시간에 480번) (앱을 닫거나 다른 앱으로 갈 때는 바로 올림)
 export const SOON_GAP = 15000;
+// 계정 서버는 하루 요청 10만 번까지라 넉넉해서, 문제를 풀 때마다 바로(1.5초 모아서) 올림. 대신 바뀐 파일만 받고 올릴 땐 줄여서 (js/account.js)
+export const ACCOUNT_GAP = 1500;
 // 막혔을 때 기다릴 시간: GitHub가 알려 주면 그만큼, 아니면 1분 → 2분 → 4분 … 최대 1시간
 export function limitWait(err, tries = 0) {
   const told = err && err.wait > 0 ? err.wait : 60000 * 2 ** Math.min(tries, 6);
@@ -94,12 +96,34 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
   }
 
   const isAccount = () => conf.kind === 'account';
+  // 계정 서버에 있는 파일 (이 앱을 연 동안만 기억): { 이름: { at: 서버 시각, content } }.
+  // 받을 때 가진 시각을 알려 주면 서버는 달라진 파일만 내용째 보냄 → 문제마다 동기화해도 다 받지 않음
+  let acache = {}, acacheUser = '';
+  async function getAccount() {
+    if (acacheUser !== conf.login) { acache = {}; acacheUser = conf.login; }
+    const have = Object.entries(acache).map(([n, f]) => `${n}:${f.at}`).join(',');
+    const r = await accountCall(`/api/files${have ? `?have=${encodeURIComponent(have)}` : ''}`, { token: conf.token, server: conf.server });
+    const next = {};
+    let missing = false;
+    for (const [n, f] of Object.entries(r.files || {})) {
+      if (typeof f.content === 'string') next[n] = { at: f.at, content: f.content };
+      else if (acache[n] && acache[n].at === f.at) next[n] = acache[n];
+      else missing = true;
+    }
+    acache = next; // 서버에서 없어진 파일은 빠짐
+    if (missing) { acache = {}; return getAccount(); } // 그새 달라졌으면 처음부터 한 번 더
+    return { files: Object.fromEntries(Object.entries(acache).map(([n, f]) => [n, { content: f.content }])) };
+  }
   // 받아 오기: 어느 쪽이든 { files: { 이름: { content } } } 모양으로
-  const getRemote = () => (isAccount() ? accountCall('/api/files', { token: conf.token, server: conf.server }) : getGist());
-  // 올리기: files = { 이름: { content } }
-  const putRemote = files => (isAccount()
-    ? accountCall('/api/files', { method: 'PUT', token: conf.token, server: conf.server, body: { files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.content])) } })
-    : gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) }));
+  const getRemote = () => (isAccount() ? getAccount() : getGist());
+  // 올리기: files = { 이름: { content } }. 계정 서버엔 줄여서 보내고, 올린 건 서버에 있는 것으로 기억
+  async function putRemote(files) {
+    if (!isAccount()) return gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) });
+    const body = { files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.content])) };
+    const r = await accountCall('/api/files', { method: 'PUT', token: conf.token, server: conf.server, body, gzip: true });
+    for (const [n, c] of Object.entries(body.files)) acache[n] = { at: r.at, content: c };
+    return r;
+  }
 
   async function run() {
     setStatus('syncing');
@@ -224,9 +248,12 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     // 답을 고를 때마다 바로 보내지 않고 잠깐 모아서 보냄
     // 마지막으로 다녀온 지 15초가 안 됐으면 15초가 될 때까지 모아 둠 (GitHub 쓰기 제한 안 넘게)
     // 이미 기다리는 게 있으면 그대로 둠 (계속 빨리 풀어도 미뤄지기만 하지 않게)
-    soon(ms = 4000) {
+    // 계정 서버면 문제를 풀 때마다 바로 (1.5초만 모아서)
+    soon(ms) {
       if (!conf.token || timer) return;
-      timer = setTimeout(() => { timer = null; now(); }, Math.max(ms, lastRun + SOON_GAP - Date.now()));
+      const acct = isAccount();
+      const wait = ms ?? (acct ? 1000 : 4000), gap = acct ? ACCOUNT_GAP : SOON_GAP;
+      timer = setTimeout(() => { timer = null; now(); }, Math.max(wait, lastRun + gap - Date.now()));
     },
     async connect(token) {
       token = token.trim();
@@ -240,6 +267,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     async connectAccount({ token, user, server }) {
       clearTimeout(pauseTimer); clearTimeout(timer); timer = null;
       conf = { kind: 'account', token, login: user.id, name: user.name || '', server, last: 0 };
+      acache = {}; acacheUser = user.id;
       save();
       setStatus('idle');
       await now();
