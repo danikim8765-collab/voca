@@ -13,6 +13,12 @@
 | `schema.sql` | D1 데이터베이스 표 (처음 한 번 실행) |
 | `wrangler.toml` | 명령줄(wrangler)로 올릴 때의 설정 |
 
+## 지금 올라가 있는 서버
+
+- 주소: `https://voca-account.lexioative.workers.dev` (Worker `voca-account`, D1 `voca`)
+- 2026-11-28에 Claude가 Cloudflare API로 올렸어요. 아래 대시보드 순서와 결과는 같아요.
+- 초대 코드(`INVITE`)는 Cloudflare 비밀 값이라 여기 안 적어요. 바꾸려면 대시보드 → Workers & Pages → voca-account → Settings → Variables and Secrets에서 고쳐요.
+
 ## 처음 설정 (대시보드에서, 컴퓨터나 폰 브라우저)
 
 1. **D1 데이터베이스 만들기**

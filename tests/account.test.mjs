@@ -103,9 +103,10 @@ test('복구 코드로 새 비밀번호 · 비밀번호 바꾸기 · 계정 지�
   await assert.rejects(acct.login({ id: 'jun', password: 'third-pw' }), e => e.status === 401);
 });
 
-test('서버 주소가 없으면 부르지 않고 알려 줌', async () => {
+test('서버 주소가 없으면 부르지 않고 알려 줌 · 기본 주소가 들어 있음', async () => {
+  await assert.rejects(acct.api('/api/me', { server: '' }), e => e.code === 'no_server');
   store.delete('voca.account.api');
-  assert.equal(acct.accountReady(), false);
-  await assert.rejects(acct.login({ id: 'minji', password: 'secret-pw' }), e => e.code === 'no_server');
+  assert.equal(acct.accountApi(), acct.ACCOUNT_API_DEFAULT);
+  assert.match(acct.ACCOUNT_API_DEFAULT, /^https:\/\/.+\.workers\.dev$/);
   store.set('voca.account.api', SERVER);
 });

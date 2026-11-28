@@ -3,9 +3,9 @@
 // 비밀번호 원문은 서버에 안 보냄: 이 기기에서 PBKDF2(비밀번호, 'voca:' + 아이디, 10만 번)으로 바꾼 key만 보냄
 // (서버는 무료 플랜이라 요청마다 CPU 10ms뿐이어서 무거운 해시는 여기서)
 
-// 서버 주소: Cloudflare에 올린 뒤 채움 (예: 'https://voca-account.이름.workers.dev').
+// 서버 주소 (Cloudflare Workers, 2026-11-28에 올림).
 // 시험할 땐 localStorage 'voca.account.api'로 바꿀 수 있음
-export const ACCOUNT_API_DEFAULT = '';
+export const ACCOUNT_API_DEFAULT = 'https://voca-account.lexioative.workers.dev';
 export const accountApi = () => {
   try { return (localStorage.getItem('voca.account.api') || ACCOUNT_API_DEFAULT).replace(/\/+$/, ''); } catch { return ACCOUNT_API_DEFAULT; }
 };
