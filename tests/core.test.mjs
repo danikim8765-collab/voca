@@ -682,6 +682,36 @@ test('뜻 채점: [ ] 안의 바꿔 쓸 수 있는 말도 정답', async () => {
   assert.equal(gradeMeaning('행복하다', '1. 차별하다 2. 식별[구별]하다', 'easy').score, 0);
 });
 
+test('뜻 채점: 어미에 붙은 오타 · 두 글자 줄기의 모음 오타 (예전엔 어미를 떼고 두 글자가 돼서 못 봐줬음)', async () => {
+  const { gradeMeaning } = await import('../js/core.js');
+  const g = (u, a, s = 'easy') => gradeMeaning(u, a, s);
+  // 어미 안의 오타는 뜻을 안 바꿔서 확실히 봐줌 (maybe 아님) + 바른 철자를 알려 줌
+  assert.equal(g('포기하디', '포기하다').score, 2);
+  assert.equal(g('포기하디', '포기하다').maybe, undefined);
+  assert.deepEqual(g('포기하디', '포기하다').typo, [['포기하디', '포기하다']]);
+  assert.equal(g('명확헌', '명확한, 분명한').score, 2);
+  // 두 글자 줄기의 둘째 글자 모음만 다름: 대개 오타라 봐주되 maybe (AI가 되면 AI에게 물음)
+  for (const [u, a] of [['포귀하다', '포기하다'], ['명학한', '명확한'], ['즐거다', '즐기다'], ['악회되다', '악화되다[시키다]'], ['정학한', '정확한']]) {
+    const r = g(u, a);
+    assert.equal(r.score, 2, u);
+    assert.equal(r.maybe, true, u);
+    assert.equal(r.typo[0][0], u);
+  }
+  // 보통: 갈래마다 하나씩은 그대로, 오타 갈래도 맞은 걸로 셈
+  assert.equal(g('포귀하다, 그만두다', '1. 버리다, 포기하다 2. 그만두다', 'mid').score, 2);
+  assert.equal(g('포귀하다', '1. 버리다, 포기하다 2. 그만두다', 'mid').score, 1);
+  // 받침·첫소리가 다르거나 첫 글자가 다르면 다른 말 (수입 ↔ 수익, 방해 ↔ 방패, 최고 ↔ 최소, 열정 ↔ 결정, 고대 ↔ 기대)
+  for (const [u, a] of [['수익하다', '수입하다'], ['방패하다', '방해하다'], ['최소의', '최고의'], ['결정', '열정'], ['기대의', '고대의'], ['줄기다', '즐기다'], ['섦득하다', '설득하다'], ['설듣하다', '설득하다']]) {
+    assert.equal(g(u, a).score, 0, u);
+  }
+  // 정확히 쓰면 typo 없음
+  assert.equal(g('포기하다', '포기하다').typo, undefined);
+  assert.equal(g('치명적인', '1. 치명적인 2. 결정적인, 중대한').typo, undefined);
+  // 세 글자 넘는 줄기의 오타는 전처럼 확실히 봐줌 (maybe 아님)
+  assert.equal(g('치멍적인', '1. 치명적인 2. 결정적인, 중대한').maybe, undefined);
+  assert.deepEqual(g('치멍적인', '1. 치명적인 2. 결정적인, 중대한').typo, [['치멍적인', '치명적인']]);
+});
+
 test('4지선다 보기: 예문에서 쓰인 품사와 같은 단어부터 (문장 구조로 답이 드러나지 않게)', () => {
   const mk = (word, meaning, ex1ko = '') => ({ id: `1|${word}`, day: 1, word, blank: word, meaning, ex1ko });
   const pool = [

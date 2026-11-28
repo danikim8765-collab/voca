@@ -3,7 +3,7 @@ import {
   applyResult, buildPlan, pickReview, pickSrsReview, reviewPace, retentionCurve, PRESETS, normalizeStat, isDue, dateStr, DAY_START_HOUR, daysBetween, pickDistractors, shuffle,
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
-  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey, lapOneDays,
+  willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey, lapOneDays, WEAK_STAGE,
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, aiAddPrompt, aiNote, queueOrder, perLimit, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
@@ -444,10 +444,12 @@ function show(id, push = true) {
   if (current === 'coach' && id !== 'coach' && coachLeave) { const f = coachLeave; coachLeave = null; f(); }
   document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   document.body.dataset.screen = id; // 화면별 CSS (style.css body[data-screen])
+  document.documentElement.classList.toggle('no-ptr', id === 'quiz'); // 퀴즈 중엔 당겨서 새로고침 막기 (정답 시트를 끌어내리다 홈으로 가지 않게)
   if (id !== 'settings') stopKeyCapture();
   if (push && id !== 'home' && current === 'home') history.pushState({ s: id }, '');
   if (id === 'quiz' && current !== 'quiz') { clearTimeout(toast.timer); $('#toast').hidden = true; }
   current = id;
+  if (kindsHome) placeSweepKinds(); // 총정리 홈 카드에 옮겨 둔 '총정리 문제' 칸을 학습 계획 화면으로 (또는 그 반대)
   document.querySelectorAll('#tabbar [data-tab]').forEach(b => {
     const on = b.dataset.tab === id;
     b.classList.toggle('on', on);
@@ -473,6 +475,8 @@ function renderTabs() {
   if (current === 'coach' && !shown.coach) goHome();
 }
 function openTab(tab) {
+  // 총정리 기간의 홈 버튼은 총정리 홈으로 (모드 홈에 있었어도)
+  if (tab === 'home' && modeHome && inSweep()) { setHomeView('sweep'); if (current === 'home') return; }
   if (tab === current && tab !== 'list') { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   if (tab === 'home') goHome();
   else if (tab === 'days') { renderHome(); show('days'); }
@@ -649,8 +653,15 @@ const cleanSweepKind = v => ({
   // 코치와 정한 총정리 첫날 (그때의 시험일 startExam과 같을 때만 씀. 두 모드·기기가 같은 날 시작하게)
   start: v && /^\d{4}-\d\d-\d\d$/.test(v.start || '') ? v.start : '',
   startExam: v && /^\d{4}-\d\d-\d\d$/.test(v.startExam || '') ? v.startExam : '',
+  // 총정리 단어 문제 채점 난도. 비어 있으면 단어 모드의 채점 설정을 따름
+  strict: v && ['easy', 'mid', 'hard'].includes(v.strict) ? v.strict : '',
 });
 const sweepFirst = () => cleanSweepKind(settings.sweepKind).first;
+// 단어 모드의 직접 입력 채점 설정 (예문 모드 화면에서도 단어 모드 설정을 읽음)
+const wordStrict = () => (WORD ? settings.strict : load('voca.word.settings.v1', {}).strict) || 'mid';
+const sweepStrict = () => cleanSweepKind(settings.sweepKind).strict || wordStrict();
+// 지금 문제의 채점 난도: 총정리면 총정리 설정(예전엔 총정리를 연 모드의 설정을 써서, 예문 모드에서 열면 단어 모드에서 고른 '느슨'이 안 먹었음)
+const gradeStrict = () => (session && session.both ? sweepStrict() : settings.strict);
 const sweepKind = m => cleanSweepKind(settings.sweepKind)[m === 'w' ? 'w' : 'e'];
 // 복습에 나오는 단어: 학습 범위 + 내 단어 + 범위 밖이어도 독해에서 막힌 단어책 단어
 let poolMemo = { rw: null, ver: -1, out: [] };
@@ -792,6 +803,8 @@ function renderHome() {
   setSeg('#seg-sweep-w', sweepKind('w'));
   setSeg('#seg-sweep-e', sweepKind('e'));
   setSeg('#seg-sweep-first', sweepFirst());
+  setSeg('#seg-sweep-strict', sweepStrict());
+  $('#row-sweep-strict').hidden = sweepKind('w') !== 'type'; // 단어 문제가 4지선다면 채점할 게 없음
   $('#exam-date').value = settings.exam || '';
   // 시험일 옆 D-n, 목표일(설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
   const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
@@ -880,6 +893,70 @@ function renderHome() {
     info.innerHTML = '';
     info.append(saved.label, ' · ', el('span', 'nobr', `${saved.done.length}/${saved.total} 완료`));
   } else rc.hidden = true;
+  applyView();
+  renderSweepHome();
+}
+
+// ---------- 총정리 홈 ----------
+// 총정리 기간(inSweep)엔 홈이 셋: 총정리 홈(기본, 두 모드를 같이 보는 총정리라 어느 모드에도 속하지 않음) · 예문 홈 · 단어 홈.
+// 총정리 홈에선 위 모드 전환이 둘 다 안 눌려 있고, 모드를 누르면 그 모드 홈으로(?v=mode). 아래 탭·옆 메뉴의 홈은 총정리 홈으로.
+// 모드 홈엔 오늘 카드 대신 '총정리 기간이에요' 띠(누르면 총정리 홈)와 그 모드의 다시 볼 단어·범위 연습·암기 완료가 남음.
+// 총정리 기간이 아니면 예전 그대로 (html.sweep-on · data-view="sweep"은 style.css에서 씀, index.html 머리가 첫 화면 전에 짐작)
+let modeHome = /[?&]v=mode(&|$)/.test(location.search);
+let kindsHome = null; // 학습 계획 화면에서 '총정리 문제' 칸이 원래 있던 자리 (총정리 홈에선 총정리 계획 카드로 옮김)
+function applyView() {
+  const root = document.documentElement, on = inSweep();
+  root.classList.toggle('sweep-on', on);
+  if (on && !modeHome) root.dataset.view = 'sweep'; else delete root.dataset.view;
+  if (window.vocaNav) window.vocaNav.sync();
+  try { if (on) localStorage.setItem('voca.sweep.span', `${sweepGoal()}|${settings.exam}`); else localStorage.removeItem('voca.sweep.span'); } catch {}
+  placeSweepKinds();
+}
+function placeSweepKinds() {
+  const k = $('#sweep-kinds'), slot = $('#swp-kinds-slot');
+  if (!kindsHome) kindsHome = { parent: k.parentNode, next: k.nextSibling };
+  const home = document.documentElement.dataset.view === 'sweep' && current !== 'plan';
+  if (home && k.parentNode !== slot) slot.appendChild(k);
+  else if (!home && k.parentNode === slot) kindsHome.parent.insertBefore(k, kindsHome.next);
+}
+// 'sweep' = 총정리 홈, 'mode' = 지금 페이지 모드의 홈 (주소에 v=mode를 남겨서 새로고침해도 그대로)
+function setHomeView(v) {
+  modeHome = v === 'mode';
+  try {
+    const u = new URL(location.href);
+    if (modeHome) u.searchParams.set('v', 'mode'); else u.searchParams.delete('v');
+    history.replaceState(history.state, '', u);
+  } catch {}
+  renderHome();
+  if (current === 'home') window.scrollTo({ top: 0 });
+}
+function renderSweepHome() {
+  const view = document.documentElement.dataset.view === 'sweep';
+  if (!inSweep()) return;
+  const ex = settings.exam, L = daysBetween(dateStr(), ex);
+  $('#sweep-banner-sub').textContent = `시험까지 ${L}일 · 오늘 몫은 총정리 홈에서`;
+  if (!view) return;
+  const sp = sweepPick(), g = sweepGoal();
+  const lo = Math.min(settings.from, settings.to), hi = Math.max(settings.from, settings.to);
+  const rw = rangeWords();
+  $('#swp-range').textContent = `${lo === hi ? `DAY ${lo}` : `DAY ${lo}~${hi}`} · ${rw.length.toLocaleString('ko-KR')}단어`;
+  $('#swp-exam').textContent = `${fmtDay(ex)} (${weekday(ex)}) · ${L > 0 ? `D-${L}` : 'D-day'}`;
+  $('#swp-span').textContent = `${fmtDay(g)} ~ ${fmtDay(addDays(ex, -1))}` + (!sp ? '' : sp.lap2Start
+    ? ` · 한 바퀴 ${sp.lap1Days}일 + 약한 단어 ${sp.days - sp.lap1Days}일` : ` · ${sp.days}일 동안 한 바퀴`);
+  // 약한 단어: 그 모드 단계가 WEAK_STAGE 아래이거나 그 모드로 안 배운 단어 (core.js pickBothSweep의 2바퀴와 같은 기준)
+  const weak = s => { const t = normalizeStat(s); return !t || (!t.g && (t.st || 0) < WEAK_STAGE); };
+  const W = statsOf('w'), E = statsOf('e');
+  let nw = 0, ne = 0, n = 0;
+  for (const w of rw) { const a = weak(W[w.id]), b = weak(E[w.id]); if (a) nw++; if (b) ne++; if (a || b) n++; }
+  $('#sww-n').textContent = n.toLocaleString('ko-KR');
+  $('#sww-of').textContent = ` / ${rw.length.toLocaleString('ko-KR')}`;
+  const split = $('#sww-split');
+  split.innerHTML = '';
+  split.append(el('span', null, `단어 → 뜻 ${nw}`), el('span', null, `예문 빈칸 ${ne}`));
+  $('#sww-note').textContent = !n ? '약한 단어가 없어요. 이대로 시험까지!'
+    : sp && sp.lap === 2 ? '지금은 2바퀴: 약한 단어만 약한 쪽 문제로 한 번 더 봐요. 맞히면 빠져요'
+      : sp && sp.lap2Start ? `${fmtDay(sp.lap2Start)}부터 2바퀴에서 이 단어들만 한 번 더 봐요. 그 전에 맞히면 빠져요`
+        : '맞혀서 단계가 오르면 빠져요';
 }
 
 // DAY 박스 오른쪽으로 밀기: 오늘 카드가 그 DAY만 학습하는 카드로 (예전에 누르면 하던 것)
@@ -2915,7 +2992,7 @@ function showSynFeedback(correct, given, kind, label) {
   answerFx(state);
   const head = $('#fb-head');
   head.hidden = false;
-  head.className = 'tag fb-head ' + state;
+  head.className = 'tag fb-head ' + state + (correct && q.fire ? ' fire' : '');
   // 정답 보고 쓴 건 본인이 방금 한 일이라 화면엔 '조금 뒤 다시'만 (신고·AI에 붙는 fbLabel엔 그대로 남김)
   head.textContent = kind === 'copied' ? label.replace(/^정답 보고 씀 · /, '') : label;
   const prompt = document.querySelector('.q-prompt');
@@ -3214,7 +3291,7 @@ function renderMeaningTyping(actions) {
   Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, enterKeyHint: 'done' });
   input.placeholder = '뜻 입력 (여러 뜻은 쉼표로)';
   const ok = el('button', 'btn primary', '확인');
-  const level = { easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통';
+  const level = { easy: '느슨', mid: '보통', hard: '엄격' }[gradeStrict()] || '보통';
   const grader = aiOnline() ? `${level} · 오답이면 AI 재확인` : aiEnabled() ? `${level} (오프라인)` : level;
   actions.append(input, el('div', 'type-help', `채점: ${grader}`), ok);
   let busy = false;
@@ -3227,19 +3304,24 @@ function renderMeaningTyping(actions) {
     cur.how = 'type';
     input.blur();
     // 규칙 채점으로 바로. 정답이 아닐 때만(오답·부분 정답) 인터넷이 되면 AI가 다시 봄. AI가 실패하면 규칙 결과 그대로
-    let res = gradeMeaning(v, cur.w.meaning, settings.strict);
+    const strict = gradeStrict();
+    let res = gradeMeaning(v, cur.w.meaning, strict);
     let aiMissed = false; // AI를 불렀는데 못 받음(한도 429·시간 초과 등) → 규칙 채점 결과라는 걸 알려 줌
-    if (res.score < 2 && aiOnline()) {
+    // 오타 같은 말(maybe: 포귀하다 → 포기하다, 주위 → 주의처럼 다른 말일 수도)로 맞혔으면 AI가 될 때 AI에게 한 번 더 물음.
+    // AI가 안 되면 오타로 봐줌 (core.js typoKo)
+    if ((res.score < 2 || res.maybe) && aiOnline()) {
       busy = true;
       input.disabled = ok.disabled = true;
       ok.textContent = `AI 확인 중…`;
-      const ai = await aiGradeMeaning({ word: cur.w.word, meaning: cur.w.meaning, user: v, strict: settings.strict });
+      const ai = await aiGradeMeaning({ word: cur.w.word, meaning: cur.w.meaning, user: v, strict, typo: res.maybe ? res.typo : [] });
       busy = false;
       if (q !== cur || cur.answered) return; // 채점 중에 다른 화면으로 나갔으면 버림
       input.disabled = ok.disabled = false;
       ok.textContent = '확인';
-      if (ai) res = ai; else aiMissed = true;
+      if (ai) res = ai; else if (!res.maybe) aiMissed = true;
     }
+    // 오타를 봐주고 맞힌 거면 정답 화면에 바른 철자를 보여 줌
+    cur.spell = res.score === 2 && res.typo ? res.typo : null;
     const { score, missing, note = '' } = res;
     const tail = (note ? ` · ${note}` : score === 1 ? ` · ${missing}개 뜻이 빠졌어요` : '') + (aiMissed ? ' · AI 확인 못 함(규칙으로만 채점)' : '');
     if (score === 2) answer(!cur.usedHint, null, cur.usedHint ? 'hint' : undefined);
@@ -3835,6 +3917,10 @@ function answer(correct, given, kind) {
   if (session.opts && session.opts.id === key) delete session.opts; // 다음에 또 나오면 보기를 새로 뽑음
 
   let label;
+  // 총정리: 맞힌 단어의 다음 복습일(외운 단어는 간격이 두 배씩이라 '31일 뒤'처럼 나옴)은 시험 앞에선 쓸모없어서,
+  // 대신 주황 불꽃 표시로 기운을 북돋움 (일정에는 그대로 반영). 연속으로 맞힌 수를 셈
+  session.streak = outcome === 'ok' ? (session.streak || 0) + 1 : 0;
+  q.fire = !!session.both && outcome === 'ok' && !graduated;
   if (outcome === 'wrong') {
     if (!session.wrong.includes(key)) session.wrong.push(key);
     const when = againLater(key, kind === 'copied' ? 'hint2' : 'wrong');
@@ -3846,6 +3932,7 @@ function answer(correct, given, kind) {
     const n = st.due ? daysBetween(today, st.due) : 0;
     label = kind === 'partial' ? `부분 정답 · ${when}`
       : outcome === 'hint' ? `힌트 사용 · ${when}`
+      : q.fire ? fireLabel(session.streak, retry ? comingAgain(key) : '')
       : retry ? `정답! · ${comingAgain(key) || '내일 다시'}`
         : graduated ? '정답! · 졸업했어요 🎓'
         : scheduled && n > 0 ? `정답! · ${n === 1 ? '내일' : `${n}일 뒤`} 복습`
@@ -3857,6 +3944,13 @@ function answer(correct, given, kind) {
   sync.soon();
   saveSession();
   showFeedback(correct, given, kind, label);
+}
+
+// 총정리에서 맞혔을 때의 표시: 연속 3개부터는 몇 연속인지, 그 전엔 짧은 응원 (again = 이번 학습에 또 나올 때)
+const FIRE_CHEER = ['화이팅', '좋아요', '이대로', '계속 가요', '뜨거워요'];
+function fireLabel(streak, again = '') {
+  const tail = streak >= 3 ? `${streak}연속` : FIRE_CHEER[Math.floor(Math.random() * FIRE_CHEER.length)];
+  return `정답! 🔥 ${tail}` + (again ? ` · ${again}` : '');
 }
 
 // 단어 모드 '모르겠어요': 틀린 걸로 치고 정답을 보여 줌 (같은 학습 중 3~5문제 뒤 + 내일 다시)
@@ -3878,11 +3972,14 @@ function showFeedback(correct, given, kind, label) {
   // 카드 위 상태 표시
   const head = $('#fb-head');
   head.hidden = false;
-  head.className = 'tag fb-head ' + state;
+  head.className = 'tag fb-head ' + state + (correct && q.fire ? ' fire' : '');
   head.textContent = label;
   const prompt = document.querySelector('.q-prompt');
-  prompt.textContent = !correct && given ? `내 답: ${given}` : ''; // 비면 줄을 숨김 (style.css .q-prompt:empty)
+  // 오타를 봐주고 맞혔으면 바른 철자를 (명학한 → 명확한)
+  const spell = correct && q.spell ? q.spell.map(([u, a]) => `${u} → ${a}`).join(', ') : '';
+  prompt.textContent = !correct && given ? `내 답: ${given}` : spell ? `철자: ${spell}` : ''; // 비면 줄을 숨김 (style.css .q-prompt:empty)
   prompt.classList.toggle('my-answer', !correct && !!given);
+  prompt.classList.toggle('spell-note', !!spell);
   // 문장 카드에 정답 채우기
   const box = $('#q-sentences');
   box.innerHTML = '';
@@ -3961,6 +4058,8 @@ function openSheet(w, more = []) {
   $('#fb-tab-ai').hidden = !canAsk;
   if (canAsk) aiPane.appendChild(askBox(q));
   setFbTab('mean');
+  $('#feedback').classList.remove('peek'); // 새 문제의 시트는 펼친 채로
+  $('#fb-grab').setAttribute('aria-expanded', 'true');
 
   $('#feedback').hidden = false;
   fitFbWord();
@@ -3982,7 +4081,7 @@ function reportCtx() {
   const text = o => (q.syn ? o.text : qWord() ? o.meaning : displayAnswer(o));
   const ctx = {
     word: w.word, id: w.id, day: w.day, mode, how, label: q.fbLabel, given: q.fbGiven || q.userAnswer || '',
-    strict: mode === 'word' && how === 'type' ? `채점 ${{ easy: '느슨', mid: '보통', hard: '엄격' }[settings.strict] || '보통'}` : '',
+    strict: mode === 'word' && how === 'type' ? `채점 ${{ easy: '느슨', mid: '보통', hard: '엄격' }[gradeStrict()] || '보통'}` : '',
     meaning: w.meaning, ex1: w.ex1, ex1ko: bold(w.ex1ko), ex2: w.ex2, ex2ko: bold(w.ex2ko), marked: w.koMark || '',
   };
   if (opts && opts.length) {
@@ -4275,6 +4374,53 @@ function slideSheet(change) {
   };
   inner.addEventListener('transitionend', end);
   setTimeout(end, 400); // transitionend가 안 오는 때도 있어서
+}
+// 정답 시트 접기: 위쪽 회색 막대(또는 단어 줄)를 아래로 끌면 단어 줄과 '계속하기'만 남기고 접혀서 예문이 다시 보임.
+// 위로 끌거나 막대·단어 줄을 누르면 다시 펼침. 예전엔 막대가 모양뿐이라 끌면 브라우저의 '당겨서 새로고침'이 돼 홈으로 갔음
+// (퀴즈 중엔 그것도 막음: show()의 no-ptr). 넓은 컴퓨터 화면은 시트가 오른쪽 칸이라 접지 않음
+function setPeek(on) {
+  const fb = $('#feedback');
+  if (fb.hidden || fb.classList.contains('peek') === on) return;
+  slideSheet(() => fb.classList.toggle('peek', on));
+  $('#fb-grab').setAttribute('aria-expanded', String(!on));
+}
+function setupSheetDrag() {
+  const fb = $('#feedback'), inner = fb.querySelector('.sheet-inner'), grab = $('#fb-grab');
+  let on = false, moved = false, id = null, y0 = 0, t0 = 0, dy = 0, swallow = false;
+  const can = () => !wideDesk() && !fb.hidden && !fb.classList.contains('typing');
+  inner.addEventListener('pointerdown', e => {
+    if (!can() || !e.target.closest('.grab, .fb-word') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    on = true; moved = false; id = e.pointerId; y0 = e.clientY; t0 = e.timeStamp; dy = 0;
+  });
+  inner.addEventListener('pointermove', e => {
+    if (!on || e.pointerId !== id) return;
+    dy = e.clientY - y0;
+    if (!moved && Math.abs(dy) < 8) return;
+    if (!moved) { moved = true; try { inner.setPointerCapture(id); } catch {} inner.classList.add('dragging'); }
+    const peek = fb.classList.contains('peek');
+    // 펼친 채로는 아래로 손가락을 따라오고, 접힌 채로는 위로 조금만 (반대쪽은 안 움직임)
+    inner.style.transform = `translateY(${peek ? Math.min(0, dy) * 0.25 : Math.max(0, dy)}px)`;
+  });
+  const end = e => {
+    if (!on || e.pointerId !== id) return;
+    on = false;
+    inner.classList.remove('dragging');
+    inner.style.transform = '';
+    if (!moved) return;
+    swallow = true; setTimeout(() => (swallow = false), 0); // 끌고 난 뒤의 click은 버튼 누름으로 치지 않음
+    const v = dy / Math.max(1, e.timeStamp - t0); // 빠르게 튕기면 조금만 끌어도
+    const peek = fb.classList.contains('peek');
+    if (!peek && (dy > 70 || v > 0.5)) setPeek(true);
+    else if (peek && (dy < -24 || v < -0.4)) setPeek(false);
+  };
+  inner.addEventListener('pointerup', end);
+  inner.addEventListener('pointercancel', end);
+  inner.addEventListener('click', e => {
+    if (swallow) { e.stopPropagation(); e.preventDefault(); return; }
+    // 접혀 있을 때 단어 줄(버튼 말고)을 누르면 펼침
+    if (fb.classList.contains('peek') && e.target.closest('.fb-word') && !e.target.closest('button')) setPeek(false);
+  }, true);
+  grab.addEventListener('click', () => { if (can()) setPeek(!fb.classList.contains('peek')); });
 }
 function setFbTab(t) {
   const fb = $('#feedback');
@@ -5524,6 +5670,7 @@ function bind() {
   onSeg('#seg-sweep-w', v => setSweepKind('w', v));
   onSeg('#seg-sweep-e', v => setSweepKind('e', v));
   onSeg('#seg-sweep-first', v => setSweepKind('first', v));
+  onSeg('#seg-sweep-strict', v => setSweep({ strict: v }));
   onSeg('#seg-new', v => { settings.newPerDay = +v; settings.prefsAt = Date.now(); saveSettings(); renderPlan(); sync.soon(); });
   // 학습 › 복습 › 더 하기를 눌러 그 단계로
   $('#today-flow').addEventListener('click', e => {
@@ -5587,6 +5734,9 @@ function bind() {
   onSeg('#seg-my-per', v => setMyCfg({ per: v === 'all' ? 'all' : +v }));
   $('#btn-book-restart').addEventListener('click', restartBook);
   $('#plan-sum-card').addEventListener('click', () => { planFrom = null; show('plan'); });
+  $('#btn-swp-more').addEventListener('click', () => { planFrom = null; show('plan'); });
+  $('#sweep-banner').addEventListener('click', () => setHomeView('sweep'));
+  window.addEventListener('voca:modehome', () => setHomeView('mode')); // 총정리 홈에서 이 페이지의 모드를 누름 (index.html 모드 전환)
   $('#btn-plan-back').addEventListener('click', () => {
     if (planFrom === 'settings' && history.state && history.state.s === 'settings') { planFrom = null; renderSettings(); renderSyncStatus(); show('settings', false); }
     else goHome();
@@ -5598,6 +5748,7 @@ function bind() {
   $('#btn-hint').addEventListener('click', useHint);
   $('#btn-idk').addEventListener('click', giveUp);
   $('#fb-tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) setFbTab(b.dataset.t); });
+  setupSheetDrag();
   $('#btn-next').addEventListener('click', next);
   $('#btn-res-home').addEventListener('click', () => goHome());
 

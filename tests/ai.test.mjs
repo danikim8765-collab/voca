@@ -52,6 +52,19 @@ test('AI 응답을 점수로', async () => {
   assert.match(body.messages[0].content, /죽음을 부르는/);
 });
 
+test('채점: 오타를 먼저 바로잡아 읽게(read) · 난이도는 철자와 상관없다고 기준 바로 뒤에 · 앱이 본 오타 후보를 같이 넘김', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  reply = () => json({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"read":"포기하다","score":2,"missing":0,"note":"철자: 포기하다"}' }] });
+  const r = await aiGradeMeaning({ word: 'abandon', meaning: '포기하다', user: '포귀하다', strict: 'mid', typo: [['포귀하다', '포기하다']] });
+  assert.deepEqual(r, { score: 2, missing: 0, note: '철자: 포기하다' });
+  const body = JSON.parse(calls[0].opts.body);
+  assert.deepEqual(body.output_config.format.schema.required, ['read', 'score', 'missing', 'note']);
+  const user = body.messages[0].content;
+  assert.match(user, /채점 기준: .*철자는 어느 난이도든 따지지 않아요/);
+  assert.match(user, /'포귀하다'는 '포기하다'의 오타일 수 있어요/);
+  assert.match(body.system[0].text, /줄기가 그 자체로 흔히 쓰는 다른 뜻의 낱말이면 오타가 아니라/);
+});
+
 test('거절·오류·잘못된 응답·네트워크 실패는 null', async () => {
   store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
   reply = () => json({ stop_reason: 'refusal', content: [] });

@@ -16,6 +16,15 @@
       document.documentElement.setAttribute('data-mode', word ? 'word' : 'ex');
       // 컴퓨터(마우스·키보드): 화면 키보드 없이 실제 키보드로, 넓으면 두 칸 배치
       if (window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches) document.documentElement.classList.add('desk');
+      // 총정리 기간이면 첫 화면부터 총정리 홈 (?v=mode = 모드 홈을 골라서 들어옴). 기간은 앱이 저장해 둔 값으로 미리 짐작하고, 앱이 뜨면 다시 맞춤 (app.js applyView)
+      try {
+        var sp = (localStorage.getItem('voca.sweep.span') || '').split('|'), t = new Date(Date.now() - 4 * 3600e3);
+        var today = t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2);
+        if (sp[0] && sp[1] && sp[0] <= today && today < sp[1]) {
+          document.documentElement.classList.add('sweep-on');
+          if (!/[?&]v=mode(&|$)/.test(location.search)) document.documentElement.setAttribute('data-view', 'sweep');
+        }
+      } catch (e) {}
       if (word) {
         document.title = 'VOCA 단어 암기';
         document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f7f6f1');
@@ -47,7 +56,7 @@
   <!-- 홈 -->
   <section id="home" class="screen active">
     <header class="top">
-      <h1>VOCA <span class="sub" data-only="ex">빈칸 암기</span><span class="sub" data-only="word">단어 암기</span></h1>
+      <h1>VOCA <span class="sub" data-only="ex">빈칸 암기</span><span class="sub" data-only="word">단어 암기</span><span class="sub sw-title">총정리</span></h1>
       <span class="head-right"><span id="sync-badge" class="sync-badge" hidden></span><nav class="mode-switch" aria-label="학습 모드"><span class="mode-thumb" aria-hidden="true"></span><a href="./" data-m="ex" aria-label="예문 (빈칸 암기)" title="예문"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6.5H21M3 12H7M16.5 12H21M3 17.5H13"/><path d="M9.5 13.2H14.5" stroke-dasharray="1.5 2"/></svg></a><a href="./?m=word" data-m="wd" aria-label="단어 (뜻 암기)" title="단어"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18L7.5 6L12 18M4.7 13.5H10.3"/><circle cx="17" cy="15" r="3"/><path d="M20 12V18"/></svg></a></nav></span>
     </header>
 
@@ -116,6 +125,31 @@
           </div>
         </div>
         <div class="muted" id="today-note"></div>
+      </div>
+
+      <!-- 총정리 기간에 모드 홈(예문·단어)에서: 오늘 몫은 총정리 홈에 있다고 알려 줌 (누르면 총정리 홈) -->
+      <button class="card sweep-banner" id="sweep-banner" type="button">
+        <svg class="sb-fire" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5c.6 3.2 2.6 4.9 4.3 6.8 1.6 1.8 2.7 3.6 2.7 6.1A7 7 0 0 1 12 22a7 7 0 0 1-7-6.6c0-2.6 1.3-4.3 2.6-5.7.2 1.6.9 2.9 2.1 3.5-.3-3.9.9-7.6 2.3-10.7Z" fill="#ffe066"/><path d="M12 12.2c.4 1.7 1.6 2.6 2.4 3.6.6.7 1 1.5 1 2.5a3.4 3.4 0 0 1-6.8 0c0-1.5.8-2.6 1.6-3.4.1.7.5 1.3 1 1.6-.1-1.6.2-3 .8-4.3Z" fill="#fff9db"/></svg>
+        <span class="sb-text"><b>총정리 기간이에요</b><small id="sweep-banner-sub">오늘 몫은 총정리 홈에서</small></span>
+        <i class="chev" aria-hidden="true">›</i>
+      </button>
+
+      <!-- 총정리 홈에만: 총정리 계획(학습 계획 화면에서 총정리에 필요한 것만) · 약한 단어 (app.js renderSweepHome) -->
+      <div class="card sw-only" id="sw-plan">
+        <div class="label">총정리 계획</div>
+        <div class="swp-rows">
+          <div class="swp-row"><span>범위</span><b id="swp-range"></b></div>
+          <div class="swp-row"><span>시험</span><b id="swp-exam"></b></div>
+          <div class="swp-row"><span>총정리</span><b id="swp-span"></b></div>
+        </div>
+        <div id="swp-kinds-slot"></div>
+        <button class="btn ghost small swp-more" id="btn-swp-more" type="button">범위·시험일·목표일 바꾸기 ›</button>
+      </div>
+      <div class="card sw-only" id="sw-weak">
+        <div class="label">약한 단어</div>
+        <div class="prog-num"><b id="sww-n">0</b><span id="sww-of"></span></div>
+        <div class="sww-split" id="sww-split"></div>
+        <p class="muted sww-note" id="sww-note"></p>
       </div>
 
       <!-- 학습 계획 요약: 누르면 학습 계획 화면(범위·문제 방식·하루 개수·시험일) -->
@@ -246,6 +280,13 @@
             <button data-v="choice">4지선다</button>
           </div>
         </div>
+        <div class="set-row" id="row-sweep-strict"><span class="t">단어 채점<small class="d">직접 입력한 뜻을 얼마나 엄하게</small></span>
+          <div class="seg" id="seg-sweep-strict">
+            <button data-v="easy">느슨</button>
+            <button data-v="mid">보통</button>
+            <button data-v="hard">엄격</button>
+          </div>
+        </div>
         <div class="set-row"><span class="t">예문 빈칸<small class="d">예문에 들어갈 단어</small></span>
           <div class="seg" id="seg-sweep-e">
             <button data-v="choice">4지선다</button>
@@ -302,7 +343,7 @@
 
     <div class="sheet" id="feedback" hidden>
       <div class="sheet-inner">
-        <div class="grab"></div>
+        <button class="grab" id="fb-grab" type="button" aria-label="정답 칸 접기·펼치기" title="아래로 끌면 접혀요" aria-expanded="true"></button>
         <div class="fb-word">
           <div>
             <div class="w" id="fb-word"></div>
@@ -795,6 +836,9 @@
   var nav = document.querySelector('.mode-switch');
   if (!nav) return;
   var self = document.documentElement.getAttribute('data-mode') === 'word' ? 'wd' : 'ex';
+  var root = document.documentElement;
+  // 총정리 홈에선 둘 다 안 눌린 채 (none). 앱이 화면을 바꾸면 window.vocaNav.sync()로 다시 맞춤
+  var cur = function () { return root.getAttribute('data-view') === 'sweep' ? 'none' : self; };
   var smooth = !!window.CSSViewTransitionRule && !matchMedia('(prefers-reduced-motion: reduce)').matches;
   function set(m) {
     nav.setAttribute('data-mode', m);
@@ -804,18 +848,25 @@
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
   }
-  set(self);
+  set(cur());
+  window.vocaNav = { sync: function () { set(cur()); } };
   nav.addEventListener('click', function (e) {
     var a = e.target.closest('a');
     if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
     e.preventDefault();
-    if (a.getAttribute('data-m') === self) return;
-    if (smooth) { location.href = a.href; return; }
+    if (a.getAttribute('data-m') === self) {
+      // 총정리 홈에서 지금 페이지의 모드를 누르면 페이지를 바꾸지 않고 그 모드 홈으로 (app.js가 받음)
+      if (cur() === 'none') { set(self); window.dispatchEvent(new CustomEvent('voca:modehome')); }
+      return;
+    }
+    // 총정리 기간에 다른 모드로 가면 그 모드의 홈으로 (총정리 홈 말고)
+    var href = a.href + (root.classList.contains('sweep-on') ? (a.href.indexOf('?') < 0 ? '?' : '&') + 'v=mode' : '');
+    if (smooth) { location.href = href; return; }
     set(a.getAttribute('data-m'));
-    setTimeout(function () { location.href = a.href; }, 170);
+    setTimeout(function () { location.href = href; }, 170);
   });
   // 뒤로가기로 돌아왔을 때(페이지 캐시) 흰 칸을 원래 자리로
-  window.addEventListener('pageshow', function (e) { if (e.persisted) set(self); });
+  window.addEventListener('pageshow', function (e) { if (e.persisted) set(cur()); });
 })();
 </script>
 </body>

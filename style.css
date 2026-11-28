@@ -617,7 +617,30 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 .tag.fb-head.ok { color: var(--on-ok); background: var(--ok); }
 .tag.fb-head.bad { color: var(--on-bad); background: var(--bad); }
 .tag.fb-head.copied, .tag.fb-head.hint { color: var(--on-warn); background: var(--warn); }
+/* 총정리에서 맞힘: 주황 불꽃 (app.js fireLabel). 글자 뒤로 불씨가 두 개 피어오르고, 표시는 숨 쉬듯 달아오름 */
+:root:root .tag.fb-head.ok.fire:not([hidden]) { /* :root:root = '재밌게' 반응의 통통 튀기보다 앞서게 */
+  color: #fff; background: linear-gradient(135deg, #ff9a1f 0%, #ff6a00 55%, #f2470b 100%);
+  position: relative; overflow: visible; isolation: isolate;
+  animation: fire-pop .45s cubic-bezier(.3, 1.6, .5, 1), fire-glow 1.4s ease-in-out .45s infinite alternate;
+}
+.tag.fb-head.ok.fire::before, .tag.fb-head.ok.fire::after {
+  content: ''; position: absolute; z-index: -1; bottom: 55%; width: 7px; height: 7px; border-radius: 50% 50% 50% 0;
+  background: radial-gradient(circle at 40% 40%, #ffe27a, #ff8a00 60%, transparent 70%); transform: rotate(-45deg);
+  opacity: 0; animation: ember 1.1s ease-out .15s infinite;
+}
+.tag.fb-head.ok.fire::before { left: 22%; }
+.tag.fb-head.ok.fire::after { left: 68%; width: 5px; height: 5px; animation-delay: .6s; }
+@keyframes fire-pop { 0% { transform: scale(.6); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
+@keyframes fire-glow { from { box-shadow: 0 0 6px 0 rgba(255, 120, 20, .45); } to { box-shadow: 0 0 14px 3px rgba(255, 90, 0, .55); } }
+@keyframes ember { 0% { opacity: 0; transform: translateY(6px) rotate(-45deg) scale(.6); } 25% { opacity: 1; } 100% { opacity: 0; transform: translateY(-16px) rotate(-45deg) scale(1); } }
+:root[data-react="calm"] .tag.fb-head.ok.fire::before, :root[data-react="calm"] .tag.fb-head.ok.fire::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tag.fb-head.ok.fire { animation: none !important; box-shadow: 0 0 10px 2px rgba(255, 100, 10, .45); }
+  .tag.fb-head.ok.fire::before, .tag.fb-head.ok.fire::after { display: none; }
+}
 .q-prompt.my-answer { color: var(--bad); font-weight: 700; font-size: 15px; letter-spacing: 0; }
+/* 오타를 봐주고 맞힘: 바른 철자만 조용히 (app.js showFeedback) */
+.q-prompt.spell-note { color: var(--muted); font-weight: 600; font-size: 14px; letter-spacing: 0; }
 /* 단어·탭·계속하기는 고정, 뜻/예문 내용만 스크롤 */
 .sheet-inner > * { flex: none; }
 .sheet-inner > .fb-pane { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -625,6 +648,18 @@ code { background: var(--primary-soft); padding: 1px 5px; border-radius: var(--r
 :root:not(.desk) .sheet-inner > .fb-pane, :root:not(.desk) .ask-log { scrollbar-width: none; }
 :root:not(.desk) .sheet-inner > .fb-pane::-webkit-scrollbar, :root:not(.desk) .ask-log::-webkit-scrollbar { display: none; }
 .grab { width: 44px; height: 5px; border-radius: 9px; background: var(--line); margin: 0 auto 12px; }
+/* 정답 시트의 막대는 끌 수 있는 손잡이: 보이는 막대는 그대로, 누르는 자리만 위아래로 넓게 (app.js setupSheetDrag) */
+button.grab { display: block; border: 0; padding: 0; position: relative; cursor: grab; touch-action: none; flex: none; }
+button.grab::after { content: ''; position: absolute; inset: -12px -40px; }
+#feedback .fb-word { touch-action: none; }
+.sheet-inner.dragging { transition: none !important; cursor: grabbing; }
+.sheet-inner:not(.dragging) { transition: transform .25s cubic-bezier(.22, 1, .36, 1); }
+/* 접힘: 단어 줄과 '계속하기'만 (뒤의 예문이 다시 보임) */
+#feedback.peek .fb-tabs, #feedback.peek .fb-pane, #feedback.peek #fb-pron { display: none; }
+#feedback.peek.peek[data-tab] .sheet-inner { height: auto; max-height: none; } /* AI 대화 중(.chatting)의 높이보다 앞서게 */
+#feedback.peek .fb-actions { margin-top: 10px; }
+/* 퀴즈 중엔 당겨서 새로고침 막기 (app.js show) */
+html.no-ptr, html.no-ptr body { overscroll-behavior-y: none; }
 .fb-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 12px 0 14px; }
 .fb-tabs button { border: 0; background: none; padding: 8px 2px; font-size: 16px; font-weight: 700; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
 .fb-tabs button.on { color: var(--text); border-bottom-color: var(--text); }
@@ -1514,3 +1549,67 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .sweep-talk .st-rec-btn { margin-top: 10px; min-height: 40px; }
 .sweep-talk .st-rec-btn:disabled { opacity: .6; }
 .sweep-talk .st-rec-btn + .cp-ok { margin-top: 6px; }
+
+/* ---------- 총정리 홈 (총정리 기간에만, app.js applyView · renderSweepHome) ----------
+   html.sweep-on = 총정리 기간 · html[data-view="sweep"] = 총정리 홈을 보는 중 (아니면 예문·단어 모드 홈) */
+.sw-only, .sweep-banner, .sw-title { display: none; }
+:root[data-view="sweep"] .sw-only { display: block; }
+:root[data-view="sweep"] .sw-title { display: inline; color: #e8590c; }
+:root[data-view="sweep"] h1 .sub[data-only] { display: none !important; }
+/* 총정리 홈엔 오늘 카드·총정리 계획·약한 단어만 (모드마다 다른 암기 완료·다시 볼 단어·학습 계획 요약은 모드 홈에) */
+:root[data-view="sweep"] .home-main > :not(#resume-card):not(#card-today):not(.sw-only),
+:root[data-view="sweep"] #home-adv { display: none !important; }
+.mode-switch[data-mode="none"] .mode-thumb { opacity: 0; }
+/* 모드 홈: 오늘 카드 대신 총정리 띠 (DAY 단독 학습 카드는 그대로) */
+:root.sweep-on:not([data-view="sweep"]) #card-today:not(.solo-mode) { display: none; }
+:root.sweep-on:not([data-view="sweep"]) .sweep-banner { display: flex; }
+.sweep-banner {
+  align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; cursor: pointer; font: inherit;
+  color: #fff; background: linear-gradient(135deg, #ff9a1f 0%, #f76707 55%, #e8430b 100%);
+}
+.sweep-banner .sb-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sweep-banner b { font-size: 16px; }
+.sweep-banner small { font-size: 13px; opacity: .88; }
+.sweep-banner .chev { color: inherit; opacity: .9; }
+.sb-fire { width: 30px; height: 30px; flex: none; transform-origin: 50% 90%; animation: sb-flick 1.6s ease-in-out infinite alternate; filter: drop-shadow(0 0 6px rgba(255, 224, 102, .7)); }
+@keyframes sb-flick { from { transform: scale(.94) rotate(-3deg); } to { transform: scale(1.04) rotate(3deg); } }
+@media (prefers-reduced-motion: reduce) { .sb-fire { animation: none; } }
+
+/* 총정리 홈의 오늘 카드: 언제나 불 색 (시험이 다가올수록 빨개짐) + 아래에서 일렁이는 불빛 */
+:root[data-view="sweep"] #card-today.sweep-mode { --heat: #f76707; --go-fg: #ffffff; --go-bg: linear-gradient(150deg, #ffa94d 0%, #f76707 50%, #e8590c 100%); isolation: isolate; overflow: hidden; }
+:root[data-view="sweep"] #card-today.sweep-mode[data-heat="near"] { --heat: #f76707; --go-bg: linear-gradient(150deg, #ff922b 0%, #f76707 45%, #e8430b 100%); }
+:root[data-view="sweep"] #card-today.sweep-mode[data-heat="hot"] { --heat: #f03e3e; --go-bg: linear-gradient(150deg, #ff8a1f 0%, #f0560b 45%, #e03131 100%); }
+:root[data-view="sweep"] #card-today.sweep-mode[data-heat="last"] { --heat: #e03131; --go-bg: linear-gradient(150deg, #f76707 0%, #e03131 55%, #c2255c 100%); }
+:root[data-view="sweep"] #card-today.sweep-mode.go::before,
+:root[data-view="sweep"] #card-today.sweep-mode.go::after {
+  content: ''; position: absolute; z-index: -1; pointer-events: none; left: -10%; right: -10%; bottom: -30%; height: 75%;
+  background: radial-gradient(ellipse 35% 60% at 25% 100%, rgba(255, 224, 102, .55), transparent 70%),
+              radial-gradient(ellipse 30% 55% at 62% 100%, rgba(255, 196, 0, .45), transparent 70%),
+              radial-gradient(ellipse 28% 50% at 90% 100%, rgba(255, 240, 160, .4), transparent 70%);
+  filter: blur(14px); transform-origin: 50% 100%; animation: flame 2.6s ease-in-out infinite alternate;
+}
+:root[data-view="sweep"] #card-today.sweep-mode.go::after { left: 5%; right: -20%; opacity: .7; animation-duration: 3.4s; animation-delay: -1.2s; }
+@keyframes flame {
+  0% { transform: scaleY(.85) translateX(-2%); opacity: .75; }
+  50% { transform: scaleY(1.08) translateX(1%); opacity: 1; }
+  100% { transform: scaleY(.95) translateX(3%); opacity: .85; }
+}
+:root[data-view="sweep"] #card-today.sweep-mode.go { box-shadow: 0 16px 36px -14px rgba(247, 103, 7, .65); }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-view="sweep"] #card-today.sweep-mode.go::before, :root[data-view="sweep"] #card-today.sweep-mode.go::after { animation: none; }
+}
+
+/* 총정리 계획 카드 */
+.swp-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.swp-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 14px; }
+.swp-row > span { color: var(--muted); flex: none; }
+.swp-row > b { font-weight: 700; text-align: right; }
+#swp-kinds-slot #sweep-kinds .sub-label { display: none; } /* 이 카드 이름이 이미 '총정리' */
+#swp-kinds-slot #sweep-kinds { margin-top: 14px; }
+.swp-more { display: block; margin: 12px 0 0 auto; }
+/* 약한 단어 카드 */
+#sw-weak .prog-num b { color: #e8590c; }
+.sww-split { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sww-split span { font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: var(--r-pill); background: var(--fill); color: var(--text2); }
+.sww-note { font-size: 13px; margin: 10px 0 0; }
+:root[data-theme="dark"][data-view="sweep"] .sw-title, :root[data-theme="dark"] #sw-weak .prog-num b { color: #ffa94d; }

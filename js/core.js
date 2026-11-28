@@ -1372,14 +1372,18 @@ export function nextLetterHint(input, target) {
 // ---------- 단어 모드: 뜻 채점과 뜻 보기 고르기 ----------
 // 한글 뜻 정리: 괄호·번호·문장부호·띄어쓰기를 빼고 흔한 어미(하다/되다/한/…)를 뗌
 export function normKo(s) {
+  const t = normFull(s);
+  const cut = t.replace(/(하다|되다|시키다|스럽다|롭다|하는|되는|한|함|된|임|이다|다)$/, '');
+  return cut.length >= 2 ? cut : t;
+}
+// 어미를 떼기 전 꼴 (어미 오타·줄기 오타를 볼 때 씀: 포기하디 ↔ 포기하다)
+function normFull(s) {
   let t = String(s).toLowerCase();
   for (let k = 0; k < 4; k++) t = t.replace(/\([^()]*\)/g, '').replace(/\[[^\[\]]*\]/g, '');
-  t = t.replace(/[()\[\]{}]/g, '')
+  return t.replace(/[()\[\]{}]/g, '')
     .replace(/~\s*[을를이가에의로와과]?/g, '')
     .replace(/\d+\./g, '')
     .replace(/[\s·:;,.\-—_'"“”‘’!?]/g, '');
-  const cut = t.replace(/(하다|되다|시키다|스럽다|롭다|하는|되는|한|함|된|임|이다|다)$/, '');
-  return cut.length >= 2 ? cut : t;
 }
 function lev(a, b) {
   const m = a.length, n = b.length;
@@ -1422,6 +1426,39 @@ function nearKo(a, b) {
   if (diff.length !== 1) return false;
   const x = toJamo(a[diff[0]]), y = toJamo(b[diff[0]]);
   return x.length > 1 && y.length > 1 && x[0] === y[0] && lev(x, y) <= 1;
+}
+// 한글 음절 하나를 [초성, 중성, 종성]으로 (한글 음절이 아니면 null)
+function jamo3(ch) {
+  const c = ch.charCodeAt(0) - 0xAC00;
+  return c < 0 || c > 11171 ? null : [Math.floor(c / 588), Math.floor((c % 588) / 28), c % 28];
+}
+// 같은 길이의 두 말에서 다른 음절이 딱 하나면 그 자리, 아니면 -1
+function oneSyllableOff(a, b) {
+  if (a.length !== b.length) return -1;
+  const diff = [...a].map((ch, i) => i).filter(i => a[i] !== b[i]);
+  return diff.length === 1 ? diff[0] : -1;
+}
+/**
+ * nearKo가 못 보는 오타 (u: 학생이 쓴 말, a: 정답 말, 둘 다 { s: 어미 뗀 꼴, f: 어미 붙은 꼴 })
+ * 'yes'   어미 안의 오타: 포기하디 → 포기하다, 명확헌 → 명확한 (어미는 뜻을 안 바꿔서 늘 봐줌)
+ * 'maybe' 두 글자 줄기의 둘째 글자 모음만 다름: 포귀하다 → 포기하다, 명학한 → 명확한, 즐거다 → 즐기다.
+ *         대개 오타지만 주의 ↔ 주위, 기간 ↔ 기관처럼 다른 말일 수도 있어서, AI가 되면 AI에게 묻고 안 되면 봐줌
+ * 받침·첫소리가 다르거나(수입 ↔ 수익, 방해 ↔ 방패, 최고 ↔ 최소) 첫 글자가 다르면(열정 ↔ 결정) 다른 말로 봄
+ */
+function typoKo(u, a) {
+  if (!u.s || !a.s) return '';
+  // 어미 오타: 줄기는 같고 어미 안에서 자모 하나만 다름
+  const i = oneSyllableOff(u.f, a.f);
+  if (i >= a.s.length && u.f.startsWith(a.s)) {
+    const x = toJamo(u.f[i]), y = toJamo(a.f[i]);
+    if (x.length > 1 && y.length > 1 && lev(x, y) <= 1) return 'yes';
+  }
+  // 두 글자 줄기 오타: 첫 글자는 같고 둘째 글자의 모음만 다름 (첫소리·받침은 같음)
+  if (a.s.length === 2 && u.s.length === 2 && u.s[0] === a.s[0]) {
+    const x = jamo3(u.s[1]), y = jamo3(a.s[1]);
+    if (x && y && x[0] === y[0] && x[2] === y[2] && x[1] !== y[1]) return 'maybe';
+  }
+  return '';
 }
 // 오답 보기를 고를 때는 느슨하게: 한쪽이 다른 쪽에 들어 있기만 해도 비슷한 뜻으로 봄 (비슷한 뜻의 보기를 피하려고)
 function looseKo(a, b) {
@@ -1466,10 +1503,18 @@ function splitAlts(p) {
 }
 // 뜻 갈래마다 [표현마다 [바꿔 쓸 수 있는 꼴들]]
 function senseExprs(ans) {
+  return senseForms(ans).map(exprs => exprs.map(forms => [...new Set(forms.map(x => x.s))]));
+}
+// senseExprs와 같은 모양이지만 꼴마다 { s: 어미 뗀 꼴, f: 어미 붙은 꼴, t: 보여 줄 말 }
+function senseForms(ans) {
   const out = [];
   String(ans || '').split(/[\/;]/).forEach(block => {
     block.split(/\s*\d+\.\s*/).map(s => s.trim()).filter(Boolean).forEach(p => {
-      const exprs = splitAlts(p).map(a => [...new Set(bracketVariants(a.trim()).map(normKo).filter(Boolean))]).filter(v => v.length);
+      const exprs = splitAlts(p).map(a => {
+        const seen = new Set();
+        return bracketVariants(a.trim()).map(v => ({ s: normKo(v), f: normFull(v), t: v.trim() }))
+          .filter(x => x.s && !seen.has(x.s) && seen.add(x.s));
+      }).filter(v => v.length);
       if (exprs.length) out.push(exprs);
     });
   });
@@ -1485,21 +1530,51 @@ export function meaningSenses(ans) {
  */
 export function gradeMeaning(user, answer, strict = 'mid') {
   const raw = String(user || '');
-  const chunks = raw.split(/[\s,;\/、]+/).map(normKo).filter(Boolean);
+  const chunks = [];
+  const add = part => { const c = { s: normKo(part), f: normFull(part), t: part.trim() }; if (c.s && !chunks.some(x => x.s === c.s && x.f === c.f)) chunks.push(c); };
+  raw.split(/[\s,;\/、]+/).forEach(add);
   // 띄어쓰기 없이 붙여 쓴 답도 한 덩어리로 봄: "전문기술" ↔ 전문 기술
-  for (const part of raw.split(/[,;\/、]+/)) { const c = normKo(part); if (c && !chunks.includes(c)) chunks.push(c); }
-  const gs = senseExprs(answer);
+  raw.split(/[,;\/、]+/).forEach(add);
+  const gs = senseForms(answer);
   if (!chunks.length || !gs.length) return { score: 0, missing: gs.length };
-  const said = variants => variants.some(a => chunks.some(c => nearKo(c, a)));
-  const hit = gs.filter(exprs => exprs.some(said)).length;
-  if (!hit) return { score: 0, missing: gs.length };
-  // 느슨: 뜻 하나만 맞아도 · 보통: 뜻 갈래(1. 2. …)마다 하나씩 · 엄격: 나와 있는 뜻 낱말 전부 ([ ]로 바꿔 쓴 꼴은 하나만 써도 됨)
-  if (strict === 'hard') {
-    const all = gs.flat(), got = all.filter(said).length;
-    return { score: got >= all.length ? 2 : 1, missing: all.length - got };
+  // 정답 꼴 하나(a)를 학생이 썼는지: 'ok' 그대로(어미·조사 차이 포함) | 'typo' 오타지만 확실 | 'maybe' 오타 같음 | ''
+  // 오타로 맞힌 건 typo에 [학생이 쓴 말, 정답 말]로 모음 (철자를 알려 주고, maybe면 AI에게 물을 때 같이 넘김)
+  const typo = [];
+  let maybe = false;
+  const match = (a, loose) => {
+    let best = '';
+    for (const c of chunks) {
+      if (nearKo(c.s, a.s)) {
+        if (c.s === a.s || c.f === a.f || a.f.startsWith(c.f) || c.f.startsWith(a.f) || c.s.startsWith(a.s) || a.s.startsWith(c.s)) return 'ok';
+        best = best || 'typo'; if (loose) typo.push([c.t, a.t]);
+        continue;
+      }
+      const t = typoKo(c, a);
+      if (t === 'yes') { best = best || 'typo'; if (loose) typo.push([c.t, a.t]); }
+      else if (t === 'maybe' && loose) { best = best || 'maybe'; typo.push([c.t, a.t]); }
+    }
+    return best;
+  };
+  const count = loose => {
+    const said = forms => forms.some(a => match(a, loose));
+    const hit = gs.filter(exprs => exprs.some(said)).length;
+    if (!hit) return { score: 0, missing: gs.length };
+    // 느슨: 뜻 하나만 맞아도 · 보통: 뜻 갈래(1. 2. …)마다 하나씩 · 엄격: 나와 있는 뜻 낱말 전부 ([ ]로 바꿔 쓴 꼴은 하나만 써도 됨)
+    if (strict === 'hard') {
+      const all = gs.flat(), got = all.filter(said).length;
+      return { score: got >= all.length ? 2 : 1, missing: all.length - got };
+    }
+    const need = strict === 'easy' ? 1 : gs.length;
+    return { score: hit >= need ? 2 : 1, missing: gs.length - hit };
+  };
+  const sure = count(false);
+  const res = count(true); // 'maybe' 오타까지 봐준 채점
+  const uniq = [...new Map(typo.map(p => [p.join('\n'), p])).values()];
+  if (res.score > sure.score || res.missing < sure.missing) {
+    // maybe 오타 덕에 점수가 올랐으면 maybe: AI가 되면 AI에게 물어보고, 안 되면 이대로 봐줌
+    maybe = uniq.some(([u, a]) => typoKo({ s: normKo(u), f: normFull(u) }, { s: normKo(a), f: normFull(a) }) === 'maybe');
   }
-  const need = strict === 'easy' ? 1 : gs.length;
-  return { score: hit >= need ? 2 : 1, missing: gs.length - hit };
+  return { ...res, ...(uniq.length ? { typo: uniq } : {}), ...(maybe ? { maybe: true } : {}) };
 }
 // 두 뜻이 겹치는지 (오답 보기로 비슷한 뜻을 내지 않게)
 export function meaningsClash(a, b) {
