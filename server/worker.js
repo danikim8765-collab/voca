@@ -7,13 +7,15 @@
 //   INVITE    초대 코드 (비밀 값). 쉼표로 여러 개. 이게 맞아야 가입됨
 //   MAX_USERS 가입할 수 있는 사람 수 (기본 30). 무료 한도를 지키려고
 //   ORIGINS   앱 주소 (쉼표로 여러 개, 예: https://이름.github.io). 비우면 어디서든
+//   ADMINS    관리자 아이디 (쉼표로 여러 개). 관리자는 가입한 사람 목록을 보고, 비밀번호를 잊은 친구에게 초기화 코드를 만들어 줌
 //
 // 보안:
 // - 비밀번호 원문은 서버에 안 옴: 앱이 PBKDF2(비밀번호, 'voca:' + 아이디, 10만 번)으로 바꾼 key만 보냄.
 //   서버는 key를 사용자마다 다른 salt와 SHA-256해서 저장(무료 플랜은 요청마다 CPU 10ms라 서버에서 오래 돌리는 해시는 못 씀)
 // - 로그인 토큰은 기기에만 원문, 서버엔 SHA-256. 180일 안 쓰면 풀림
 // - 비밀번호를 8번 연달아 틀리면 15분 잠금
-// - 가입하면 복구 코드를 한 번 보여 줌(비밀번호를 잊었을 때 이걸로 새 비밀번호)
+// - 비밀번호를 잊으면 관리자가 초기화 코드를 만들어 주고, 앱의 '비밀번호 찾기'에 넣어 새 비밀번호를 만듦(POST /api/recover).
+//   관리자도 비밀번호는 볼 수 없음. 예전 앱은 가입·비밀번호 바꾸기 때 받은 복구 코드를 보여 줬음(지금도 그대로 돌려줘서 예전 앱이 안 깨짐)
 
 const DAY = 86400000;
 const SESSION_DAYS = 180;
@@ -94,6 +96,10 @@ async function startSession(env, user) {
 }
 const cleanId = v => String(v || '').trim().toLowerCase();
 const cleanName = v => String(v || '').replace(/\s+/g, ' ').trim();
+// 관리자: 설정 값 ADMINS에 적힌 아이디
+const isAdmin = (env, id) => String(env.ADMINS || '').split(',').map(cleanId).filter(Boolean).includes(id);
+// 앱에 돌려주는 사용자: 관리자면 admin: true (앱이 계정 화면에 관리자 카드를 보임)
+const userOut = (env, id, name) => (isAdmin(env, id) ? { id, name, admin: true } : { id, name });
 function checkKey(key) { if (!KEY_RE.test(String(key || ''))) throw bad('bad_key', '비밀번호를 다시 넣어 주세요'); return String(key); }
 
 async function signup(req, env) {
@@ -112,7 +118,7 @@ async function signup(req, env) {
   const salt = newSalt(), rec = newRecovery();
   await env.DB.prepare('INSERT INTO users (id, name, pw, salt, rec, created) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(id, name, await sha(salt + key), salt, await sha(salt + cleanRec(rec)), Date.now()).run();
-  return { token: await startSession(env, id), user: { id, name }, recovery: rec };
+  return { token: await startSession(env, id), user: userOut(env, id, name), recovery: rec };
 }
 
 async function login(req, env) {
@@ -130,7 +136,7 @@ async function login(req, env) {
     throw wrong;
   }
   if (u.fails) await env.DB.prepare('UPDATE users SET fails = 0, lock_until = 0 WHERE id = ?').bind(id).run();
-  return { token: await startSession(env, id), user: { id, name: u.name } };
+  return { token: await startSession(env, id), user: userOut(env, id, u.name) };
 }
 
 // 복구 코드로 새 비밀번호: 다른 기기 로그인은 모두 풀고, 새 복구 코드를 줌 (쓴 코드는 다시 못 씀)
@@ -138,7 +144,7 @@ async function recover(req, env) {
   const b = await readBody(req);
   const id = cleanId(b.id), key = checkKey(b.key);
   const u = ID_RE.test(id) ? await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first() : null;
-  const wrong = new Err(401, 'wrong', '아이디나 복구 코드가 맞지 않아요');
+  const wrong = new Err(401, 'wrong', '아이디나 초기화 코드가 맞지 않아요');
   if (!u) throw wrong;
   const now = Date.now();
   if (u.lock_until > now) throw new Err(429, 'locked', `여러 번 틀려서 ${Math.ceil((u.lock_until - now) / 60000)}분 동안 잠겼어요`);
@@ -152,7 +158,7 @@ async function recover(req, env) {
     env.DB.prepare('UPDATE users SET pw = ?, salt = ?, rec = ?, fails = 0, lock_until = 0 WHERE id = ?').bind(await sha(salt + key), salt, await sha(salt + cleanRec(rec)), id),
     env.DB.prepare('DELETE FROM sessions WHERE user = ?').bind(id),
   ]);
-  return { token: await startSession(env, id), user: { id, name: u.name }, recovery: rec };
+  return { token: await startSession(env, id), user: userOut(env, id, u.name), recovery: rec };
 }
 
 // 비밀번호 바꾸기: 지금 비밀번호(old)가 맞아야. 이 기기 말고 다른 기기 로그인은 풀림
@@ -225,6 +231,29 @@ async function deleteAccount(req, env, me) {
   return { ok: true };
 }
 
+// ---------- 관리자 (ADMINS에 적힌 아이디만) ----------
+function needAdmin(env, me) { if (!isAdmin(env, me.user)) throw new Err(403, 'not_admin', '관리자만 할 수 있어요'); }
+// 가입한 사람 목록: 아이디·이름·가입한 날·마지막으로 쓴 날 (비밀번호·진도는 안 줌)
+async function adminUsers(env, me) {
+  needAdmin(env, me);
+  const users = (await env.DB.prepare('SELECT id, name, created FROM users ORDER BY created').all()).results || [];
+  const seen = (await env.DB.prepare('SELECT user, MAX(seen) AS seen FROM sessions GROUP BY user').all()).results || [];
+  const last = Object.fromEntries(seen.map(r => [r.user, r.seen]));
+  return { users: users.map(u => ({ id: u.id, name: u.name, created: u.created, seen: last[u.id] || 0, admin: isAdmin(env, u.id) || undefined })), max: Number(env.MAX_USERS) || 30 };
+}
+// 초기화 코드 만들기: 비밀번호를 잊은 친구에게. 친구는 앱의 '비밀번호 찾기'에 넣고 새 비밀번호를 만듦.
+// 지금 비밀번호는 그대로 둠(친구가 새로 만들 때까지 원래 비밀번호로도 로그인됨). 잠금도 풂
+async function adminReset(req, env, me) {
+  needAdmin(env, me);
+  const b = await readBody(req);
+  const id = cleanId(b.id);
+  const u = ID_RE.test(id) ? await env.DB.prepare('SELECT id, name, salt FROM users WHERE id = ?').bind(id).first() : null;
+  if (!u) throw new Err(404, 'no_user', '그런 아이디가 없어요');
+  const code = newRecovery();
+  await env.DB.prepare('UPDATE users SET rec = ?, fails = 0, lock_until = 0 WHERE id = ?').bind(await sha(u.salt + cleanRec(code)), id).run();
+  return { id, name: u.name, code };
+}
+
 export async function handle(req, env) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req, env) });
   const path = new URL(req.url).pathname.replace(/\/+$/, '');
@@ -238,13 +267,15 @@ export async function handle(req, env) {
     if (m === 'GET' && path === '/api/me') {
       const u = await env.DB.prepare('SELECT id, name FROM users WHERE id = ?').bind(me.user).first();
       if (!u) throw new Err(401, 'no_login', '계정이 없어졌어요');
-      return json(req, env, { user: u });
+      return json(req, env, { user: userOut(env, u.id, u.name) });
     }
     if (m === 'POST' && path === '/api/logout') { await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(me.token).run(); return json(req, env, { ok: true }); }
     if (m === 'POST' && path === '/api/password') return json(req, env, await changePassword(req, env, me));
     if (m === 'GET' && path === '/api/files') return json(req, env, await getFiles(env, me, new URL(req.url).searchParams.get('have') || ''));
     if (m === 'PUT' && path === '/api/files') return json(req, env, await putFiles(req, env, me));
     if (m === 'DELETE' && path === '/api/account') return json(req, env, await deleteAccount(req, env, me));
+    if (m === 'GET' && path === '/api/admin/users') return json(req, env, await adminUsers(env, me));
+    if (m === 'POST' && path === '/api/admin/reset') return json(req, env, await adminReset(req, env, me));
     throw new Err(404, 'not_found', '없는 주소예요');
   } catch (e) {
     if (e instanceof Err) return json(req, env, { error: e.code, message: e.message }, e.status);

@@ -81,6 +81,9 @@ export async function changePassword({ token, id, old, password }) {
 export async function deleteAccount({ token, id, password }) {
   return api('/api/account', { method: 'DELETE', token, body: { key: await passKey(id, password) } });
 }
+// 관리자(서버 설정 ADMINS의 아이디)만: 가입한 사람 목록 · 비밀번호를 잊은 친구의 초기화 코드 만들기. 관리자가 아니면 403
+export const adminUsers = token => api('/api/admin/users', { token });
+export const adminReset = (token, id) => api('/api/admin/reset', { method: 'POST', token, body: { id: cleanId(id) } });
 export const logout = token => api('/api/logout', { method: 'POST', token }).catch(() => null); // 서버가 안 돼도 이 기기에선 로그아웃
 
 // 비밀번호 규칙 (앱에서만 봄: 서버는 원문을 모름). 문제가 있으면 그 말, 없으면 ''

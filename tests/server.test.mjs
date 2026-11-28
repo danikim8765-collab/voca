@@ -134,3 +134,39 @@ test('CORS: 앱 주소(ORIGINS)만 · 미리 묻기(OPTIONS)', async () => {
   assert.match(pre.headers.get('Access-Control-Allow-Headers'), /Authorization/);
   assert.match(newRecovery(), /^[A-Z2-9-]{14}$/);
 });
+
+test('관리자: ADMINS의 아이디만 · 목록 · 초기화 코드로 비밀번호 찾기', async () => {
+  env.ADMINS = 'boss_1';
+  const boss = await signup({ id: 'boss_1', name: '관리자' });
+  assert.equal(boss.body.user.admin, true); // 앱이 관리자 카드를 보이게
+  const minji = await signup({ id: 'minji_01' });
+  assert.equal(minji.body.user.admin, undefined);
+  // 관리자가 아니면 못 씀
+  assert.equal((await call('GET', '/api/admin/users', null, minji.body.token)).status, 403);
+  assert.equal((await call('POST', '/api/admin/reset', { id: 'boss_1' }, minji.body.token)).body.error, 'not_admin');
+  // 목록: 비밀번호 같은 건 안 줌
+  const list = await call('GET', '/api/admin/users', null, boss.body.token);
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.body.users.map(u => u.id), ['boss_1', 'minji_01']);
+  assert.equal(list.body.max, 3);
+  assert.ok(!JSON.stringify(list.body).includes('salt') && !JSON.stringify(list.body).includes('"pw"'));
+  assert.ok(list.body.users[1].seen > 0);
+  // /api/me 도 관리자 표시
+  assert.equal((await call('GET', '/api/me', null, boss.body.token)).body.user.admin, true);
+  // 초기화 코드: 예전 복구 코드는 못 쓰게 되고, 새 코드로 새 비밀번호
+  const reset = await call('POST', '/api/admin/reset', { id: 'MinJi_01' }, boss.body.token);
+  assert.equal(reset.status, 200);
+  assert.match(reset.body.code, /^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  assert.equal(reset.body.name, '민지');
+  assert.equal((await call('POST', '/api/recover', { id: 'minji_01', recovery: minji.body.recovery, key: KEY2 })).status, 401);
+  // 초기화 코드를 만들어도 친구가 새로 만들기 전엔 원래 비밀번호로 로그인됨
+  assert.equal((await call('POST', '/api/login', { id: 'minji_01', key: KEY })).status, 200);
+  const rec = await call('POST', '/api/recover', { id: 'minji_01', recovery: reset.body.code.toLowerCase(), key: KEY2 });
+  assert.equal(rec.status, 200);
+  assert.equal((await call('POST', '/api/login', { id: 'minji_01', key: KEY2 })).status, 200);
+  assert.equal((await call('POST', '/api/login', { id: 'minji_01', key: KEY })).status, 401);
+  assert.equal((await call('POST', '/api/admin/reset', { id: 'nobody' }, boss.body.token)).body.error, 'no_user');
+  // ADMINS가 비면 아무도 관리자가 아님
+  env.ADMINS = '';
+  assert.equal((await call('GET', '/api/admin/users', null, boss.body.token)).status, 403);
+});

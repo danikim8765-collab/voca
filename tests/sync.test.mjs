@@ -76,7 +76,7 @@ test('화면 꾸미기: 더 최근에 바꾼 기기 것으로, 끈 기기는 주
     });
     return d;
   };
-  const phone = dev({ size: 'xl', ex: { accent: 'grape' }, at: 10 });
+  const phone = dev({ size: 'xl', skin: 'neon', at: 10 });
   await phone.sync.now();
   assert.equal(JSON.parse(gist['voca-marks.json']).look.size, 'xl');
   assert.ok(!('share' in JSON.parse(gist['voca-marks.json']).look)); // 기기마다인 스위치는 안 올림
@@ -84,7 +84,7 @@ test('화면 꾸미기: 더 최근에 바꾼 기기 것으로, 끈 기기는 주
   const pad = dev({});
   await pad.sync.now();
   assert.equal(pad.look.size, 'xl');
-  assert.equal(pad.look.ex.accent, 'grape');
+  assert.equal(pad.look.skin, 'neon');
   // 끈 기기: 받지도 않고, 형광펜만 올릴 때 파일의 꾸미기도 지우지 않음
   const mine = dev({ size: 's', at: 99 }, false);
   mine.marks = { w9: { on: 1, t: 3 } };

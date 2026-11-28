@@ -8,7 +8,7 @@ import {
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, aiAddPrompt, aiNote, queueOrder, perLimit, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
-import { accountApi, accountReady, signup as acctSignup, login as acctLogin, recover as acctRecover, changePassword as acctChangePw, deleteAccount as acctDelete, logout as acctLogout, passwordProblem, cleanId as acctId, ID_RE as ACCT_ID_RE } from './account.js';
+import { accountApi, accountReady, adminUsers as acctAdminUsers, adminReset as acctAdminReset, signup as acctSignup, login as acctLogin, recover as acctRecover, changePassword as acctChangePw, deleteAccount as acctDelete, logout as acctLogout, passwordProblem, cleanId as acctId, ID_RE as ACCT_ID_RE } from './account.js';
 import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
 import { aiGradeMeaning, aiExplainWrong, aiAskWord, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey, aiMakeWords, aiWordsReady } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
@@ -78,7 +78,7 @@ const setLabel = (b, t) => { const s = b.querySelector('.lbl'); if (s) s.textCon
 document.querySelectorAll('[data-icon]').forEach(b => b.insertAdjacentHTML('afterbegin', ICON[b.dataset.icon] || ''));
 
 // 꾸미기 설정 (js/look.js가 <head>에서 먼저 불러 둠: 밝기·색·글자 크기·홈에 보일 것 …)
-const LOOK = window.VocaLook || { get: () => ({ days: 'grid', hide: [], ex: {}, word: {} }), set() {}, reset() {}, CHOICES: { accent: [] }, HIDE: [] };
+const LOOK = window.VocaLook || { get: () => ({ skin: 'orig', days: 'grid', hide: [] }), set() {}, reset() {}, CHOICES: {}, HIDE: [] };
 
 const load = (k, def) => {
   try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; }
@@ -391,7 +391,7 @@ const sync = createSync({
   // 내 단어 (voca-mywords.json): 단어마다 더 최근에 고친 쪽으로
   mine: {
     get: () => myStore,
-    set: m => { saveMy(m, { quiet: true }); if (current === 'list') renderList(); if (current === 'home') renderHome(); if (current === 'settings') renderMySettings(); },
+    set: m => { saveMy(m, { quiet: true }); if (current === 'list') renderList(); if (current === 'home') renderHome(); if (current === 'plan') renderMySettings(); },
     merge: (l, r) => mergeMy(l, r, { pruneBefore: Date.now() - MY_PRUNE }),
     same: sameMy,
   },
@@ -830,7 +830,7 @@ function renderHome() {
   setSeg('#seg-sweep-strict', sweepStrict());
   $('#row-sweep-strict').hidden = sweepKind('w') !== 'type'; // 단어 문제가 4지선다면 채점할 게 없음
   $('#exam-date').value = settings.exam || '';
-  // 시험일 옆 D-n, 목표일(설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
+  // 시험일 옆 D-n, 목표일(코치가 켜져 있으면 코치 일정의 목표일을 보여 주고 바꾸면 거기에 맞춰 다시 짬)
   const dn = settings.exam ? daysBetween(dateStr(), settings.exam) : null;
   $('#exam-dn').textContent = dn == null ? '' : dn > 0 ? `D-${dn}` : dn === 0 ? 'D-day' : '지났어요';
   $('#exam-dn').hidden = dn == null;
@@ -1180,8 +1180,11 @@ function coachSvg(mood = 'normal', char = coachChar()) {
 }
 
 // 코치 고르기 창: 처음 켤 때 뜨고, 설정에서 언제든 바꿀 수 있음. 고르면 캐릭터 이름, 취소면 null
-function pickCoach() {
+// 코치 고르기 창. 처음 켤 때와 코치 탭에서 바꿀 때 같이 씀
+function pickCoach({ change = false } = {}) {
   const d = $('#coach-pick'), box = $('#cp-choices');
+  $('#cp-title').textContent = change ? '코치 바꾸기' : '함께할 코치를 골라 주세요';
+  $('#cp-desc').textContent = change ? '진도와 이야기는 그대로예요. 말투와 그림만 바뀌어요.' : '코치 탭 위 코치를 누르면 언제든 바꿀 수 있어요.';
   let cur = coachChar();
   const draw = () => {
     box.innerHTML = '';
@@ -1208,6 +1211,10 @@ function pickCoach() {
     d.onclick = e => { if (e.target === d) done(null); };
     document.addEventListener('keydown', key, true);
   });
+}
+async function changeCoach() {
+  const c = await pickCoach({ change: true });
+  if (c && c !== coachChar()) { setCoachChar(c); toast(`${COACH_NAMES[c]} 코치로 바꿨어요`); }
 }
 function setCoachChar(c) {
   ui.coachChar = c;
@@ -2511,7 +2518,9 @@ function renderPlan() {
   // 눌러서 갈 수 있는 단계: 학습·복습은 언제나(복습을 먼저 해도 됨), 더 하기는 둘 다 끝냈으면
   const can = { learn: true, review: true, due: !!(rv.both && rv.dueTotal), extra: !learnLeft && rv.done };
   if (viewStage && !can[viewStage]) viewStage = null;
-  const stage = soloDay != null && days.includes(soloDay) ? 'day' : viewStage || regular;
+  // 총정리 기간의 예문·단어 모드 홈: 오늘 몫은 총정리 홈에만 있으니, 오늘 카드는 그 모드를 더 하고 싶을 때 쓰는 '더 하기'로 (2026-11-28 사용자와 정함)
+  const modeView = inSweep() && modeHome; // data-view는 applyView가 나중에 바꾸니 modeHome으로 봄
+  const stage = soloDay != null && days.includes(soloDay) ? 'day' : modeView ? 'extra' : viewStage || regular;
   // items: [숫자, 이름, 누르면 할 일(있으면 눌러서 직접 정하기)]
   const fill = (box, items) => {
     box.innerHTML = '';
@@ -2524,9 +2533,9 @@ function renderPlan() {
   };
   const order = ['learn', 'review', 'extra'];
   // 총정리: 학습 단계(내 단어)가 아니면 카드가 총정리 모양으로 (남은 날 칸 · 두 모드 문제 수 · 한 바퀴 막대)
-  const sw = rv.both && stage !== 'day' && stage !== 'learn';
+  const sw = rv.both && !modeView && stage !== 'day' && stage !== 'learn';
   $('#today-title').textContent = sw ? { review: '총정리', due: '총정리 · 복습', extra: '오늘 총정리 끝' }[stage] : { learn: '오늘의 학습', review: '오늘의 복습', extra: '더 하기', day: `DAY ${soloDay} 학습` }[stage];
-  $('#today-flow').hidden = stage === 'day';
+  $('#today-flow').hidden = stage === 'day' || modeView;
   // 단계 줄: 평소엔 학습 › 복습 › 더 하기, 총정리엔 (내 단어가 있으면 학습 ›) 총정리 › 복습 › 더 하기 (복습할 게 없으면 복습은 뺌)
   const steps = rv.both ? [...(learnLeft ? [['learn', '학습']] : []), ['review', '총정리'], ...(rv.dueTotal ? [['due', '복습']] : []), ['extra', '더 하기']]
     : [['learn', '학습'], ['review', '복습'], ['extra', '더 하기']];
@@ -2631,7 +2640,8 @@ function renderPlan() {
     br.textContent = nRev ? '추가 복습' : '복습할 단어 없음';
     bn.disabled = !nNew;
     br.disabled = !nRev;
-    note = sw ? `오늘 몫을 다 했어요 👏 ${sweepCheer()}` : nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
+    note = sw ? `오늘 몫을 다 했어요 👏 ${sweepCheer()}` : modeView ? `총정리와 따로, ${WORD ? '단어' : '예문'} 모드만 더 하고 싶을 때 개수를 골라요.`
+      : nNew ? '오늘 할 건 다 했어요 👏 더 하고 싶으면 개수를 골라요.' : '이 범위의 새 단어를 다 배웠어요. 학습 범위를 넓히면 더 할 수 있어요.';
   }
   $('#today-note').textContent = note;
   // 시작할 게 있으면 카드 전체가 시작 버튼 (인디고로 칠함). 다 했거나 '더 하기'면 흰 카드
@@ -2645,6 +2655,8 @@ function renderPlan() {
   else if (ca) $('#coach-new-note').textContent = `코치가 남은 날에 맞춰 정해요 · 오늘 ${todayNewTarget()}개`;
   $('#opt-vac').checked = vac;
   $('#opt-coach-plan').checked = !!settings.coach;
+  renderCoachPlan();
+  renderMySettings();
   renderCoach(stage);
 }
 
@@ -3015,6 +3027,8 @@ function settingsRows() {
   };
   detail('다시 나올 때', [$('#again-preset'), $('#again-rows')], () => { const on = $('#again-preset button.on'); return on ? txt(on) : '직접 고름'; });
   detail('단축키 바꾸기', [$('#key-rows'), $('#btn-keys-reset')], () => '');
+  // 복습 간격: 한 줄(고른 간격 이름) → 누르면 기억 유지 그래프와 다섯 간격을 시트에서
+  detail('복습 간격', [$('#srs-opts')], () => { const on = $('#srs-presets .preset.on .p-name'); return on ? on.textContent : ''; });
   // 2) 이름표 + 고르기 버튼 → 한 줄
   for (const seg of document.querySelectorAll('#settings .card .seg')) {
     if (seg.closest('.in-sheet') || seg.id === 'again-preset') continue;
@@ -5279,20 +5293,59 @@ async function useAccount(r, keep = true) {
   try { localStorage.removeItem(SKIP_KEY); } catch {}
   await sync.connectAccount({ token: r.token, user: r.user, server: accountApi(), temp: !keep });
   renderSyncStatus();
+  if (current === 'account') renderAdmin();
   if (current === 'account' && accountGate) { accountGate = false; goHome(false); } // 처음 화면에서 로그인했으면 바로 홈으로
   else if (current === 'home') renderHome();
 }
 // ---------- 계정 화면 (홈 위 사람 단추 · 설정 > 연결 · 처음 열 때) ----------
 let accountGate = false, accountFrom = null;
+// 계정 화면 모양: 로그인 안 했으면 환영 화면(가운데 로고 · 아래에 버튼), 처음 화면(gate)엔 예전 GitHub 연결을 안 보임.
+// 계정 화면에서 로그인·로그아웃·GitHub 연결을 하면 renderSyncStatus가 다시 불러서 바로 바뀜
+function paintAccountLook() {
+  const off = !sync.enabled;
+  $('#acct-welcome').hidden = !off;
+  $('#acct-skip-wrap').hidden = !(accountGate && off);
+  $('#account').classList.toggle('welcome', off);
+  $('#account').classList.toggle('gate', accountGate && off);
+}
+// 관리자 카드: 계정 화면을 열 때 서버에 가입한 사람 목록을 물어봄. 관리자가 아니면(403) 이번 로그인 동안 다시 안 물음
+let adminNo = '';
+async function renderAdmin() {
+  const card = $('#admin-card');
+  if (sync.kind !== 'account' || !sync.enabled || adminNo === sync.token) { card.hidden = true; return; }
+  let r;
+  try { r = await acctAdminUsers(sync.token); } catch (e) { if (e.status === 403) adminNo = sync.token; card.hidden = true; return; }
+  const list = $('#admin-list');
+  list.innerHTML = '';
+  const ago = t => { if (!t) return '아직 안 씀'; const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? '오늘 씀' : `${d}일 전에 씀`; };
+  for (const u of r.users || []) {
+    const row = el('div', 'admin-row');
+    const who = el('div', 'admin-who');
+    who.append(el('b', null, u.name || u.id), el('span', 'muted', `${u.id} · ${u.admin ? '관리자 · ' : ''}${ago(u.seen)}`));
+    const b = el('button', 'btn secondary small', '초기화 코드');
+    b.type = 'button';
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        const x = await acctAdminReset(sync.token, u.id);
+        openAccount('code', { code: x.code, who: `${x.name}(${x.id})` });
+      } catch (e) { toast(e.message || '잘 안 됐어요. 잠시 뒤에 다시 해 주세요'); }
+      b.disabled = false;
+    });
+    row.append(who, b);
+    list.appendChild(row);
+  }
+  $('#admin-sum').textContent = `가입한 사람 ${(r.users || []).length}명 / 최대 ${r.max}명 · 비밀번호를 잊은 친구에게 초기화 코드를 만들어 보내 주세요`;
+  card.hidden = false;
+}
 function openAccountScreen({ gate = false, from = null } = {}) {
   accountGate = gate;
   accountFrom = from;
-  const off = !sync.enabled;
-  $('#acct-welcome').hidden = !off;
-  $('#acct-skip-wrap').hidden = !(gate && off);
   $('#btn-account-back').hidden = gate; // 처음 화면은 '로그인 없이 쓰기'로만 나감
+  paintAccountLook();
   renderSyncStatus();
   show('account', !gate);
+  renderAdmin();
 }
 // 처음 열 때: 계정 서버가 있고, 로그인도 GitHub 연결도 안 했고, '로그인 없이 쓰기'를 고른 적이 없으면 로그인 화면부터
 // '로그인 상태 유지'를 끄고 로그인했으면, 앱(창)을 새로 열 때 로그아웃하고 다시 물어봄
@@ -5307,12 +5360,12 @@ function accountOnStart() {
   }
   if (!sync.enabled && accountReady() && !load(SKIP_KEY, false)) openAccountScreen({ gate: true });
 }
-// 계정 창. mode: login | signup | recover | password | delete | code(복구 코드 보여 주기)
+// 계정 창. mode: login | signup | recover(초기화 코드로 새 비밀번호) | password | delete | code(관리자가 만든 초기화 코드 보여 주기)
 function openAccount(mode, extra = {}) {
   const d = $('#acct'), f = $('#ac-form'), err = $('#ac-err'), ok = $('#ac-ok');
   const T = {
     login: ['로그인', '로그인'], signup: ['회원가입', '가입하기'], recover: ['비밀번호 찾기', '새 비밀번호로'],
-    password: ['비밀번호 바꾸기', '바꾸기'], delete: ['계정 지우기', '지우기'], code: ['복구 코드', '적어 뒀어요'],
+    password: ['비밀번호 바꾸기', '바꾸기'], delete: ['계정 지우기', '지우기'], code: ['초기화 코드', '닫기'],
   }[mode];
   const fields = { login: ['id', 'pw'], signup: ['id', 'name', 'pw', 'pw2', 'invite'], recover: ['id', 'rec', 'pw', 'pw2'], password: ['old', 'pw', 'pw2'], delete: ['pw'], code: [] }[mode];
   $('#ac-title').textContent = T[0];
@@ -5320,10 +5373,11 @@ function openAccount(mode, extra = {}) {
   ok.classList.toggle('danger', mode === 'delete');
   const sub = {
     signup: '친구에게 받은 초대 코드가 있어야 가입돼요. 이름은 코치와 친구들이 보는 이름이에요.',
-    recover: '가입할 때 받은 복구 코드로 새 비밀번호를 만들어요.',
-    password: '다른 기기는 로그아웃돼요. 새 복구 코드도 받아요.',
+    recover: '비밀번호를 잊었으면 관리자에게 초기화 코드를 받아서 새 비밀번호를 만들어요.',
+    password: '바꾸면 다른 기기는 로그아웃돼요.',
     delete: '이 계정과 서버에 저장된 진도를 모두 지워요. 이 기기의 진도는 남아요. 되돌릴 수 없어요.',
-    code: '비밀번호를 잊으면 이 코드로 새 비밀번호를 만들어요. 화면을 캡처하거나 적어 두세요. 다시 보여 줄 수 없어요.',
+    // 관리자가 친구의 초기화 코드를 만들었을 때
+    code: `${extra.who || '친구'}에게 이 코드를 보내 주세요. 앱의 '비밀번호 찾기'에 아이디와 이 코드를 넣으면 새 비밀번호를 만들 수 있어요. 새로 만들기 전까진 원래 비밀번호도 그대로 돼요.`,
   }[mode] || '';
   $('#ac-sub').textContent = sub;
   $('#ac-sub').hidden = !sub;
@@ -5337,8 +5391,8 @@ function openAccount(mode, extra = {}) {
   code.hidden = mode !== 'code';
   code.textContent = extra.code || '';
   $('#ac-copy').hidden = mode !== 'code';
-  $('#ac-copy').onclick = async () => { try { await navigator.clipboard.writeText(extra.code || ''); toast('복사했어요. 메모 앱 같은 데 붙여 두세요'); } catch { toast('길게 눌러 복사해 주세요'); } };
-  $('#ac-cancel').hidden = mode === 'code';
+  $('#ac-copy').onclick = async () => { try { await navigator.clipboard.writeText(extra.code || ''); toast('복사했어요. 친구에게 보내 주세요'); } catch { toast('길게 눌러 복사해 주세요'); } };
+  $('#ac-cancel').hidden = mode === 'code'; // 코드 창은 '닫기' 하나 (뒤로도 닫힘)
   $('#ac-keep-row').hidden = !['login', 'signup', 'recover'].includes(mode);
   $('#ac-keep').checked = true;
   if (mode === 'login' && !$('#ac-id').value) $('#ac-id').value = load(OWNER_KEY, '') || ''; // 이 기기에서 마지막으로 쓴 아이디
@@ -5355,15 +5409,15 @@ function openAccount(mode, extra = {}) {
   const close = () => {
     d.hidden = true;
     f.onsubmit = null;
-    $('#ac-cancel').onclick = $('#ac-to-recover').onclick = $('#ac-to-signup').onclick = $('#ac-to-login').onclick = d.onclick = null;
+    $('#ac-cancel').onclick = $('#ac-back').onclick = $('#ac-to-recover').onclick = $('#ac-to-signup').onclick = $('#ac-to-login').onclick = d.onclick = null;
     document.removeEventListener('keydown', key, true);
     if (prevFocus && prevFocus.focus) prevFocus.focus();
   };
-  const key = e => { if (e.key === 'Escape' && mode !== 'code') { e.preventDefault(); e.stopPropagation(); close(); modalDone(() => {}); } };
-  // 뒤로 가기로 닫아도: 복구 코드 창이면 다음 일(로그인 연결)은 마저 함
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); modalDone(() => {}); } };
+  // 뒤로 가기로 닫아도: 코드 창에 다음 일이 있으면 마저 함
   modalOpen(() => { close(); if (mode === 'code' && extra.then) extra.then(); });
   document.addEventListener('keydown', key, true);
-  $('#ac-cancel').onclick = () => { close(); modalDone(() => {}); };
+  $('#ac-cancel').onclick = $('#ac-back').onclick = () => { close(); modalDone(() => {}); };
   const go = m => { close(); modalDone(() => openAccount(m)); };
   $('#ac-to-recover').onclick = () => go('recover');
   $('#ac-to-signup').onclick = () => go('signup');
@@ -5376,7 +5430,7 @@ function openAccount(mode, extra = {}) {
     // 앱에서 먼저 확인 (서버는 비밀번호 원문을 모름)
     if (fields.includes('id') && !ACCT_ID_RE.test(id)) return showErr('아이디는 영어 소문자·숫자·_로 3~20자예요');
     if (mode === 'signup' && !$('#ac-name').value.trim()) return showErr('이름을 적어 주세요');
-    if (mode === 'recover' && !$('#ac-rec').value.trim()) return showErr('복구 코드를 적어 주세요');
+    if (mode === 'recover' && !$('#ac-rec').value.trim()) return showErr('관리자에게 받은 초기화 코드를 적어 주세요');
     if (mode === 'password' && !$('#ac-old').value) return showErr('지금 비밀번호를 적어 주세요');
     if (!pw) return showErr('비밀번호를 적어 주세요');
     if (fields.includes('pw2')) {
@@ -5403,12 +5457,12 @@ function openAccount(mode, extra = {}) {
           : await acctRecover({ id, recovery: $('#ac-rec').value, password: pw });
         const keep = $('#ac-keep').checked;
         close();
-        // 복구 코드를 먼저 보여 주고(꼭 적어 두게), 확인하면 연결
-        modalDone(() => openAccount('code', { code: r.recovery, then: async () => { await useAccount(r, keep); toast(mode === 'signup' ? '가입했어요. 이제 다른 기기에서도 로그인하면 진도가 맞춰져요' : '새 비밀번호로 바꿨어요', 3500); } }));
+        // 예전엔 복구 코드를 보여 줬음. 이제 비밀번호를 잊으면 관리자가 초기화 코드를 만들어 줌 (서버는 예전 앱을 위해 recovery를 그대로 돌려줌)
+        modalDone(async () => { await useAccount(r, keep); toast(mode === 'signup' ? '가입했어요. 이제 다른 기기에서도 로그인하면 진도가 맞춰져요' : '새 비밀번호로 바꿨어요', 3500); });
       } else if (mode === 'password') {
         const r = await acctChangePw({ token: sync.token, id: sync.login, old: $('#ac-old').value, password: pw });
         close();
-        modalDone(() => openAccount('code', { code: r.recovery, then: () => toast('비밀번호를 바꿨어요') }));
+        modalDone(() => toast('비밀번호를 바꿨어요. 다른 기기에선 새 비밀번호로 다시 로그인해 주세요', 3500));
       } else if (mode === 'delete') {
         await acctDelete({ token: sync.token, id: sync.login, password: pw });
         close(); modalDone(() => {});
@@ -5469,7 +5523,7 @@ function renderSyncStatus() {
   $('#btn-account').classList.toggle('on', !!nm);
   $('#btn-account').setAttribute('aria-label', nm ? `계정: ${nm}` : '계정');
   $('#set-acct-sum').textContent = sync.kind === 'account' ? `${nm}(${sync.login})로 로그인됨` : sync.kind === 'gist' ? `GitHub ${sync.login}에 연결됨` : '로그인하면 기기끼리 진도가 맞춰져요';
-  if (current === 'account') { $('#acct-welcome').hidden = sync.enabled; $('#acct-skip-wrap').hidden = !(accountGate && !sync.enabled); }
+  if (current === 'account') paintAccountLook();
   $('#acct-ready').hidden = !accountReady();
   $('#acct-wait').hidden = accountReady();
   const kind = sync.kind;
@@ -5483,7 +5537,7 @@ function renderSyncStatus() {
   }
 }
 
-// 목표일 칸 (학습 계획 화면·설정 > 복습, 시험일 위): 새 단어를 보는 마지막 날을 고름. 저장은 그다음 날(총정리를 시작하는 날)로.
+// 목표일 칸 (학습 계획 화면, 시험일 위): 새 단어를 보는 마지막 날을 고름. 저장은 그다음 날(총정리를 시작하는 날)로.
 // 코치가 켜져 있으면 코치 일정의 목표일을 보여 주고, 바꾸면 그날에 맞춰 총정리 날 수를 정해 다시 짬(하루 개수 고정은 풀림). 비우면 코치가 다시 정함
 const goalShown = () => { const g = goalDate(); return g ? addDays(g, -1) : ''; };
 function fillGoalInput(input) {
@@ -5520,35 +5574,16 @@ function setGoal(input) {
   renderHome();
 }
 
-// 설정의 복습 카드: 단어 코치, 목표일·시험일, 기억 유지 그래프, 복습 주기
-const PRESET_LABEL = { xs: '매우 짧게', s: '짧게', m: '보통', l: '길게', xl: '매우 길게' };
-function renderSrs() {
-  ensureCoachPlan();
+// 학습 계획의 코치 부분: 지금 일정 한 줄 · 상의하기 · 다시 짜기 · 쉬는 요일 (예전엔 설정 > 복습에 똑같은 게 또 있었음)
+function renderCoachPlan() {
   const g = settings.goal, ex = settings.exam;
-  fillGoalInput($('#goal-date'));
-  $('#srs-exam-date').value = ex || '';
   const coach = !!settings.coach;
-  $('#opt-coach').checked = coach;
   const cp = $('#coach-plan');
   cp.hidden = !coach;
-  // 코치 캐릭터: 눌러서 언제든 바꿈
-  const cc = $('#coach-chars');
-  $('#coach-chars-label').hidden = cc.hidden = !coach;
-  cc.innerHTML = '';
-  if (coach) for (const c of Object.keys(COACH_ART)) {
-    const b = el('button', 'coach-choice' + (c === coachChar() ? ' on' : ''));
-    b.type = 'button';
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', c === coachChar());
-    b.innerHTML = coachSvg('normal', c);
-    b.appendChild(el('span', null, COACH_NAMES[c]));
-    b.addEventListener('click', () => setCoachChar(c));
-    cc.appendChild(b);
-  }
   $('#btn-coach-replan').hidden = !coachActive();
   // 쉬는 요일: 누를 때마다 켜고 끔. 그날은 새 단어·총정리 몫 없이 쉬고, 나머지 날에 나눔
   const rb = $('#coach-rest');
-  $('#coach-rest-label').hidden = rb.hidden = !coach;
+  $('#coach-rest-row').hidden = rb.hidden = !coach;
   rb.innerHTML = '';
   if (coach) {
     const rest = cleanRest(settings.coachRest);
@@ -5562,7 +5597,7 @@ function renderSrs() {
         setRest(next);
         if (coachActive()) planCoach(true); else { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); }
         toast(settings.coachRest.length ? `${restLabel(settings.coachRest)}은 쉬어요` : '쉬는 요일 없이 매일 해요');
-        renderSrs();
+        renderHome();
       });
       rb.appendChild(b);
     });
@@ -5571,7 +5606,7 @@ function renderSrs() {
   $('#btn-coach-talk').textContent = aiCoachOnline() ? '코치와 이야기하기' : '일정 상의하기';
   if (coach) {
     const today = dateStr();
-    if (!ex) cp.textContent = '아래에 시험일을 정하면 코치가 목표일과 하루 새 단어 수를 정해 줘요.';
+    if (!ex) cp.textContent = '시험일을 정하면 코치가 목표일과 하루 새 단어 수를 정해 줘요.';
     else if (ex <= today) cp.textContent = '시험일이 지났어요. 다음 시험일을 정하면 일정을 다시 짜요. 그때까지는 기본 방식으로 해요.';
     else {
       const gd = settings.coachGoal, rd = daysBetween(gd, ex);
@@ -5586,6 +5621,11 @@ function renderSrs() {
       : g >= ex ? '목표일은 시험 전전날까지여야 해요.' : '';
   warn.hidden = !msg;
   warn.textContent = msg;
+}
+
+// 설정의 복습 카드: 기억 유지 그래프, 복습 주기
+const PRESET_LABEL = { xs: '매우 짧게', s: '짧게', m: '보통', l: '길게', xl: '매우 길게' };
+function renderSrs() {
   // 복습 주기 목록
   const box = $('#srs-presets');
   box.innerHTML = '';
@@ -5625,8 +5665,6 @@ function renderSrsGraph(iv) {
 }
 
 // ---------- 꾸미기 (js/look.js가 <head>에서 먼저 불러 둠) ----------
-const ACCENT_NAME = { navy: '인디고', forest: '숲', grape: '포도', coral: '코랄', ink: '먹색' };
-const ACCENT_SW = { navy: '#4f5bd5', forest: '#1e9e6a', grape: '#7a5af8', coral: '#f0614f', ink: '#1a1a17' };
 const HOME_PART = { plan: '학습 계획 · 암기 진도', practice: '다시 볼 단어 · 범위 연습' }; // 코치·단어장·DAY별 진도는 아래 탭으로 옮김
 // 짧은 소리 (파일 없이 Web Audio로): tone([[주파수, 길이초], …], 크기, 파형)
 // 소리 낼 때 처음 켜면 스피커·이어폰이 깨어나는 동안 늦게 들려서, 화면을 처음 누를 때 미리 켜 둠 (warmAudio)
@@ -5662,7 +5700,7 @@ function tone(notes, vol = .06, type = 'sine') {
   // 잠들어 있었으면 깨어난 다음에 (멈춘 시계에 맞춰 놓으면 깨어날 때 한꺼번에 밀려서 남)
   if (ctx.state === 'running') play(); else ctx.resume().then(play, () => {});
 }
-// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 소리). test = 스위치를 켤 때 한 번 들려 주기
+// 정답 반응: 맞히면 효과음, 틀리면 진동 (설정 > 화면 · 소리). test = 스위치를 켤 때 한 번 들려 주기
 function answerFx(state, test = false) {
   const lk = LOOK.get();
   if (state === 'ok' && (lk.sound || test)) tone([[880, .09], [1320, .16]], .07);
@@ -5674,21 +5712,17 @@ function previewReact() {
   t.hidden = true; void t.offsetWidth; t.hidden = false;
 }
 function renderLook() {
-  const lk = LOOK.get(), m = WORD ? 'word' : 'ex';
-  setSeg('#seg-theme', lk.theme); setSeg('#seg-size', lk.size); setSeg('#seg-font', lk.font); setSeg('#seg-radius', lk.radius);
-  setSeg('#seg-edge', lk[m].edge); setSeg('#seg-glow', lk[m].glow); setSeg('#seg-react', lk.react); setSeg('#seg-kb', lk.kb);
+  const lk = LOOK.get(), neon = lk.skin === 'neon';
+  setSeg('#seg-skin', lk.skin);
+  for (const b of $('#seg-skin').querySelectorAll('button')) b.setAttribute('aria-checked', b.dataset.v === lk.skin);
+  // 네온은 늘 어두워서 밝기는 오리지널에서만
+  const themeRow = $('#seg-theme').closest('.set-row, .opt-row');
+  if (themeRow) themeRow.hidden = neon;
+  $('#skin-note').hidden = !neon;
+  setSeg('#seg-theme', lk.theme); setSeg('#seg-size', lk.size); setSeg('#seg-font', lk.font); setSeg('#seg-react', lk.react); setSeg('#seg-kb', lk.kb);
   $('#opt-look-share').checked = lk.share;
   $('#opt-fx-sound').checked = lk.sound; $('#opt-fx-buzz').checked = lk.buzz; $('#opt-kb-sound').checked = lk.kbSound;
   $('#row-fx-buzz').hidden = !navigator.vibrate; // 아이폰 사파리는 웹 진동이 안 됨
-  const sw = $('#sw-accent');
-  sw.innerHTML = '';
-  for (const a of LOOK.CHOICES.accent) {
-    const b = el('button', 'swatch' + (lk[m].accent === a ? ' on' : ''));
-    b.style.setProperty('--sw', ACCENT_SW[a]);
-    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', lk[m].accent === a); b.setAttribute('aria-label', ACCENT_NAME[a]); b.title = ACCENT_NAME[a];
-    b.addEventListener('click', () => { LOOK.set({ accent: a }); renderLook(); });
-    sw.appendChild(b);
-  }
   const parts = $('#home-parts');
   parts.innerHTML = '';
   for (const k of LOOK.HIDE.filter(x => HOME_PART[x])) {
@@ -6106,7 +6140,7 @@ function exportMy() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
-// 설정 > 복습 > 내 단어 (두 모드 공용 설정, 기기끼리 맞춤)
+// 내 단어 (학습 계획 '하루 새 내 단어', 두 모드 공용 설정, 기기끼리 맞춤)
 function renderMySettings() {
   const c = cfg();
   setSeg('#seg-my-per', String(c.per));
@@ -6114,7 +6148,7 @@ function renderMySettings() {
   const grad = myWords.filter(w => stats[w.id] && stats[w.id].g).length, wait = myQueue().length, notes = myWords.filter(w => w.note && !stats[w.id]).length;
   $('#my-info').textContent = live || hits
     ? [`내 단어 ${live}개`, hits ? `독해에서 막힌 단어책 단어 ${hits}개` : '', wait ? `배울 차례를 기다리는 ${wait}개` : '', notes ? `노트에만 ${notes}개` : '', grad ? `졸업 ${grad}개` : ''].filter(Boolean).join(' · ')
-    : '문제를 풀다 모르는 단어에 표시하고, 지문을 찍어 올리면 AI가 정리해 줘요. 단어만 쳐서 올려도 돼요.';
+    : '단어장 + 에서 올린 단어를 하루에 몇 개씩 배울지';
 }
 function setMyCfg(patch) {
   saveMy({ ...myStore, cfg: { ...cfg(), ...patch, at: Date.now() } });
@@ -6269,7 +6303,6 @@ function bind() {
   $('#btn-list-back').addEventListener('click', () => goHome());
   // 내 단어 올리기
   $('#btn-list-my').addEventListener('click', openMyImport);
-  $('#btn-my-open').addEventListener('click', openMyImport);
   $('#btn-my-back').addEventListener('click', () => { if (myDraft) { myDraft = null; $('#my-preview').hidden = true; $('#my-step-input').hidden = false; } else goHome(); });
   $('#btn-my-redo').addEventListener('click', () => { myDraft = null; $('#my-preview').hidden = true; $('#my-step-input').hidden = false; });
   $('#btn-my-prompt').addEventListener('click', copyPrompt);
@@ -6277,7 +6310,6 @@ function bind() {
   $('#btn-my-pics').addEventListener('click', () => $('#my-pics').click());
   for (const sel of ['#my-cam', '#my-pics']) $(sel).addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) addShots(fs); });
   $('#btn-my-ai').addEventListener('click', runMyAi);
-  $('#btn-my-prompt2').addEventListener('click', copyPrompt);
   $('#btn-my-check').addEventListener('click', () => checkMyText($('#my-text').value));
   $('#btn-my-file').addEventListener('click', () => $('#my-file').click());
   $('#my-file').addEventListener('change', async e => { const f = e.target.files[0]; e.target.value = ''; if (f) checkMyText(await f.text()); });
@@ -6318,7 +6350,7 @@ function bind() {
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#opt-simplehome').addEventListener('change', e => { ui.simpleHome = e.target.checked; save(UI_KEY, ui); applyHomeLayout(); });
   // 꾸미기 (js/look.js): 누르면 바로 앱 전체에 보임
-  for (const [sel, k] of [['#seg-theme', 'theme'], ['#seg-size', 'size'], ['#seg-font', 'font'], ['#seg-radius', 'radius'], ['#seg-edge', 'edge'], ['#seg-glow', 'glow'], ['#seg-react', 'react'], ['#seg-kb', 'kb']]) {
+  for (const [sel, k] of [['#seg-skin', 'skin'], ['#seg-theme', 'theme'], ['#seg-size', 'size'], ['#seg-font', 'font'], ['#seg-react', 'react'], ['#seg-kb', 'kb']]) {
     onSeg(sel, v => { LOOK.set({ [k]: v }); renderLook(); if (k === 'react') previewReact(); });
   }
   for (const [id, k] of [['#opt-fx-sound', 'sound'], ['#opt-fx-buzz', 'buzz'], ['#opt-kb-sound', 'kbSound']]) {
@@ -6335,7 +6367,7 @@ function bind() {
     else toast('꾸미기는 이제 이 기기에만 저장돼요');
   });
   $('#btn-look-reset').addEventListener('click', async () => {
-    if (!(await ask({ title: '꾸미기를 처음대로 돌릴까요?', body: '밝기·색·글자 크기·홈에 보일 것 등 화면 꾸미기만 처음 모습으로 돌아가요. 학습 기록과 설정은 그대로예요.', ok: '처음대로' }))) return;
+    if (!(await ask({ title: '꾸미기를 처음대로 돌릴까요?', body: '테마·밝기·글자 크기·홈에 보일 것 등 화면 꾸미기만 처음 모습으로 돌아가요. 학습 기록과 설정은 그대로예요.', ok: '처음대로' }))) return;
     LOOK.reset(); renderLook(); toast('꾸미기를 처음대로 돌렸어요');
   });
   onSeg('#seg-base', v => { settings.baseAccept = v; saveSettings(); });
@@ -6480,18 +6512,16 @@ function bind() {
   });
   $('#btn-local-csv').addEventListener('click', () => $('#csv-file').click());
   // 복습: 목표일·시험일
-  const srsChanged = () => { settings.prefsAt = Date.now(); saveSettings(); sync.soon(); renderSrs(); };
-  $('#goal-date').addEventListener('change', e => setGoal(e.target));
   $('#plan-goal-date').addEventListener('change', e => setGoal(e.target));
   $('#btn-goal-clear').addEventListener('click', () => { const i = $('#plan-goal-date'); i.value = ''; setGoal(i); });
-  $('#srs-exam-date').addEventListener('change', e => { if (!examOk(e.target)) return; settings.exam = e.target.value; settings.examAt = Date.now(); shareExam(settings.exam, settings.examAt); if (coachActive()) planCoach(true); coachMoved = false; srsChanged(); });
   // 단어 코치: 설정과 학습 계획 화면의 스위치, 일정 다시 짜기, 캐릭터를 누르면 폴짝
-  $('#opt-coach').addEventListener('change', e => toggleCoach(e.target.checked));
   $('#opt-coach-plan').addEventListener('change', e => toggleCoach(e.target.checked));
   $('#opt-vac').addEventListener('change', e => { setVac(e.target.checked); renderPlan(); });
   $('#btn-coach-talk').addEventListener('click', () => talkCoach());
-  $('#btn-coach-replan').addEventListener('click', () => { if (planCoach(true)) { coachMoved = false; renderSrs(); toast('남은 날에 맞춰 일정을 다시 짰어요'); } });
-  $('#cc-char').addEventListener('click', e => { const c = e.currentTarget; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); });
+  $('#btn-coach-replan').addEventListener('click', () => { if (planCoach(true)) { coachMoved = false; renderHome(); toast('남은 날에 맞춰 일정을 다시 짰어요'); } });
+  // 코치 얼굴을 누르면 한 번 폴짝 뛰고 코치 바꾸기, 이름을 눌러도 바꾸기
+  $('#cc-char').addEventListener('click', e => { const c = e.currentTarget; c.classList.remove('hop'); void c.offsetWidth; c.classList.add('hop'); setTimeout(changeCoach, 280); });
+  $('#cc-who').addEventListener('click', changeCoach);
   // '새 버전 확인'을 빠르게(1.5초 안에 이어서) 7번 누르면 AI 고급 설정이 열림. 4번째부터 몇 번 남았는지 알려 줌
   let advTaps = 0, advAt = 0;
   $('#btn-update').addEventListener('click', async () => {

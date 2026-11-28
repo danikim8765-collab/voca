@@ -206,7 +206,8 @@
     <div class="chat-card">
       <div class="chat-head">
         <div class="chat-char" id="cc-char"></div>
-        <div class="chat-who"><b id="cc-name">코치</b><span id="cc-sub"></span></div>
+        <!-- 코치 얼굴·이름을 누르면 코치 바꾸기 (app.js changeCoach) -->
+        <button class="chat-who" id="cc-who" type="button" aria-label="코치 바꾸기"><b id="cc-name">코치</b><span id="cc-sub"></span></button>
         <button class="chat-ic-btn" id="cc-menu" type="button" data-icon="memo" aria-label="코치가 기억하는 것" title="코치가 기억하는 것"></button>
       </div>
       <div class="chat-body">
@@ -257,7 +258,7 @@
           <button data-v="type">직접 입력</button>
         </div>
       </div>
-      <label class="switch-row"><span>복습은 외운 단어만 4지선다<small class="x-desc kind-note">직접 입력을 한 번에 맞힌 단어는 다음 복습부터 4지선다로 뜻만 떠올리고, 틀리거나 힌트를 쓴 단어는 한 번에 맞힐 때까지 직접 입력. 맞히면 졸업하는 문제는 직접 입력. 새 단어는 위 방식대로.</small></span><input type="checkbox" role="switch" class="switch" id="opt-review-mix"></label>
+      <label class="switch-row"><span>복습은 외운 단어만 4지선다<small class="x-desc kind-note">직접 입력을 한 번에 맞힌 단어는 복습을 4지선다로</small></span><input type="checkbox" role="switch" class="switch" id="opt-review-mix"></label>
       <div class="set-row" data-only="ex"><span class="t">예문 해석</span>
         <div class="seg" id="seg-ko">
           <button data-v="show">보이기</button>
@@ -309,7 +310,7 @@
           <button data-v="40">40</button>
         </div>
       </div>
-      <!-- 목표일(새 단어를 보는 마지막 날): 설정 > 복습의 목표일과 같은 칸. 코치가 켜져 있으면 코치 일정의 목표일 (app.js setGoal) -->
+      <!-- 목표일(새 단어를 보는 마지막 날). 코치가 켜져 있으면 코치 일정의 목표일 (app.js setGoal) -->
       <div class="set-row date-row" id="plan-goal-row"><label class="t" for="plan-goal-date">목표일<small class="d" id="plan-goal-d">새 단어를 다 배울 날</small></label>
         <input type="date" id="plan-goal-date" class="date-input row-date">
         <button class="mark-btn" id="btn-goal-clear" type="button" data-icon="close" aria-label="목표일 지우기" title="목표일 지우기"></button>
@@ -317,6 +318,19 @@
       <div class="set-row date-row exam-row"><label class="t" for="exam-date">시험일<small class="d" id="exam-dn"></small></label>
         <input type="date" id="exam-date" class="date-input row-date">
         <button class="mark-btn" id="btn-exam-clear" type="button" data-icon="close" aria-label="시험일 지우기" title="시험일 지우기"></button>
+      </div>
+      <!-- 코치가 켜져 있을 때: 지금 일정 한 줄 · 상의하기 · 쉬는 요일 (예전엔 설정 > 복습에도 똑같이 있었음, app.js renderCoachPlan) -->
+      <p class="muted coach-plan" id="coach-plan" hidden></p>
+      <p class="srs-warn" id="srs-warn" hidden></p>
+      <div class="row coach-btns">
+        <button class="btn secondary small" id="btn-coach-talk" type="button" hidden>일정 상의하기</button>
+        <button class="btn ghost small" id="btn-coach-replan" type="button" hidden>일정 다시 짜기</button>
+      </div>
+      <div class="set-row rest-row" id="coach-rest-row" hidden><span class="t">쉬는 요일<small class="d">이날은 새 단어·총정리 몫 없이 쉬어요</small></span></div>
+      <div class="rest-chips" id="coach-rest" hidden></div>
+      <!-- 내 단어(두 모드가 같이 쓰고 기기끼리 맞춰짐, app.js renderMySettings) -->
+      <div class="set-row" id="my-per-row"><span class="t">하루 새 내 단어<small class="d" id="my-info"></small></span>
+        <div class="seg" id="seg-my-per"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="30">30</button><button data-v="all">전부</button></div>
       </div>
     </div>
   </section>
@@ -486,6 +500,8 @@
     </header>
     <div class="card moved-card" hidden></div>
     <div class="acct-welcome" id="acct-welcome" hidden>
+      <!-- 앱 아이콘의 V_ (빈칸) 표시. 테마 색을 따라감 -->
+      <svg class="aw-mark" viewBox="0 0 64 64" aria-hidden="true"><path class="v" d="M15 17 L29 45 L43 17"/><rect class="u" x="42" y="42" width="13" height="6" rx="3"/></svg>
       <div class="aw-logo" aria-hidden="true">VOCA</div>
       <p class="aw-lead">로그인하면 폰·패드·컴퓨터 어디서든<br>같은 진도로 이어서 공부해요</p>
     </div>
@@ -524,6 +540,12 @@
         </div>
       </div>
     </div>
+    <!-- 관리자만 (서버 설정 ADMINS): 가입한 사람 · 초기화 코드 만들기 (app.js renderAdmin) -->
+    <div class="card admin-card" id="admin-card" hidden>
+      <div class="label">관리자</div>
+      <p class="muted admin-sum" id="admin-sum"></p>
+      <div class="admin-list" id="admin-list"></div>
+    </div>
     <p class="acct-skip" id="acct-skip-wrap" hidden><button class="link-btn" id="btn-acct-skip" type="button">로그인 없이 이 기기에서만 쓰기</button></p>
   </section>
 
@@ -535,10 +557,9 @@
     </header>
     <!-- 탭: 누른 탭의 카드(data-tab)만 보임 -->
     <div class="seg set-tabs" id="set-tabs" role="tablist" aria-label="설정 종류">
-      <button data-v="quiz" role="tab">문제</button>
-      <button data-v="srs" role="tab">복습</button>
-      <button data-v="look" role="tab">화면</button>
-      <button data-v="sound" role="tab">소리</button>
+      <!-- 2026-11-28: 탭 다섯(문제·복습·화면·소리·연결) → 셋 -->
+      <button data-v="quiz" role="tab">공부</button>
+      <button data-v="look" role="tab">화면 · 소리</button>
       <button data-v="etc" role="tab">연결</button>
     </div>
     <div class="card" id="set-quiz" data-tab="quiz">
@@ -552,9 +573,9 @@
         </div>
       </div>
       <div data-only="ex">
-        <div class="label mt">직접 입력: 원형까지 쓰면 <span class="muted">(outlaw → 예문은 outlawed)</span></div>
+        <div class="label mt">원형만 써도 <span class="muted">(직접 입력에서 outlaw → 예문은 outlawed)</span></div>
         <div class="seg" id="seg-base">
-          <button data-v="pause">0.8초 멈추면 정답</button>
+          <button data-v="pause">0.8초 뒤 정답</button>
           <button data-v="instant">바로 정답</button>
         </div>
       </div>
@@ -578,6 +599,16 @@
       </div>
       <div class="again-grid" id="again-rows" role="group" aria-label="다시 나올 때"></div>
     </div>
+    <!-- 복습: 간격 한 줄(누르면 그래프·고르기 시트, app.js settingsRows). 코치·목표일·시험일·쉬는 요일은 학습 계획에 -->
+    <div class="card" id="srs-card" data-tab="quiz">
+      <div class="label">복습</div>
+      <div id="srs-opts">
+        <div class="label">기억 유지 그래프</div>
+        <div class="srs-graph" id="srs-graph"></div>
+        <div class="label">복습 주기</div>
+        <div class="srs-presets" id="srs-presets" role="radiogroup" aria-label="복습 주기"></div>
+      </div>
+    </div>
     <!-- 앱 키보드: 폰·패드의 예문 모드 직접 입력 -->
     <div class="card touch-only" id="set-kb" data-tab="quiz" data-only="ex">
       <div class="label">앱 키보드</div>
@@ -596,49 +627,35 @@
       <div class="key-rows" id="key-rows"></div>
       <button class="btn ghost small" id="btn-keys-reset">단축키 처음대로</button>
     </div>
-    <div class="card" id="srs-card" data-tab="srs">
-      <div class="label">복습</div>
-      <label class="switch-row"><span>단어 코치 <span class="muted">(시험일에 맞춰 오늘 분량을 정해 줌)</span></span><input type="checkbox" role="switch" class="switch" id="opt-coach"></label>
-      <p class="muted srs-desc" id="coach-plan" hidden></p>
-      <div class="srs-dates">
-        <label id="goal-label">목표일 <span class="muted">(새 단어 끝)</span><input type="date" id="goal-date" class="date-input"></label>
-        <label>시험일<input type="date" id="srs-exam-date" class="date-input"></label>
-      </div>
-      <p class="srs-warn" id="srs-warn" hidden></p>
-      <div class="row coach-btns">
-        <button class="btn ghost small" id="btn-coach-talk" hidden>일정 상의하기</button>
-        <button class="btn ghost small" id="btn-coach-replan" hidden>일정 다시 짜기</button>
-      </div>
-      <div class="label" id="coach-chars-label" hidden>코치 캐릭터</div>
-      <div class="coach-choices" id="coach-chars" role="radiogroup" aria-label="코치 캐릭터" hidden></div>
-      <div class="label" id="coach-rest-label" hidden>쉬는 요일</div>
-      <div class="rest-chips" id="coach-rest" hidden></div>
-      <div id="srs-opts">
-        <div class="label mt">기억 유지 그래프</div>
-        <div class="srs-graph" id="srs-graph"></div>
-        <div class="label">복습 주기</div>
-        <div class="srs-presets" id="srs-presets" role="radiogroup" aria-label="복습 주기"></div>
-      </div>
-    </div>
-    <!-- 내 단어: 두 모드가 같이 쓰고 기기끼리 맞춰짐 (app.js renderMySettings) -->
-    <div class="card" id="set-my" data-tab="srs">
-      <div class="label">내 단어</div>
-      <p class="muted" id="my-info"></p>
-      <div class="opt-row"><span>하루 새 내 단어</span>
-        <div class="seg" id="seg-my-per"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="30">30</button><button data-v="all">전부</button></div></div>
-      <div class="row two">
-        <button class="btn primary" id="btn-my-open">내 단어 올리기</button>
-        <button class="btn secondary" id="btn-my-prompt2">부탁 문구 복사</button>
-      </div>
-      <button class="btn ghost small" id="btn-my-export">내 단어 내보내기 (CSV)</button>
-    </div>
     <!-- 화면 꾸미기: js/look.js (이 기기에만. 강조 색·카드·퀴즈 바탕은 예문·단어 모드마다 따로) -->
     <div class="card" id="set-screen" data-tab="look">
       <div class="label">화면</div>
+      <!-- 테마: 오리지널 · 네온(늘 어둡게). 색은 테마가 정함 (js/look.js skin) -->
+      <div class="skin-pick" id="seg-skin" role="radiogroup" aria-label="테마">
+        <button type="button" data-v="orig" role="radio"><span class="skin-thumb orig" aria-hidden="true"><i></i><i></i><i></i></span>오리지널</button>
+        <button type="button" data-v="neon" role="radio"><span class="skin-thumb neon" aria-hidden="true"><i></i><i></i><i></i></span>네온</button>
+      </div>
+      <p class="skin-note" id="skin-note" hidden>네온은 늘 어두운 화면이에요</p>
       <div class="opt-row"><span>밝기</span>
         <div class="seg" id="seg-theme"><button data-v="auto">폰 설정</button><button data-v="light">밝게</button><button data-v="dark">어둡게</button></div></div>
       <div class="opt-row"><span>글자 크기</span>
         <div class="seg" id="seg-size"><button data-v="s">작게</button><button data-v="m">보통</button><button data-v="l">크게</button><button data-v="xl">더 크게</button></div></div>
+      <div class="opt-row"><span>예문 글꼴</span>
+        <div class="seg" id="seg-font"><button data-v="sans">고딕</button><button data-v="serif">명조</button></div></div>
+      <div class="opt-row"><span>정답 반응</span>
+        <div class="seg" id="seg-react"><button data-v="calm">차분하게</button><button data-v="mid">보통</button><button data-v="fun">신나게</button></div></div>
+      <div class="react-demo" aria-hidden="true"><span class="tag fb-head ok" id="react-demo">정답! · 내일 복습</span></div>
+    </div>
+    <div class="card" id="set-voice" data-tab="look">
+      <div class="label">소리</div>
+      <label class="switch-row"><span>맞히면 효과음</span><input type="checkbox" role="switch" class="switch" id="opt-fx-sound"></label>
+      <label class="switch-row" id="row-fx-buzz"><span>틀리면 진동</span><input type="checkbox" role="switch" class="switch" id="opt-fx-buzz"></label>
+      <label class="switch-row"><span>정답 확인 후 단어 자동 발음</span><input type="checkbox" role="switch" class="switch" id="opt-autospeak"></label>
+      <div class="opt-row"><span>발음 억양</span>
+        <div class="seg" id="seg-accent"><button data-v="en-US">미국식</button><button data-v="en-GB">영국식</button></div></div>
+      <div class="label">말하기 속도 <span id="rate-val" class="muted"></span></div>
+      <input type="range" id="rate" min="0.6" max="1.2" step="0.1">
+      <button class="btn ghost small" id="btn-test-voice" data-icon="speak"><span class="lbl">발음 테스트</span></button>
     </div>
     <div class="card" id="set-home" data-tab="look">
       <div class="label">홈</div>
@@ -647,42 +664,9 @@
       <div id="home-parts"></div>
     </div>
     <div class="card" id="set-look" data-tab="look">
-      <div class="label">꾸미기</div>
-      <div class="opt-row"><span>강조 색</span><div class="swatches" id="sw-accent" role="radiogroup" aria-label="강조 색"></div></div>
-      <div class="opt-row"><span>예문 글꼴</span>
-        <div class="seg" id="seg-font"><button data-v="sans">고딕</button><button data-v="serif">명조</button></div></div>
-      <div class="opt-row"><span>모서리</span>
-        <div class="seg" id="seg-radius"><button data-v="round">둥글게</button><button data-v="soft">조금</button><button data-v="square">각지게</button></div></div>
-      <div class="opt-row"><span>카드</span>
-        <div class="seg" id="seg-edge"><button data-v="flat">평평하게</button><button data-v="shadow">그림자</button><button data-v="line">테두리</button></div></div>
-      <div class="opt-row"><span>퀴즈 바탕</span>
-        <div class="seg" id="seg-glow"><button data-v="none">단색</button><button data-v="warm">피치</button><button data-v="sky">하늘</button><button data-v="mint">민트</button></div></div>
-      <div class="label mt">정답 반응</div>
-      <div class="seg" id="seg-react">
-        <button data-v="calm">차분하게</button>
-        <button data-v="mid">보통</button>
-        <button data-v="fun">신나게</button>
-      </div>
-      <div class="react-demo" aria-hidden="true"><span class="tag fb-head ok" id="react-demo">정답! · 내일 복습</span></div>
-      <label class="switch-row"><span>꾸미기도 동기화·백업하기</span><input type="checkbox" role="switch" class="switch" id="opt-look-share"></label>
+      <div class="label">꾸미기 저장</div>
+      <label class="switch-row"><span>다른 기기와 맞추고 백업에도 넣기</span><input type="checkbox" role="switch" class="switch" id="opt-look-share"></label>
       <button class="btn ghost small" id="btn-look-reset">꾸미기 처음대로</button>
-    </div>
-    <div class="card" id="set-fx" data-tab="sound">
-      <div class="label">효과음 · 진동</div>
-      <label class="switch-row"><span>맞히면 효과음</span><input type="checkbox" role="switch" class="switch" id="opt-fx-sound"></label>
-      <label class="switch-row" id="row-fx-buzz"><span>틀리면 진동</span><input type="checkbox" role="switch" class="switch" id="opt-fx-buzz"></label>
-    </div>
-    <div class="card" id="set-voice" data-tab="sound">
-      <div class="label">발음</div>
-      <div class="label">억양</div>
-      <div class="seg" id="seg-accent">
-        <button data-v="en-US">미국식</button>
-        <button data-v="en-GB">영국식</button>
-      </div>
-      <label class="switch-row"><span>정답 확인 후 단어 자동 발음</span><input type="checkbox" role="switch" class="switch" id="opt-autospeak"></label>
-      <div class="label">말하기 속도 <span id="rate-val" class="muted"></span></div>
-      <input type="range" id="rate" min="0.6" max="1.2" step="0.1">
-      <button class="btn ghost small" id="btn-test-voice" data-icon="speak"><span class="lbl">발음 테스트</span></button>
     </div>
     <!-- AI: 두 모드 공용 (키·스위치도 같이 씀) -->
     <div class="card" id="ai-card" data-tab="etc">
@@ -724,24 +708,34 @@
       <span class="plan-sum-main"><span class="label">계정 · 다른 기기와 진도 맞추기</span><span class="plan-sum-text" id="set-acct-sum"></span></span>
       <i class="chev" aria-hidden="true">›</i>
     </button>
+    <!-- 연결 탭 순서: AI → 계정 → 백업 → 앱 정보 → 맨 아래 처음부터 다시(지우는 것끼리 따로, 2026-11-28) -->
     <div class="card" id="set-data" data-tab="etc">
-      <div class="label">백업 · 앱 정보</div>
+      <div class="label">백업</div>
       <div class="row two">
         <button class="btn secondary" id="btn-export">백업 저장</button>
         <button class="btn secondary" id="btn-import">백업 불러오기</button>
       </div>
       <input type="file" id="import-file" accept=".json,application/json" hidden>
-      <button class="btn danger small" id="btn-book-restart">단어책 새로 시작</button>
-      <button class="btn danger small" id="btn-reset"><span data-only="ex">예문</span><span data-only="word">단어</span> 모드 진도 초기화</button>
-      <div class="label mt">단어 데이터</div>
-      <p class="muted" id="data-info"></p>
-      <button class="btn ghost small" id="btn-reload">서버에서 다시 불러오기</button>
-      <button class="btn ghost small" id="btn-local-csv">폰에 있는 CSV 직접 열기</button>
-      <input type="file" id="csv-file" accept=".csv,text/csv" multiple hidden>
-      <div class="label mt">앱 버전</div>
+      <button class="btn ghost small" id="btn-my-export">내 단어 내보내기 (CSV)</button>
+    </div>
+    <div class="card" id="set-app" data-tab="etc">
+      <div class="label">앱 정보</div>
       <p class="app-ver"><b id="app-ver"></b> <span class="muted" id="app-ver-state"></span></p>
       <button class="btn ghost small" id="btn-update">새 버전 확인</button>
-      <button class="link-btn report-link" id="btn-report" type="button">이상한 점 알려 주기</button>
+      <button class="btn ghost small" id="btn-report" type="button">이상한 점 알려 주기</button>
+      <!-- 단어 데이터 도구: 단어가 이상할 때만 쓰니 접어 둠 -->
+      <details class="set-more data-more"><summary>단어 데이터가 이상할 때</summary>
+        <p class="muted" id="data-info"></p>
+        <button class="btn ghost small" id="btn-reload">서버에서 다시 불러오기</button>
+        <button class="btn ghost small" id="btn-local-csv">폰에 있는 CSV 직접 열기</button>
+        <input type="file" id="csv-file" accept=".csv,text/csv" multiple hidden>
+      </details>
+    </div>
+    <div class="card reset-card" id="set-reset" data-tab="etc">
+      <div class="label">처음부터 다시</div>
+      <p class="muted reset-note">학습 기록이 지워져요. 지우기 전에 위에서 백업을 저장해 두세요.</p>
+      <button class="btn danger small reset-row" id="btn-book-restart">단어책 새로 시작</button>
+      <button class="btn danger small reset-row" id="btn-reset"><span data-only="ex">예문</span><span data-only="word">단어</span> 모드 진도 초기화</button>
     </div>
   </section>
 
@@ -785,7 +779,7 @@
   <div class="dialog" id="coach-pick" role="dialog" aria-modal="true" aria-labelledby="cp-title" hidden>
     <div class="dialog-card">
       <div class="dlg-title" id="cp-title">함께할 코치를 골라 주세요</div>
-      <div class="dlg-body">설정에서 언제든 바꿀 수 있어요.</div>
+      <div class="dlg-body" id="cp-desc">코치 탭 위 코치를 누르면 언제든 바꿀 수 있어요.</div>
       <div class="coach-choices" id="cp-choices"></div>
       <p class="cp-bio" id="cp-bio" aria-live="polite"></p>
       <div class="dlg-actions">
@@ -829,30 +823,32 @@
     </div>
   </div>
 
-  <!-- 계정: 로그인 · 회원가입 · 비밀번호 찾기(복구 코드) · 비밀번호 바꾸기 · 계정 지우기 · 복구 코드 보여 주기 (app.js openAccount) -->
+  <!-- 계정: 로그인 · 회원가입 · 비밀번호 찾기(관리자가 준 초기화 코드) · 비밀번호 바꾸기 · 계정 지우기 · 복구 코드 보여 주기 (app.js openAccount) -->
   <div class="dialog" id="acct" role="dialog" aria-modal="true" aria-labelledby="ac-title" hidden>
     <form class="dialog-card acct-card" id="ac-form" novalidate>
+      <!-- 폰: 화면 전체를 쓰는 페이지 (뒤로 · 큰 제목 · 아래에 확인). 넓은 화면은 가운데 카드 -->
+      <div class="ac-head"><button class="icon-btn" id="ac-back" type="button" aria-label="뒤로" data-icon="back"></button></div>
       <div class="dlg-title" id="ac-title"></div>
       <div class="dlg-body" id="ac-sub" hidden></div>
       <label class="ac-field" data-f="id"><span>아이디</span><input id="ac-id" class="type-input" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="20" placeholder="영어 소문자·숫자·_ 3~20자"></label>
       <label class="ac-field" data-f="name"><span>이름</span><input id="ac-name" class="type-input" autocomplete="name" maxlength="20" placeholder="친구들이 알아볼 이름"></label>
       <label class="ac-field" data-f="old"><span>지금 비밀번호</span><input id="ac-old" class="type-input" type="password" autocomplete="current-password"></label>
-      <label class="ac-field" data-f="rec"><span>복구 코드</span><input id="ac-rec" class="type-input" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX"></label>
+      <label class="ac-field" data-f="rec"><span>초기화 코드</span><input id="ac-rec" class="type-input" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX"></label>
       <label class="ac-field" data-f="pw"><span id="ac-pw-label">비밀번호</span><input id="ac-pw" class="type-input" type="password" autocomplete="current-password" placeholder="6자 이상"></label>
       <label class="ac-field" data-f="pw2"><span>비밀번호 확인</span><input id="ac-pw2" class="type-input" type="password" autocomplete="new-password"></label>
       <label class="ac-field" data-f="invite"><span>초대 코드</span><input id="ac-invite" class="type-input" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="받은 초대 코드"></label>
       <label class="ac-keep" id="ac-keep-row"><input type="checkbox" id="ac-keep" checked> 로그인 상태 유지 <small>(남의 기기면 끄세요)</small></label>
       <div class="ac-code" id="ac-code" hidden></div>
-      <button class="link-btn ac-copy" id="ac-copy" type="button" hidden>복구 코드 복사하기</button>
+      <button class="link-btn ac-copy" id="ac-copy" type="button" hidden>코드 복사하기</button>
       <p class="ac-err" id="ac-err" role="alert" hidden></p>
       <div class="dlg-actions">
         <button class="btn dlg-cancel" id="ac-cancel" type="button">취소</button>
         <button class="btn dlg-ok" id="ac-ok" type="submit">확인</button>
       </div>
       <div class="ac-links">
-        <button class="link-btn" id="ac-to-recover" type="button">비밀번호를 잊었어요</button>
-        <button class="link-btn" id="ac-to-signup" type="button">계정이 없어요 · 회원가입</button>
-        <button class="link-btn" id="ac-to-login" type="button">계정이 있어요 · 로그인</button>
+        <button class="link-btn" id="ac-to-recover" type="button">비밀번호 찾기</button>
+        <button class="link-btn" id="ac-to-signup" type="button">회원가입</button>
+        <button class="link-btn" id="ac-to-login" type="button">이미 계정이 있어요 · 로그인</button>
       </div>
     </form>
   </div>

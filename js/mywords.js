@@ -1,5 +1,5 @@
 // 내 단어: 영어 문제를 풀다 모르는 단어를 노트에 적고(단어·뜻·지문 문장) → 노트 사진을 Claude 채팅에 주면 아래 형식의 CSV로 정리해 줌
-// → 앱(설정 > 복습 > 내 단어, 또는 단어장의 +)에 붙여넣거나 파일로 올림. 순수 로직만 (브라우저/Node 공용, tests/mywords.test.mjs)
+// → 앱(단어장의 +)에 붙여넣거나 파일로 올림. 순수 로직만 (브라우저/Node 공용, tests/mywords.test.mjs)
 //
 // 저장(voca.mywords.v1, Gist voca-mywords.json, 백업 파일): 두 모드가 같이 씀
 //  my[원형]  = 새로 만든 내 단어 { w 원형, b 지문 속 형태, m 뜻, p 품사, x: [지문 문장 { e, ko, src, d }] (새것부터 MAX_SENT개),

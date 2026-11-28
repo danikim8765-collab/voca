@@ -13,11 +13,11 @@
   --on-primary: #ffffff;
   --danger: #e03131;
   --danger-soft: #ffe8e8;
-  /* 라이트: 아래쪽에 옅은 피치 → 위로 갈수록 바탕색 (키보드·선지 쪽이 중심) */
   --mark-bg: var(--blank);   /* 해석 뜻 부분 형광펜 */
   --mark-top: 58%;
-  --glow-0: #f7e2d1;
-  --glow-1: #f9ece3;
+  /* 퀴즈 바탕 아래쪽 빛 (오리지널은 단색, 네온은 옅은 빛) */
+  --glow-0: var(--bg);
+  --glow-1: var(--bg);
   --ok: #12b886;
   --ok-soft: #e3f8f1;
   --on-ok: #ffffff;
@@ -68,8 +68,6 @@
   --danger-soft: #3a1d26;
   --mark-bg: rgba(110, 225, 170, .5);   /* 다크: 민트 형광펜 (네이비 위에서 잘 보이게) */
   --mark-top: 50%;
-  --glow-0: #173d40;   /* 다크: 아래에서 은은한 민트 (홈은 단색) */
-  --glow-1: #122434;
   --ok: #38d9a9;
   --ok-soft: #133b31;
   --on-ok: #0b1a1c;    /* 밝은 초록 위 글자는 검정 쪽이 잘 읽힘 */
@@ -97,7 +95,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; color: var(--text); }
 html { background: var(--bg); }
-/* 화면에 고정된 배경 그라데이션 (스크롤해도 아래쪽이 피치) */
+/* 화면에 고정된 배경 그라데이션 (오리지널은 단색, 네온은 아래쪽에 옅은 빛) */
 /* 아래 고정 버튼 바탕도 같은 그림을 화면 기준(fixed)으로 깔아서 배경과 이음새 없이 붙게 함 */
 /* 아래 고정 바는 화면 너비 전체로 깔고(안쪽 버튼만 --bar-w 폭으로 가운데) 배경 그림을 그대로 씀.
    아이패드 사파리는 background-attachment: fixed를 무시하므로, 바가 화면보다 좁으면 그라데이션이 어긋남 */
@@ -333,6 +331,9 @@ button { cursor: pointer; }
 }
 #settings .opt-row > span { font-size: 16px; font-weight: 500; color: var(--text); }
 .set-row .t { flex: 1 1 auto; min-width: 0; word-break: keep-all; }
+/* 설명(.d)이 있는 줄: 이름 ─ 고르기 버튼을 한 줄에, 설명은 그 아래 전체 폭으로 (예전엔 설명이 길면 버튼이 다음 줄로 밀리거나 설명이 좁은 칸에 여러 줄로 접혔음) */
+.set-row .t:has(> .d) { display: contents; }
+.set-row .t:has(> .d) > .d { order: 3; flex: 1 0 100%; min-width: 0; margin-top: -6px; }
 :is(#settings, #plan) .switch-row > span { flex: 1 1 0; min-width: 0; word-break: keep-all; } /* 설명이 길어도 스위치는 오른쪽에 */
 .set-row .d, :is(#settings, #plan) .switch-row .muted, :is(#settings, #plan) .switch-row small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 1px; }
 :is(#settings, #plan, #home) .set-row .seg { flex: none; margin: 0 0 0 auto; padding: 3px; gap: 2px; background: var(--fill); border-radius: 10px; }
@@ -465,7 +466,6 @@ button { cursor: pointer; }
 #word-list .day-group > .item { content-visibility: auto; contain-intrinsic-size: auto 74px; }
 /* 단어장: DAY 하나 = 카드 하나, 단어는 줄 (사이에 아주 옅은 줄) */
 .day-group { background: var(--card); border-radius: var(--r-xl); overflow: hidden; box-shadow: var(--shadow); }
-:root[data-edge="line"] .day-group { border: 1px solid var(--line); }
 .day-group > .item { background: none; border: 0 !important; border-radius: 0; margin: 0; padding: 14px 18px; box-shadow: none; }
 .day-group > .item + .item { box-shadow: inset 0 1px 0 var(--line); }
 #word-list .item:not(.open) .rel { display: none; } /* 유의어·반의어는 펼쳤을 때만 */
@@ -744,12 +744,6 @@ html.no-ptr, html.no-ptr body { overscroll-behavior-y: none; }
   --key-bg: var(--card); --key-fn: var(--line); /* 단어 모드는 바탕 단색이라 그대로 */
   --thumb: #3a3a42;
 }
-/* 카드 구분: 평평하게(기본, 바탕색 차이만) · 그림자 · 얇은 테두리. 설정 > 화면 > 카드 */
-:root[data-edge="shadow"] { --shadow: var(--shadow-soft); }
-:root[data-edge="line"] { --shadow: none; }
-:root[data-edge="line"] .card, :root[data-edge="line"] .sent, :root[data-edge="line"] .item { border: 1px solid var(--line); }
-:root[data-edge="line"] .day:not(.solo) { border-color: var(--line); }
-:root[data-edge="line"] .fb-pane .sent, :root[data-edge="line"] .fb-card, :root[data-edge="line"] .item .detail .sent { border: 0; }
 :root[data-mode="word"] .choice { font-size: calc(16px * var(--fz)); line-height: 1.45; }
 :root[data-mode="word"] .toast { box-shadow: 0 6px 20px rgba(0, 0, 0, .18); }
 
@@ -1162,6 +1156,28 @@ body[data-tint] {
 #coach-pick .coach-choice.on .buddy-svg { animation: buddy-hop .4s ease-out; }
 #settings .coach-choices { margin: 6px 0 12px; }
 #settings .coach-btns .btn { flex: 1; margin: 0; }
+/* 학습 계획 '하루 분량'의 코치 부분 (예전 설정 > 복습에서 옮김) */
+#plan .coach-plan { margin: 2px 0 8px; font-size: 13px; line-height: 1.55; color: var(--muted); padding: 10px 12px; background: var(--fill); border-radius: var(--r-md); }
+#plan .srs-warn { margin: 4px 0 8px; }
+#plan .coach-btns { gap: 8px; margin: 0 0 4px; }
+#plan .coach-btns:not(:has(.btn:not([hidden]))) { display: none; }
+#plan .coach-btns .btn { margin: 0; }
+#plan .rest-row { min-height: 0; padding-bottom: 2px; }
+#plan .rest-chips { margin: 4px 0 8px; }
+/* 코치 탭 머리: 이름을 누르면 코치 바꾸기 (› 로 눌린다는 표시) */
+button.chat-who { border: 0; background: none; padding: 4px 0; margin: 0; color: inherit; font: inherit; cursor: pointer; }
+button.chat-who b::after { content: ' ›'; color: var(--muted); font-weight: 600; }
+button.chat-who:active { opacity: .6; }
+/* 설정 > 연결: 처음부터 다시(지우는 버튼끼리 맨 아래 따로) */
+.reset-card .reset-note { margin: 10px 0 4px; font-size: 13px; }
+/* 지우는 버튼은 빨간 글씨 줄 (누르면 확인 창) */
+#settings .reset-card .reset-row { display: block; text-align: left; line-height: 48px; width: 100%; min-height: 48px; margin: 0; padding: 0; border-radius: 0; background: none; color: var(--danger); font-size: 15px; font-weight: 500; white-space: nowrap; }
+#settings .reset-card .reset-row + .reset-row { border-top: 1px solid var(--line); }
+#settings .reset-card .reset-row:active { opacity: .6; transform: none; }
+#settings .card.reset-card { padding-bottom: 16px; }
+#settings .data-more { margin-top: 4px; }
+#settings .data-more > summary { padding: 12px 0; }
+#settings .data-more #data-info { margin: 0 0 4px; font-size: 13px; }
 /* 일정 상의하기 창 */
 .talk-card { max-width: 340px; }
 .talk-say { display: flex; align-items: flex-end; gap: 8px; margin: 12px 0 4px; text-align: left; }
@@ -1171,6 +1187,8 @@ body[data-tint] {
 .talk-opts { margin-top: 4px; text-align: left; }
 .rest-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
 .rest-chip { min-width: 38px; justify-content: center; }
+#plan .rest-chips { flex-wrap: nowrap; gap: 5px; }
+#plan .rest-chip { flex: 1 1 0; min-width: 0; padding: 0; }
 .res-say { position: relative; max-width: 420px; margin: 4px auto 10px; padding: 10px 14px; background: var(--fill); border-radius: var(--r-lg); font-size: 15px; line-height: 1.55; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
 .res-say.wait { text-align: center; color: var(--muted); }
 .talk-opts .preset { padding: 10px 2px; }
@@ -1253,6 +1271,7 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 .report-btn + .mark-btn { margin-left: 0; }
 .report-link { display: block; margin: 18px auto 2px; color: var(--muted); font-size: 13px; font-weight: 600; text-decoration: none; }
 .report-card { max-width: 360px; }
+.report-card .chip:not(.on) { background: var(--fill); } /* 창 바탕이 카드색이라 칩이 안 보였음 (카드 안 칩과 같게) */
 .rp-reasons { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 14px 0 10px; }
 .rp-note { width: 100%; min-height: 58px; resize: none; padding: 10px 12px; font-size: 15px; color: var(--text); font-family: inherit; text-align: left; margin: 0; }
 .rp-peek { text-align: left; margin-top: 10px; font-size: 13px; color: var(--muted); }
@@ -1264,25 +1283,6 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 .cp-bio { min-height: 3em; margin: 10px 2px 0; font-size: 14px; line-height: 1.5; color: var(--muted); word-break: keep-all; }
 
 /* ---------- 꾸미기 (js/look.js가 <html>에 붙이는 속성. 설정 > 화면 · 문제 풀기) ---------- */
-/* 강조 색: 버튼·막대·고른 칸·빈칸. 모드 색 블록보다 뒤에 있어야 이김. 다크 값은 [data-theme="dark"]와 같이 */
-:root[data-accent="navy"]   { --primary: #4f5bd5; --primary-soft: #eceefb; --on-primary: #ffffff; --blank: #dde1f8; } /* 이름은 navy지만 인디고 */
-:root[data-accent="forest"] { --primary: #1e9e6a; --primary-soft: #e3f5ec; --on-primary: #ffffff; --blank: #cdebdc; }
-:root[data-accent="grape"]  { --primary: #7a5af8; --primary-soft: #f0ecfe; --on-primary: #ffffff; --blank: #e0d8fd; }
-:root[data-accent="coral"]  { --primary: #e8574a; --primary-soft: #fdebe8; --on-primary: #ffffff; --blank: #f9d5cf; }
-:root[data-accent="ink"]    { --primary: #1a1a17; --primary-soft: #efeee7; --on-primary: #f7f6f1; --blank: #ebe6d6; }
-:root[data-theme="dark"][data-accent="navy"]   { --primary: #6672ee; --primary-soft: #252a4a; --on-primary: #ffffff; --blank: #2e3560; }
-:root[data-theme="dark"][data-accent="forest"] { --primary: #8fdcb8; --primary-soft: #15302a; --on-primary: #0d1f19; --blank: #1e4236; }
-:root[data-theme="dark"][data-accent="grape"]  { --primary: #c9b6f5; --primary-soft: #251d3d; --on-primary: #160f29; --blank: #382c5c; }
-:root[data-theme="dark"][data-accent="coral"]  { --primary: #ffab9e; --primary-soft: #3a1f1c; --on-primary: #2a0f0b; --blank: #55302b; }
-:root[data-theme="dark"][data-accent="ink"]    { --primary: #f0efe9; --primary-soft: #2a2a30; --on-primary: #17171a; --blank: #3a3a42; }
-/* 퀴즈 바탕 아래쪽 빛: 기본(라이트 피치 · 다크 청록) · 하늘 · 민트 · 단색 */
-:root[data-glow="warm"] { --glow-0: #f7e2d1; --glow-1: #f9ece3; }
-:root[data-glow="sky"]  { --glow-0: #d6e7fb; --glow-1: #e8f1fc; }
-:root[data-glow="mint"] { --glow-0: #cdf1e3; --glow-1: #e4f7ef; }
-:root[data-glow="none"] { --glow-0: var(--bg); --glow-1: var(--bg); }
-:root[data-theme="dark"][data-glow="warm"] { --glow-0: #173d40; --glow-1: #122434; }
-:root[data-theme="dark"][data-glow="sky"]  { --glow-0: #173252; --glow-1: #142338; }
-:root[data-theme="dark"][data-glow="mint"] { --glow-0: #14402f; --glow-1: #11281f; }
 /* 글자 크기: 예문·보기·정답 시트만 (버튼·메뉴는 그대로라 화면이 안 깨짐) */
 :root[data-size="s"] { --fz: .9; }
 :root[data-size="l"] { --fz: 1.15; }
@@ -1292,9 +1292,6 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 :root[data-font="serif"] .sent .en, :root[data-font="serif"] .word-card .qw, :root[data-font="serif"] .fb-word .w,
 :root[data-font="serif"][data-mode="ex"] .choice { font-family: var(--serif); }
 :root[data-font="serif"] .sent .en { letter-spacing: .005em; }
-/* 모서리: 둥글게(기본) · 조금 둥글게 · 각지게 */
-:root[data-radius="soft"] { --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 12px; --r-2xl: 16px; }
-:root[data-radius="square"] { --r-xs: 2px; --r-sm: 3px; --r-md: 4px; --r-lg: 5px; --r-xl: 6px; --r-2xl: 8px; --r-pill: 6px; }
 /* 정답 반응: 차분하게(움직임 없이 색만) · 보통(기본) · 신나게(톡 튀고 반짝) */
 :root[data-react="calm"] #q-sentences.answered .sent, :root[data-react="calm"] #q-sentences.answered .blank.filled,
 :root[data-react="calm"] .tag.fb-head, :root[data-react="calm"] .fb-coach .buddy-svg { animation: none !important; }
@@ -1314,10 +1311,6 @@ body.kb-up .chat-ask { padding-bottom: 8px; }
 .opt-row > span { font-size: 14px; font-weight: 700; color: var(--muted); }
 .opt-row .seg { margin: 0; }
 .opt-row .seg button { padding: 7px 2px; font-size: 13px; white-space: nowrap; }
-.swatches { display: flex; gap: 10px; flex-wrap: wrap; padding: 4px 2px; }
-.swatch { width: 32px; height: 32px; border-radius: 50%; border: 0; padding: 0; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
-.swatch.on { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--text); }
-.swatch:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
 #btn-look-reset { margin-top: 6px; }
 .react-demo { display: flex; align-items: center; gap: 8px; margin: -4px 2px 6px; font-size: 12px; }
 
@@ -1557,8 +1550,12 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 /* 총정리 홈엔 오늘 카드·총정리 계획·약한 단어만 (모드마다 다른 암기 완료·다시 볼 단어·학습 계획 요약은 모드 홈에) */
 :root[data-view="sweep"] .home-main > :not(#resume-card):not(#card-today):not(.sw-only) { display: none !important; }
 .mode-switch[data-mode="none"] .mode-thumb { opacity: 0; }
-/* 모드 홈: 오늘 카드 대신 총정리 띠 (DAY 단독 학습 카드는 그대로) */
-:root.sweep-on:not([data-view="sweep"]) #card-today:not(.solo-mode) { display: none; }
+/* 모드 홈의 오늘 카드는 '더 하기'로 보임 (app.js renderPlan modeView). 폰·패드 세로에선 '총정리 기간이에요' 띠를 먼저 */
+@media (max-width: 999px) {
+  :root.sweep-on:not([data-view="sweep"]) .home-main { display: flex; flex-direction: column; }
+  :root.sweep-on:not([data-view="sweep"]) .home-main > #sweep-banner { order: -1; }
+  :root.sweep-on:not([data-view="sweep"]) .home-main > #resume-card { order: -2; }
+}
 :root.sweep-on:not([data-view="sweep"]) .sweep-banner { display: flex; }
 .sweep-banner {
   align-items: center; gap: 12px; width: 100%; text-align: left; border: 0; cursor: pointer; font: inherit;
@@ -1694,6 +1691,67 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 #account #set-sync #acct-ready .btn { min-height: 52px; font-size: 16px; }
 .acct-skip { text-align: center; margin: 18px 0 0; font-size: 14px; }
 .acct-skip .link-btn { color: var(--muted); font-weight: 600; }
+/* 관리자 카드: 가입한 사람 줄마다 초기화 코드 버튼 */
+.admin-sum { font-size: 13px; margin: 0 0 6px; }
+.admin-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.admin-row + .admin-row { border-top: 1px solid var(--line); }
+.admin-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.admin-who b { font-size: 15px; }
+.admin-who span { font-size: 12.5px; }
+.admin-row .btn { flex: none; margin: 0; }
+
+/* ---------- 계정: 로그인 안 했을 때 환영 화면 (가운데 로고, 아래에 버튼 세로로) ---------- */
+#account.welcome.active { display: flex; flex-direction: column; }
+#account.welcome .top h1 { visibility: hidden; } /* 뒤로 단추 자리는 그대로 */
+#account.welcome .acct-welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 8px 32px; }
+.aw-mark { width: 76px; height: 76px; margin-bottom: 14px; }
+.aw-mark .v { fill: none; stroke: var(--primary); stroke-width: 10.5; stroke-linecap: round; stroke-linejoin: round; }
+.aw-mark .u { fill: #f5a623; }
+#account.welcome .aw-logo { font-size: 44px; letter-spacing: -1.5px; line-height: 1; }
+#account.welcome .aw-lead { margin: 14px 0 0; }
+#account.welcome #set-sync { background: none; box-shadow: none; border: 0; padding: 0; margin: 0; }
+#account.welcome #acct-ready { flex-direction: column; align-items: stretch; gap: 10px; }
+#account.welcome #acct-ready .btn { min-height: 56px; margin: 0; font-size: 17px; border-radius: 16px; }
+#account.welcome .set-more { margin-top: 14px; text-align: center; }
+#account.gate .set-more { display: none; } /* 처음 화면엔 예전 방식(GitHub)을 안 보임. 설정 > 연결 > 계정에서는 보임 */
+#account.welcome .acct-skip { margin: 16px 0 4px; }
+/* 넓은 화면: 로고와 버튼을 가운데 좁은 한 덩어리로 */
+@media (min-width: 700px) {
+  #account.welcome.active { justify-content: center; }
+  #account.welcome .acct-welcome { flex: none; padding-bottom: 36px; }
+  #account.welcome #set-sync, #account.welcome .acct-skip { width: 100%; max-width: 380px; margin-left: auto; margin-right: auto; }
+  #account.welcome .top { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 16px; right: 16px; }
+}
+
+/* ---------- 계정 창(로그인·회원가입·비밀번호 찾기…): 폰은 화면 전체 페이지, 넓은 화면은 가운데 카드 ---------- */
+.ac-head { display: none; }
+.acct-card .dlg-title { text-align: left; font-size: 24px; letter-spacing: -.5px; }
+.acct-card .dlg-body { text-align: left; margin-top: -4px; }
+.acct-card { gap: 14px; }
+.ac-field span { font-size: 14px; }
+.ac-field .type-input { padding: 14px 16px; font-size: 17px; border-radius: 14px; }
+/* 다른 길(비밀번호 찾기 · 회원가입 · 로그인)은 확인 버튼 아래 회색 한 줄 */
+.acct-card .dlg-actions { order: 1; }
+.acct-card .ac-links { order: 2; flex-direction: row; justify-content: center; flex-wrap: wrap; gap: 0; margin-top: 2px; }
+.acct-card .ac-links .link-btn { color: var(--muted); font-size: 14px; font-weight: 600; text-decoration: none; padding: 4px 12px; }
+.acct-card .ac-links .link-btn:not([hidden]) ~ .link-btn:not([hidden]) { border-left: 1px solid var(--line); }
+@media (max-width: 699px) {
+  #acct.dialog { padding: 0; align-items: stretch; background: var(--card); }
+  #acct .acct-card {
+    max-width: none; min-height: 100%; max-height: 100dvh; border-radius: 0; box-shadow: none; animation: ac-in .22s ease-out;
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 20px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  }
+  #acct .ac-head { display: flex; margin: 0 -8px 2px; }
+  #acct .acct-card .dlg-title { font-size: 26px; margin-top: 6px; }
+  #acct .dlg-actions { margin-top: auto; padding-top: 10px; }
+  #acct .dlg-cancel { display: none; } /* 왼쪽 위 뒤로 단추로 */
+  #acct .dlg-ok { min-height: 56px; font-size: 17px; border-radius: 16px; }
+}
+@keyframes ac-in { from { opacity: 0; transform: translateX(24px); } }
+@media (prefers-reduced-motion: reduce) { #acct .acct-card { animation: none; } }
+:root[data-skin="neon"] .aw-mark .v { stroke: var(--primary); filter: drop-shadow(0 0 6px rgba(var(--halo), .8)); }
+:root[data-skin="neon"] .aw-mark .u { fill: var(--neon2); filter: drop-shadow(0 0 6px rgba(var(--halo2), .8)); }
+
 .ac-keep { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text2); cursor: pointer; }
 .ac-keep input { width: 18px; height: 18px; accent-color: var(--primary); margin: 0; }
 .ac-keep small { color: var(--muted); font-size: 12px; }
@@ -1701,6 +1759,320 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 :root[data-view="sweep"] #resume-card #btn-resume { background: linear-gradient(135deg, #ff9a1f 0%, #f76707 55%, #e8430b 100%); color: #fff; }
 :root[data-view="sweep"] #resume-card { box-shadow: inset 0 0 0 2px color-mix(in srgb, #f76707 35%, transparent); }
 
+/* ========== 네온 테마: <html data-skin="neon"> (설정 > 화면 > 테마, js/look.js). 늘 어둡게 ==========
+   생각: 밤 공부방의 네온사인. 바탕은 아주 깊은 남색 검정, 카드는 살짝 비치는 유리, 빛은 '누를 것'과 '중요한 숫자'에만.
+   본문 글자는 빛 없이 또렷하게 (빛 번진 글자는 오래 못 읽음).
+   예문 모드 = 하늘(시안) + 보라 · 단어 모드 = 분홍(마젠타) + 주황. 정답은 초록 네온, 오답은 빨강 네온.
+   색 토큰은 단어 모드·다크 블록보다 뒤에 있어서 이김. 모양은 오리지널과 같고(화면 구성·크기·위치) 색·빛만 바꿈 */
+
+:root[data-skin="neon"][data-theme] {
+  color-scheme: dark;
+  --bg: #07080f;
+  --card: #0f111b;
+  --card-hi: #141726;          /* 카드 위 한 단계 밝은 칸 */
+  --text: #eef0fa;
+  --text2: #b6bbd2;
+  --muted: #6d7390;
+  --line: #1d2030;
+  --edge: rgba(255, 255, 255, .07);  /* 유리 카드 테두리 */
+  --fill: #171a28;
+  /* 예문 모드 네온 */
+  --primary: #3cf0ff;
+  --neon2: #a36bff;
+  --halo: 60, 240, 255;        /* rgba(var(--halo), a) */
+  --halo2: 163, 107, 255;
+  --primary-soft: rgba(60, 240, 255, .10);
+  --on-primary: #03161b;
+  --blank: rgba(60, 240, 255, .09);
+  --mark-bg: rgba(60, 240, 255, .30);
+  --mark-top: 52%;
+  --ok: #3dffa2; --ok-soft: rgba(61, 255, 162, .09); --on-ok: #03160c; --ok-glow: 61, 255, 162;
+  --bad: #ff4d6d; --bad-soft: rgba(255, 77, 109, .10); --on-bad: #1c0309;
+  --danger: #ff4d6d; --danger-soft: rgba(255, 77, 109, .10);
+  --warn: #ffc53d; --warn-soft: rgba(255, 197, 61, .12); --on-warn: #1c1300;
+  --hint-c: #ffc53d; --hint-glow: 255, 197, 61; --on-hint: #1c1300;
+  --spell: #ffd84d; --spell-soft: rgba(255, 216, 77, .12);
+  --solo: #ff9a3d; --solo-soft: rgba(255, 154, 61, .10); --on-solo: #1c0d00; --solo-glow: rgba(255, 154, 61, .45);
+  --syn-c: #3cc8ff; --syn-soft: rgba(60, 200, 255, .12); --ant-c: #ff4d6d; --ant-soft: rgba(255, 77, 109, .12);
+  --study-c: #3dffa2; --study-c2: #c6ff3d; --study-soft: rgba(61, 255, 162, .10); --swipe-text: #04120b;
+  --shadow: none; --shadow-soft: none;
+  --shadow-pop: 0 30px 80px rgba(0, 0, 0, .7);
+  /* 형광펜: 블랙라이트에 빛나는 형광 노랑 (두 모드 같음, 모드 색과 안 겹치게) */
+  --uv: #eaff4f; --uv-rgb: 234, 255, 79;
+  --scrim: rgba(2, 3, 8, .7);
+  --thumb: rgba(60, 240, 255, .14);
+  --key-bg: #0f111b; --key-fn: #171a28;
+  /* 퀴즈 바탕: 아래에서 아주 옅은 시안 빛 */
+  --glow-0: #0a1c25; --glow-1: #08111b;
+}
+/* 단어 모드: 분홍 + 주황 */
+:root[data-skin="neon"][data-mode="word"] {
+  --primary: #ff5ac8;
+  --neon2: #ff9a4d;
+  --halo: 255, 90, 200;
+  --halo2: 255, 154, 77;
+  --primary-soft: rgba(255, 90, 200, .10);
+  --on-primary: #1c0314;
+  --blank: rgba(255, 90, 200, .10);
+  --mark-bg: rgba(255, 90, 200, .30);
+  --thumb: rgba(255, 90, 200, .16);
+  --glow-0: #1e0a1b; --glow-1: #120914;
+}
+
+/* ---------- 바탕: 깊은 검정 위에 두 군데 아주 옅은 빛 (화면에 고정) ---------- */
+:root[data-skin="neon"] { background: var(--bg); }
+:root[data-skin="neon"] body {
+  background:
+    radial-gradient(90vmax 60vmax at 105% -10%, rgba(var(--halo2), .13), transparent 60%),
+    radial-gradient(80vmax 55vmax at -15% 110%, rgba(var(--halo), .09), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  min-height: 100dvh;
+}
+/* 퀴즈 화면의 아래쪽 빛은 그대로 쓰되, 위 빛과 겹치게 투명하게 */
+:root[data-skin="neon"] body::before { opacity: .9; }
+
+/* ---------- 유리 카드: 반투명 + 가는 테두리 + 위쪽 한 줄 하이라이트 ---------- */
+:root[data-skin="neon"] :is(.card, .sent, .day, .choice, .item, .plan-sum) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .035), rgba(255, 255, 255, .015)), var(--card);
+  border: 1px solid var(--edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+}
+:root[data-skin="neon"] .card.menu { padding: 6px 0; }
+:root[data-skin="neon"] .menu-row + .menu-row { border-top: 1px solid var(--edge); }
+:root[data-skin="neon"] .label { color: var(--text2); }
+
+/* ---------- 머리: VOCA 글씨는 네온사인처럼 (흰 심 + 색 번짐) ---------- */
+/* 간판은 홈의 VOCA와 계정 화면의 VOCA만 (다른 화면 제목까지 빛나면 어디가 중요한지 흐려짐) */
+:root[data-skin="neon"] #home .top h1, :root[data-skin="neon"] .aw-logo {
+  color: #f6fbff;
+  text-shadow: 0 0 1px #fff, 0 0 8px rgba(var(--halo), .75), 0 0 22px rgba(var(--halo), .45), 0 0 44px rgba(var(--halo2), .35);
+}
+:root[data-skin="neon"] #home .top h1 .sub { text-shadow: none; }
+:root[data-skin="neon"] .top h1 .sub { color: var(--muted); }
+:root[data-skin="neon"] .acct-btn { background: var(--fill); border: 1px solid var(--edge); color: var(--text2); }
+/* 예문↔단어 전환: 고른 칸이 은은히 켜짐 */
+:root[data-skin="neon"] .mode-switch { background: var(--fill); box-shadow: inset 0 0 0 1px var(--edge); }
+:root[data-skin="neon"] .mode-thumb { background: var(--thumb); box-shadow: 0 0 0 1px rgba(var(--halo), .45), 0 0 14px rgba(var(--halo), .35); }
+:root[data-skin="neon"] .mode-switch a.on { color: var(--primary); filter: drop-shadow(0 0 4px rgba(var(--halo), .8)); }
+
+/* ---------- 오늘 카드 (주인공): 채운 색 대신 '빛나는 관' 테두리 ---------- */
+@property --neon-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+:root[data-skin="neon"] #card-today.go {
+  --go-bg: transparent; --go-fg: var(--text);
+  color: var(--text);
+  border: 1.5px solid transparent;
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(var(--halo2), .16), transparent 55%) padding-box,
+    radial-gradient(90% 80% at 0% 100%, rgba(var(--halo), .12), transparent 60%) padding-box,
+    linear-gradient(var(--card), var(--card)) padding-box,
+    conic-gradient(from var(--neon-a), var(--primary), var(--neon2), var(--primary), var(--neon2), var(--primary)) border-box;
+  box-shadow: 0 0 0 1px rgba(var(--halo), .08), 0 0 26px rgba(var(--halo), .22), 0 0 60px rgba(var(--halo2), .14), inset 0 0 30px rgba(var(--halo), .06);
+  animation: neon-orbit 14s linear infinite;
+}
+@keyframes neon-orbit { to { --neon-a: 360deg; } }
+:root[data-skin="neon"] .today.go .label { color: var(--primary); opacity: 1; text-shadow: 0 0 10px rgba(var(--halo), .55); }
+:root[data-skin="neon"] .today.go .flow { color: var(--muted); opacity: 1; }
+:root[data-skin="neon"] .today.go .flow span.on { color: var(--text); }
+:root[data-skin="neon"] .today.go .plan > * { color: var(--muted); }
+/* 오늘 할 개수: 네온 숫자 */
+:root[data-skin="neon"] .today.go .plan b {
+  color: #fbfeff;
+  text-shadow: 0 0 2px #fff, 0 0 10px rgba(var(--halo), .9), 0 0 26px rgba(var(--halo), .55), 0 0 52px rgba(var(--halo2), .4);
+}
+/* 시작 › : 빛나는 알약 */
+:root[data-skin="neon"] .today.go .today-go {
+  color: var(--on-primary); background: var(--primary); padding: 7px 10px 7px 16px; border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .35) inset, 0 0 16px rgba(var(--halo), .75), 0 0 36px rgba(var(--halo), .35);
+}
+:root[data-skin="neon"] .today.go .today-go .chev { font-size: 20px; margin-top: -1px; }
+:root[data-skin="neon"] .today.go .stretch { background: transparent; box-shadow: none; }
+/* DAY 단독 학습: 오늘 카드 빛을 주황으로 */
+/* 총정리 오늘 카드: 오리지널처럼 시험이 다가올수록 달아오름 (보라 → 주황 → 빨강), 총정리 홈은 언제나 불 색 */
+:root[data-skin="neon"] #card-today.go.sweep-mode[data-heat="near"] { --primary: #b26bff; --neon2: #ff5ac8; --halo: 178, 107, 255; --halo2: 255, 90, 200; --heat: #b26bff; --on-primary: #12051f; }
+:root[data-skin="neon"] #card-today.go.sweep-mode[data-heat="hot"],
+:root[data-skin="neon"][data-view="sweep"] #card-today.go.sweep-mode { --primary: #ff9a3d; --neon2: #ff4f8b; --halo: 255, 154, 61; --halo2: 255, 79, 139; --heat: #ff9a3d; --on-primary: #1c0a00; }
+:root[data-skin="neon"] #card-today.go.sweep-mode[data-heat="last"],
+:root[data-skin="neon"][data-view="sweep"] #card-today.go.sweep-mode[data-heat="last"] { --primary: #ff5a5f; --neon2: #ff3ecf; --halo: 255, 90, 95; --halo2: 255, 62, 207; --heat: #ff5a5f; --on-primary: #1c0306; }
+:root[data-skin="neon"] #card-today.go.solo-mode { --primary: var(--solo); --neon2: #ff5ac8; --halo: 255, 154, 61; --halo2: 255, 90, 200; --on-primary: var(--on-solo); }
+:root[data-skin="neon"] .today.go .stretch:active { background: rgba(var(--halo), .06); }
+:root[data-skin="neon"] .today.go .edit-ic { color: var(--muted); }
+
+/* ---------- 숫자 · 막대 ---------- */
+:root[data-skin="neon"] .prog-num b { color: #fbfeff; text-shadow: 0 0 14px rgba(var(--halo), .35); }
+:root[data-skin="neon"] .bar { background: rgba(255, 255, 255, .06); overflow: visible; }
+:root[data-skin="neon"] .bar-fill {
+  background: linear-gradient(90deg, var(--primary), var(--neon2));
+  box-shadow: 0 0 10px rgba(var(--halo), .7), 0 0 2px rgba(255, 255, 255, .6) inset;
+}
+:root[data-skin="neon"] .chev { color: var(--muted); }
+:root[data-skin="neon"] #wrong-count { color: var(--primary); text-shadow: 0 0 10px rgba(var(--halo), .7); font-weight: 700; }
+
+/* ---------- 아래 탭 · 왼쪽 메뉴: 어두운 유리, 고른 탭만 켜짐 ---------- */
+:root[data-skin="neon"] .tabbar {
+  background: rgba(8, 9, 16, .82); -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 -1px 0 var(--edge);
+}
+:root[data-skin="neon"] .tabbar button { position: relative; color: var(--muted); }
+:root[data-skin="neon"] .tabbar button.on { color: var(--primary); filter: drop-shadow(0 0 6px rgba(var(--halo), .85)); }
+:root[data-skin="neon"] .tabbar button.on::after {
+  content: ''; position: absolute; left: 50%; bottom: 7px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%;
+  background: var(--primary); box-shadow: 0 0 8px 1px rgba(var(--halo), .9);
+}
+@media (min-width: 1000px) {
+  :root[data-skin="neon"] .tabbar { box-shadow: 1px 0 0 var(--edge); }
+  :root[data-skin="neon"] .tabbar button.on { background: rgba(var(--halo), .07); box-shadow: inset 0 0 0 1px rgba(var(--halo), .3); filter: none; }
+  :root[data-skin="neon"] .tabbar button.on .ic { filter: drop-shadow(0 0 6px rgba(var(--halo), .85)); }
+  :root[data-skin="neon"] .tabbar button.on::after { display: none; }
+  :root[data-skin="neon"] .tabbar button:not(.on):hover { background: var(--fill); }
+}
+
+/* ---------- 버튼 ---------- */
+:root[data-skin="neon"] .btn.primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 82%, #fff), var(--primary)); color: var(--on-primary);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .28) inset, 0 0 12px rgba(var(--halo), .4), 0 6px 26px -6px rgba(var(--halo), .45);
+}
+:root[data-skin="neon"] .btn.secondary { background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 0 0 1px rgba(var(--halo), .35); }
+:root[data-skin="neon"] .seg { background: var(--fill); }
+:root[data-skin="neon"] #settings .seg, :root[data-skin="neon"] #list .seg { background: var(--fill); }
+:root[data-skin="neon"] .seg button.on, :root[data-skin="neon"] #settings .seg button.on, :root[data-skin="neon"] #list .seg button.on {
+  background: var(--primary-soft); color: var(--primary); box-shadow: inset 0 0 0 1px rgba(var(--halo), .4), 0 0 12px rgba(var(--halo), .18);
+}
+:root[data-skin="neon"] .switch { background: #23263a; }
+:root[data-skin="neon"] .switch::before { background: #c9cde0; box-shadow: none; }
+:root[data-skin="neon"] .switch:checked { background: rgba(var(--halo), .22); box-shadow: inset 0 0 0 1px rgba(var(--halo), .6), 0 0 14px rgba(var(--halo), .35); }
+:root[data-skin="neon"] .switch:checked::before { background: var(--primary); box-shadow: 0 0 10px rgba(var(--halo), .9); }
+:root[data-skin="neon"] .mark-btn, :root[data-skin="neon"] .icon-btn.round { background: var(--fill); box-shadow: inset 0 0 0 1px var(--edge); }
+
+/* 설정 탭 줄(위에 붙는 줄): 어두운 유리 + 고른 탭 밑줄이 빛남 */
+:root[data-skin="neon"] #settings .set-tabs {
+  background: rgba(7, 8, 15, .86); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  box-shadow: 0 0 0 8px rgba(7, 8, 15, .86), 0 calc(-1 * env(safe-area-inset-top, 0px) - 8px) 0 8px rgba(7, 8, 15, .86), inset 0 -1px 0 var(--edge);
+}
+:root[data-skin="neon"] #settings .set-tabs button.on {
+  background: none; color: var(--primary); text-shadow: 0 0 10px rgba(var(--halo), .6);
+  box-shadow: inset 0 -2px 0 var(--primary), 0 8px 12px -10px rgba(var(--halo), 1);
+}
+
+/* ---------- 문제 화면 ---------- */
+:root[data-skin="neon"] .quiz-top .bar { height: 6px; }
+:root[data-skin="neon"] .sent .num { color: var(--muted); }
+:root[data-skin="neon"] .sent .ko { color: var(--muted); }
+:root[data-skin="neon"] .ko-mark { color: var(--text); }
+/* 빈칸: 어둠 속에 켜진 칸. 밑줄은 빛나는 선 */
+:root[data-skin="neon"] .blank {
+  background: var(--blank); border-bottom-color: var(--primary);
+  box-shadow: 0 1px 0 0 var(--primary), 0 8px 14px -8px rgba(var(--halo), .9);
+}
+:root[data-skin="neon"] .blank.filled { color: var(--ok); background: var(--ok-soft); border-color: var(--ok); text-shadow: 0 0 10px rgba(var(--ok-glow), .8); box-shadow: 0 8px 14px -8px rgba(var(--ok-glow), .9); }
+:root[data-skin="neon"] .blank.filled.bad { color: var(--bad); text-shadow: 0 0 10px rgba(255, 77, 109, .8); box-shadow: 0 8px 14px -8px rgba(255, 77, 109, .9); }
+/* 보기: 눌러야 하는 칸이라 테두리가 조금 더 밝음 */
+:root[data-skin="neon"] .choice { border: 1px solid rgba(255, 255, 255, .09); color: var(--text); }
+:root[data-skin="neon"] .choice:active { border-color: rgba(var(--halo), .6); box-shadow: 0 0 16px rgba(var(--halo), .3); }
+:root[data-skin="neon"] .choice.correct { color: var(--ok); background: var(--ok-soft); border-color: rgba(var(--ok-glow), .7); box-shadow: 0 0 18px rgba(var(--ok-glow), .3), inset 0 0 14px rgba(var(--ok-glow), .08); text-shadow: 0 0 8px rgba(var(--ok-glow), .6); }
+:root[data-skin="neon"] .choice.wrong { color: var(--bad); background: var(--bad-soft); border-color: rgba(255, 77, 109, .7); box-shadow: 0 0 18px rgba(255, 77, 109, .28); }
+:root[data-skin="neon"] .pin-row .q-tools .btn, :root[data-skin="neon"] .more-btn, :root[data-skin="neon"] .q-tools .btn.ghost { background: var(--fill); box-shadow: inset 0 0 0 1px var(--edge); }
+/* 정답 뒤 예문 카드: 초록 관 */
+:root[data-skin="neon"] #q-sentences.answered.ok .sent { background: linear-gradient(180deg, rgba(61, 255, 162, .06), rgba(61, 255, 162, .02)), var(--card); border-color: transparent; box-shadow: 0 0 0 1.5px var(--ok), 0 0 22px rgba(var(--ok-glow), .28), inset 0 0 24px rgba(var(--ok-glow), .06); }
+:root[data-skin="neon"] #q-sentences.answered.bad .sent { background: linear-gradient(180deg, rgba(255, 77, 109, .07), rgba(255, 77, 109, .02)), var(--card); border-color: transparent; box-shadow: 0 0 0 1.5px var(--bad), 0 0 22px rgba(255, 77, 109, .26); }
+/* 단어 모드 문제 단어: 큰 네온 글씨 */
+:root[data-skin="neon"] .word-card .qw { color: #fbfeff; text-shadow: 0 0 2px #fff, 0 0 14px rgba(var(--halo), .6), 0 0 34px rgba(var(--halo2), .3); }
+:root[data-skin="neon"] .word-card .speak { background: var(--fill); box-shadow: inset 0 0 0 1px var(--edge); }
+
+/* 채점 띠(정답!·내일 복습): 네온 간판 */
+:root[data-skin="neon"] .tag.fb-head.ok { color: var(--ok); background: rgba(var(--ok-glow), .08); box-shadow: inset 0 0 0 1px rgba(var(--ok-glow), .8), 0 0 14px rgba(var(--ok-glow), .45); text-shadow: 0 0 8px rgba(var(--ok-glow), .9); }
+:root[data-skin="neon"] .tag.fb-head.bad { color: var(--bad); background: rgba(255, 77, 109, .08); box-shadow: inset 0 0 0 1px rgba(255, 77, 109, .8), 0 0 14px rgba(255, 77, 109, .4); text-shadow: 0 0 8px rgba(255, 77, 109, .9); }
+:root[data-skin="neon"] .tag { background: var(--primary-soft); }
+
+/* ---------- 형광펜(내가 칠한 단어만): 블랙라이트 아래 형광 잉크처럼 빛남. 해석 속 뜻 강조(.ko-mark)는 읽는 글이라 빛 없이 그대로 ---------- */
+:root[data-skin="neon"] .item.hl .w {
+  color: var(--uv); background: linear-gradient(transparent calc(100% - 2px), rgba(var(--uv-rgb), .75) calc(100% - 2px)) no-repeat;
+  text-shadow: 0 0 6px rgba(var(--uv-rgb), .7), 0 0 16px rgba(var(--uv-rgb), .3);
+}
+:root[data-skin="neon"] .mark-btn::before { background: rgba(var(--uv-rgb), .14); }
+:root[data-skin="neon"] .mark-btn.on { color: var(--uv); box-shadow: inset 0 0 0 1.5px rgba(var(--uv-rgb), .85), 0 0 14px rgba(var(--uv-rgb), .45); }
+:root[data-skin="neon"] .mark-btn.on svg { filter: drop-shadow(0 0 4px rgba(var(--uv-rgb), .9)); }
+
+/* ---------- 계속하기: 빛나는 관 (오늘 카드와 같은 하늘→보라 테두리). 시트가 열릴 때 빛만 네온사인처럼 깜빡이며 켜짐
+   (버튼은 처음부터 또렷해서 바로 누를 수 있음) ---------- */
+:root[data-skin="neon"] .fb-actions .next-btn {
+  --tube: 0 0 14px rgba(var(--halo), .5), 0 0 34px rgba(var(--halo2), .22), inset 0 0 16px rgba(var(--halo), .22);
+  --tube-off: 0 0 0 transparent, 0 0 0 transparent, inset 0 0 6px rgba(var(--halo), .1);
+  --tube-text: 0 0 2px #fff, 0 0 10px rgba(var(--halo), .95), 0 0 22px rgba(var(--halo), .5);
+  border: 1.5px solid transparent; color: #f6feff;
+  background:
+    linear-gradient(180deg, rgba(var(--halo), .16), rgba(var(--halo), .05)) padding-box,
+    linear-gradient(var(--card), var(--card)) padding-box,
+    linear-gradient(90deg, var(--primary), var(--neon2)) border-box;
+  box-shadow: var(--tube); text-shadow: var(--tube-text);
+  letter-spacing: .5px;
+}
+:root[data-skin="neon"] .fb-actions .next-btn:active { background: linear-gradient(180deg, rgba(var(--halo), .3), rgba(var(--halo), .12)) padding-box, linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(90deg, var(--primary), var(--neon2)) border-box; }
+:root[data-skin="neon"] #feedback:not([hidden]) .fb-actions .next-btn { animation: neon-on .6s steps(1, end) both; }
+@keyframes neon-on {
+  0%, 20%, 45% { box-shadow: var(--tube-off); text-shadow: none; }
+  10%, 30%, 60%, 100% { box-shadow: var(--tube); text-shadow: var(--tube-text); }
+}
+:root[data-skin="neon"][data-react="calm"] #feedback .fb-actions .next-btn { animation: none; }
+
+/* ---------- 정답 시트: 어두운 유리 판, 맨 위 가장자리에 빛 한 줄 ---------- */
+:root[data-skin="neon"] .sheet-inner {
+  background: linear-gradient(180deg, #121423, #0c0e18 40%);
+  box-shadow: 0 -1px 0 rgba(var(--halo), .35), 0 -18px 50px rgba(0, 0, 0, .6), 0 -6px 30px rgba(var(--halo), .10);
+  position: relative;
+}
+:root[data-skin="neon"] .sheet-inner::before {
+  content: ''; position: absolute; left: 12%; right: 12%; top: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--primary), var(--neon2), transparent);
+  box-shadow: 0 0 12px 1px rgba(var(--halo), .7);
+}
+:root[data-skin="neon"] .grab { background: rgba(255, 255, 255, .14); }
+:root[data-skin="neon"] .fb-word .w { color: #fbfeff; text-shadow: 0 0 18px rgba(var(--halo), .35); }
+:root[data-skin="neon"] .fb-tabs { border-bottom-color: var(--edge); }
+:root[data-skin="neon"] .fb-tabs button.on { color: var(--primary); border-bottom-color: var(--primary); text-shadow: 0 0 10px rgba(var(--halo), .6); box-shadow: 0 6px 10px -8px rgba(var(--halo), .9); }
+:root[data-skin="neon"] .fb-card { background: rgba(255, 255, 255, .035); box-shadow: inset 0 0 0 1px var(--edge); }
+:root[data-skin="neon"] .fb-pane .sent { background: rgba(255, 255, 255, .03); }
+:root[data-skin="neon"] .fb-actions .btn.primary { font-weight: 800; }
+
+/* ---------- DAY별 진도 ---------- */
+:root[data-skin="neon"] .day b { color: var(--text); }
+:root[data-skin="neon"] .day .bar { height: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-skin="neon"] #card-today.go, :root[data-skin="neon"] #feedback .fb-actions .next-btn { animation: none; }
+}
+
+/* ---------- 설정 > 화면 > 테마 고르기: 두 테마의 작은 미리보기 (어느 테마에서 봐도 같은 그림) ---------- */
+.skin-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 0 10px; }
+.skin-pick button {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 8px 10px; border: 0; border-radius: var(--r-lg);
+  background: none; color: var(--muted); font-size: 14px; font-weight: 700;
+}
+.skin-pick button.on { color: var(--text); }
+.skin-pick button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.skin-thumb {
+  position: relative; display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 132px; aspect-ratio: 4 / 5;
+  padding: 10px 9px; border-radius: 14px; box-shadow: 0 0 0 1px var(--line); transition: box-shadow .2s;
+}
+.skin-pick button.on .skin-thumb { box-shadow: 0 0 0 2.5px var(--primary); }
+.skin-thumb i { display: block; border-radius: 6px; }
+.skin-thumb i:first-child { flex: 1.6; }
+.skin-thumb i:not(:first-child) { flex: 1; }
+.skin-thumb.orig { background: #f2f4f7; }
+.skin-thumb.orig i { background: #fff; }
+.skin-thumb.orig i:first-child { background: #4f5bd5; }
+.skin-thumb.neon {
+  background: radial-gradient(120% 70% at 100% 0%, rgba(163, 107, 255, .35), transparent 60%), radial-gradient(100% 60% at 0% 100%, rgba(60, 240, 255, .2), transparent 60%), #07080f;
+}
+.skin-thumb.neon i { background: #12141f; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.skin-thumb.neon i:first-child { background: #0f111b; box-shadow: inset 0 0 0 1.5px #3cf0ff, 0 0 10px rgba(60, 240, 255, .55); }
+:root[data-mode="word"] .skin-thumb.orig { background: #f7f6f1; }
+:root[data-mode="word"] .skin-thumb.orig i:first-child { background: #1a1a17; }
+:root[data-mode="word"] .skin-thumb.neon {
+  background: radial-gradient(120% 70% at 100% 0%, rgba(255, 154, 77, .3), transparent 60%), radial-gradient(100% 60% at 0% 100%, rgba(255, 90, 200, .22), transparent 60%), #07080f;
+}
+:root[data-mode="word"] .skin-thumb.neon i:first-child { box-shadow: inset 0 0 0 1.5px #ff5ac8, 0 0 10px rgba(255, 90, 200, .55); }
+.skin-note { margin: -2px 2px 8px; font-size: 13px; color: var(--muted); text-align: center; }
 /* ---------- 옛 주소(github.io)에서 열었을 때 새 주소 안내 (app.js renderMoved) ---------- */
 .moved-card { border: 1.5px solid var(--primary); background: var(--primary-soft); display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
 .moved-card[hidden] { display: none; }
