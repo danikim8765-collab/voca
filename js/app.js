@@ -137,7 +137,6 @@ const ui = Object.assign({
   choiceLayout: DESK ? 'list' : 'grid', // 4지선다 선지 배치: grid(2×2) · list(한 줄씩)
   lean: 'mid', // 폰 4지선다 선지 쏠림: left(왼쪽 칸 넓게) · mid · right(오른쪽 칸 넓게). 한 손으로 누를 때
 }, load(UI_KEY, {}));
-const uiWasSaved = Object.keys(load(UI_KEY, {})).length > 0; // 이 기기에서 전에 앱을 써 봤는지 (고급 기능 처음 값)
 // 학습 범위·문제 방식 카드를 홈 또는 학습 계획 화면으로 옮김 (같은 요소라 기능은 그대로)
 function applyHomeLayout() {
   const range = $('#card-range'), kind = $('#card-kind'), prog = $('#range-progress'), sum = $('#plan-sum-card'), pc = $('#prog-card');
@@ -482,11 +481,11 @@ function show(id, push = true) {
   });
   window.scrollTo(0, 0);
 }
-// 아래 탭: 진도 · 단어장 · 홈 · 코치 · 설정. 코치를 끄면 코치 탭, 고급 기능을 끄면 설정 탭을 숨기고 홈이 가운데 오게 다시 놓음
+// 아래 탭: 진도 · 단어장 · 홈 · 코치 · 설정. 코치를 끄면 코치 탭을 숨기고 홈이 가운데 오게 다시 놓음
 let coachLeave = null; // 코치 탭을 떠날 때 할 일 (채팅 정리)
 function renderTabs() {
   const bar = $('#tabbar');
-  const shown = { days: true, list: true, coach: !!settings.coach && advOn(), settings: advOn() };
+  const shown = { days: true, list: true, coach: !!settings.coach, settings: true };
   const side = ['days', 'list', 'coach', 'settings'].filter(k => shown[k]);
   const order = [...side];
   order.splice(Math.floor(side.length / 2), 0, 'home');
@@ -806,7 +805,7 @@ function setRange(from, to) {
 }
 
 function renderHome() {
-  applyAdv();
+  renderTabs();
   if (!words.length) return;
   const last = days[days.length - 1];
   if (!days.includes(settings.from)) settings.from = days[0];
@@ -5684,30 +5683,6 @@ function renderLook() {
   }
 }
 
-// 고급 기능 (홈 맨 아래 스위치 하나, 기기마다 ui.adv): 끄면 클래식. 단어 외우기만 하고 설정 버튼도 없음.
-// 처음 쓰는 기기는 꺼진 채로, 전에 쓰던 기기는 켜진 채로 시작 (갑자기 설정이 사라지지 않게)
-const advOn = () => {
-  if (typeof ui.adv !== 'boolean') { ui.adv = uiWasSaved || !!settings.coach || !!settings.goal || aiSwitch() || sync.enabled; save(UI_KEY, ui); }
-  return ui.adv;
-};
-function applyAdv() {
-  const adv = advOn();
-  $('#opt-adv').checked = adv;
-  renderTabs();
-}
-// 고급 기능을 끄면 쓰던 코치·AI도 같이 끔 (설정에 못 들어가니까. 꾸미기·동기화 연결은 그대로)
-function setAdv(on) {
-  ui.adv = !!on;
-  save(UI_KEY, ui);
-  if (on) toast('설정 탭에서 필요한 기능을 켜세요');
-  else {
-    const off = [];
-    if (settings.coach) { setCoach(false); off.push('단어 코치'); }
-    if (aiSwitch()) { setAiSwitch(false); off.push('AI'); }
-    if (off.length) toast(`${off.join('·')}도 껐어요`);
-  }
-  renderHome();
-}
 function renderSettings() {
   renderLook();
   renderKeys();
@@ -6218,7 +6193,6 @@ function bind() {
     $('#set-tabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', b.dataset.v === t));
   };
   onSeg('#set-tabs', v => { showSetTab(v); scrollTo(0, 0); });
-  $('#opt-adv').addEventListener('change', e => setAdv(e.target.checked));
   showSetTab(setTab);
   $('#btn-set-plan').addEventListener('click', () => { if (ui.simpleHome) { renderHome(); planFrom = 'settings'; show('plan', false); } else goHome(); });
   onSeg('#seg-ko', v => { settings.showKo = v === 'show'; saveSettings(); renderHome(); });
