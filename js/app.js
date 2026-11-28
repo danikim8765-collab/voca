@@ -4,6 +4,7 @@ import {
   highlightMeaning, nextLetterHint, nearLetters, typingHintTarget, blankUnit, answerWordCount, coachFeedback, makeWordFinder, addDays, gradeMeaning, pickMeaningDistractors,
   synAnt, mergeMarks, nearestKey, makeSynQuestion, hasSynAnt, shortMeaning, examAt, restAt, mergeChats, mergeCoachChat, mergeCoachData, sameCoachData, cleanLog, activityDigest, AGAIN_SLOTS, AGAIN_REC, AGAIN_OLD, AGAIN_FULL, cleanAgain, sameAgain, requeue, findMentioned, coachPlan, cleanRest, isRestDay, studyDays, questionKind,
   willGraduate, choicesFirst, GRAD_BOOK, GRAD_MY, isMyId, pickBothSweep, sweepOrder, sweepKey, parseSweepKey, lapOneDays, WEAK_STAGE,
+  LOADS, LOAD_NAME, cleanLoads, withLoads, dayWeight, weightBetween, dayForecast, NEW_COST,
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, aiAddPrompt, aiNote, queueOrder, perLimit, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
@@ -219,6 +220,24 @@ function shareRest(v, at) {
   o.coachRest = cleanRest(v); o.restAt = at;
   save(OTHER_P + 'settings.v1', o);
 }
+// 날마다 공부량(코치와 정한 '화·수 가볍게' 같은 것)도 두 모드가 같이 씀 (바꾼 시각 loadsAt을 따로). core.js LOADS
+function shareLoads(v, at) {
+  const o = load(OTHER_P + 'settings.v1', {});
+  if ((o.loadsAt || 0) > at) return;
+  o.loads = cleanLoads(v); o.loadsAt = at;
+  save(OTHER_P + 'settings.v1', o);
+}
+// patch: { 'YYYY-MM-DD': 무게 | null(보통으로 되돌림) }. 지난 날은 지움
+function setLoads(patch) {
+  const next = { ...cleanLoads(settings.loads, addDays(dateStr(), -1)) };
+  for (const [d, w] of Object.entries(patch || {})) { if (w == null || w === LOADS.normal && !isRestDay(d, cleanRest(settings.coachRest))) delete next[d]; else next[d] = w; }
+  settings.loads = cleanLoads(next);
+  settings.loadsAt = Date.now();
+  saveSettings();
+  shareLoads(settings.loads, settings.loadsAt);
+  sync.soon();
+}
+const loadsNow = () => cleanLoads(settings.loads, addDays(dateStr(), -1));
 // 다시 나오기 설정도 두 모드가 같이 씀 (쉬는 요일처럼 바꾼 시각을 따로)
 function shareAgain(v, at) {
   const o = load(OTHER_P + 'settings.v1', {});
@@ -273,7 +292,7 @@ function setRest(v) {
 // ---------- 기기 간 동기화 ----------
 const sync = createSync({
   file: WORD ? 'voca-word-progress.json' : 'voca-progress.json',
-  getLocal: () => ({ v: 2, resetAt, bookResetAt, stats: allStats(), prefs: { reviewMix: !!settings.reviewMix, exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: true, srsPreset: settings.srsPreset, goal: settings.goal, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, vac: !!settings.vac, vacAt: settings.vacAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', ...(settings.sweepKindAt ? { sweepKind: cleanSweepKind(settings.sweepKind), sweepKindAt: settings.sweepKindAt } : {}), at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
+  getLocal: () => ({ v: 2, resetAt, bookResetAt, stats: allStats(), prefs: { reviewMix: !!settings.reviewMix, exam: settings.exam, examAt: myExamAt(), newPerDay: settings.newPerDay, srs: true, srsPreset: settings.srsPreset, goal: settings.goal, from: settings.from, to: settings.to, coach: !!settings.coach, coachGoal: settings.coachGoal || '', coachBase: settings.coachBase || 0, coachKey: settings.coachKey || '', coachReview: settings.coachReview || 0, coachRest: cleanRest(settings.coachRest), restAt: myRestAt(), again: cleanAgain(settings.again), againAt: settings.againAt || 0, vac: !!settings.vac, vacAt: settings.vacAt || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', ...(settings.sweepKindAt ? { sweepKind: cleanSweepKind(settings.sweepKind), sweepKindAt: settings.sweepKindAt } : {}), ...(settings.loadsAt ? { loads: loadsNow(), loadsAt: settings.loadsAt } : {}), at: settings.prefsAt || 0 }, sess: { at: load(SESS_AT, 0), data: load(KEY.session, null) } }),
   applyMerged: m => {
     setAllStats(m.stats);
     resetAt = m.resetAt;
@@ -307,6 +326,11 @@ const sync = createSync({
       Object.assign(settings, { sweepKind: cleanSweepKind(m.prefs.sweepKind), sweepKindAt: m.prefs.sweepKindAt });
       saveSettings();
       shareSweepKind(settings.sweepKind, settings.sweepKindAt);
+    }
+    if (m.prefs && m.prefs.loads && (m.prefs.loadsAt || 0) > (settings.loadsAt || 0)) {
+      Object.assign(settings, { loads: cleanLoads(m.prefs.loads), loadsAt: m.prefs.loadsAt });
+      saveSettings();
+      shareLoads(settings.loads, settings.loadsAt);
     }
     if (m.prefs && restAt(m.prefs) > myRestAt()) {
       Object.assign(settings, { coachRest: cleanRest(m.prefs.coachRest), restAt: restAt(m.prefs) });
@@ -696,7 +720,7 @@ const isWrongNote = s => isWrongRaw(s) && s.r !== dateStr();
 // 오늘 배운 새 단어 수: 단어책 몫(newToday)과 내 단어 몫(myNewToday)을 따로
 const newToday = () => { const t = dateStr(); return Object.entries(stats).filter(([id, s]) => s && s.f === t && !viaMy(id)).length; };
 const myNewToday = () => { const t = dateStr(); return Object.entries(stats).filter(([id, s]) => s && s.f === t && viaMy(id)).length; };
-const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : settings.vac ? 0 : coachActive() ? coachDaily() : settings.newPerDay; };
+const todayNewTarget = () => { const d = loadDay(); return d.newTarget != null ? d.newTarget : settings.vac ? 0 : coachActive() ? coachDaily() : Math.round(settings.newPerDay * dayWeight(dateStr(), restNow())); };
 const newTargetMine = () => loadDay().newTarget != null; // 오늘 새 단어 수를 맨 위 숫자로 직접 정했는지
 // 오늘의 학습: 단어책 몫(fresh, 내 단어 대기열에 든 단어는 빼고) + 내 단어 몫(mine)
 function todayPlan() {
@@ -1083,10 +1107,12 @@ function coachDaily() {
   const today = dateStr(), goal = settings.coachGoal, rest = restNow();
   if (!goal || today >= goal || isRestDay(today, rest)) return 0;
   if (settings.coachFix) { const p = coachPlanNow(); if (p && p.fix) return p.todayNew; }
-  return Math.ceil((leftNew() + newToday()) / Math.max(1, studyDays(today, goal, rest)));
+  // 남은 새 단어를 남은 공부량 무게로 나눈 오늘 몫 (정한 날이 없으면 남은 공부하는 날 수로 나눈 것과 같음)
+  return Math.ceil((leftNew() + newToday()) * dayWeight(today, rest) / Math.max(0.01, weightBetween(today, goal, rest)) - 1e-9);
 }
 // 쉬는 요일 (코치가 켜져 있을 때만 씀)
-const restNow = () => (coachActive() ? cleanRest(settings.coachRest) : []);
+// 쉬는 요일(코치가 켜져 있을 때만) + 날마다 공부량(코치가 꺼져 있어도: 코치와 정한 걸 하루 새 단어 수·총정리 몫에 씀)
+const restNow = () => withLoads(coachActive() ? settings.coachRest : [], loadsNow());
 const restLabel = rest => (rest.length ? rest.map(i => WEEKDAY[i]).join('·') + '요일' : '');
 // 일정 짜기. byUser: 사람이 시킨 것(켜기, 다시 짜기, 시험일 바꾸기)이면 다른 기기에도 이 일정이 가게 설정 바꾼 시각을 올림
 const coachPlanFor = (review, rest = restNow(), fix = 0, tail = '') => coachPlan({ today: dateStr(), exam: settings.exam, total: rangeWords().length, remaining: leftNew() + newToday(), review, rest, fix, tail });
@@ -1386,7 +1412,7 @@ function loadChat() {
     try { localStorage.removeItem(OLD_WORD_CHAT); } catch {}
   }
   const c = load(CHAT_KEY, null) || {};
-  return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [], sum: c.sum && (c.sum.text || c.sum.upTo) ? c.sum : null, sumFail: c.sumFail || 0, wiped: c.wiped || 0, gone: c.gone || {} };
+  return { items: Array.isArray(c.items) ? c.items.filter(m => m && m.text) : [], notes: Array.isArray(c.notes) ? c.notes.filter(n => n && n.text) : [], sum: c.sum && (c.sum.text || c.sum.upTo) ? c.sum : null, sumFail: c.sumFail || 0, wiped: c.wiped || 0, gone: c.gone || {}, who: c.who && c.who.at ? c.who : null };
 }
 // 실패 안내(err)는 저장하지 않음: 다시 열면 사라짐
 // sum = 창 밖으로 밀려난 앞선 이야기의 요약 { text, upTo: 거기까지 줄인 마지막 이야기의 시각, at: 고친 시각 }
@@ -1395,7 +1421,7 @@ function loadChat() {
 function saveChat(c) {
   const m = mergeCoachChat({ ...c, items: c.items.filter(x => !x.err) }, load(CHAT_KEY, null), { keep: CHAT_KEEP, notes: NOTE_KEEP });
   const errs = c.items.filter(x => x.err);
-  Object.assign(c, { items: [...m.items, ...errs], notes: m.notes, sum: m.sum || null, wiped: m.wiped || 0, gone: m.gone || {} });
+  Object.assign(c, { items: [...m.items, ...errs], notes: m.notes, sum: m.sum || null, wiped: m.wiped || 0, gone: m.gone || {}, who: m.who || null });
   save(CHAT_KEY, { ...m, ...(c.sumFail ? { sumFail: c.sumFail } : {}) });
 }
 let liveChat = null; // 열린 이야기 화면이 동기화로 받은 이야기를 합치는 함수
@@ -1572,6 +1598,257 @@ function planNowText() {
   return `바뀐 일정: ${p.perDay ? `새 단어는 ${fmtDay(addDays(p.goal, -1))}까지 하루 ${p.perDay}개` + (p.fix && p.fits && p.studyN > 1 && p.lastDay !== p.fix ? `(마지막 날만 ${p.lastDay}개)` : '') + ', ' : ''}총정리는 ${p.reviewDays}일${rest.length ? `, ${restLabel(rest)} 쉼` : ''}`;
 }
 
+// 코치가 부를 이름 (코치 탭에서 처음 만날 때 물어봄. 회원가입 이름과 따로: 사용자가 정함)
+const coachName = () => { const w = load(CHAT_KEY, null); return (w && w.who && w.who.name) || ''; };
+// ---------- 코치 에이전트: 일정 안 비교 카드 (docs/기능기록서.md '코치 에이전트') ----------
+// AI가 학생 사정에 맞춰 안을 1~3개 내면(ai.js cleanOption) 앱이 안마다 날짜별 양을 계산해(core.js dayForecast) 카드로 보여 줌.
+// 학생은 안을 탭으로 바꿔 보고, 날짜 칸을 눌러 쉬기·가볍게·보통·몰아서로 고치고, '이렇게 할게요'를 눌러야 바뀜. 바꾼 건 되돌릴 수 있음
+const LOAD_OF = { rest: LOADS.rest, light: LOADS.light, normal: LOADS.normal, heavy: LOADS.heavy };
+const MIN_PER = 3; // 문제 셋에 1분쯤 (날짜 칸의 '약 n분')
+// 약한 단어: 두 모드 중 하나라도 단계가 WEAK_STAGE 아래이거나 안 배운 범위 단어 수 (총정리 2바퀴와 같은 기준)
+function weakCount() {
+  const weak = s => { const t = normalizeStat(s); return !t || (!t.g && (t.st || 0) < WEAK_STAGE); };
+  const W = statsOf('w'), E = statsOf('e');
+  let nw = 0, ne = 0, n = 0;
+  for (const w of rangeWords()) { const a = weak(W[w.id]), b = weak(E[w.id]); if (a) nw++; if (b) ne++; if (a || b) n++; }
+  return { n, nw, ne };
+}
+// 안 o(+ 카드에서 고친 날 extra: {날짜: 무게})를 settings에 넣음 (저장은 안 함: 계산해 볼 때 · 적용할 때 같이 씀)
+function optionIntoSettings(o, extra = {}) {
+  if (o.exam) settings.exam = o.exam;
+  const ex = settings.exam, coach = coachActive();
+  if (o.rest) settings.coachRest = cleanRest(o.rest);
+  if (o.perDay) { if (coach) Object.assign(settings, { coachFix: o.perDay, coachTail: '', coachReview: 0 }); else settings.newPerDay = o.perDay; }
+  else if (o.review && ex) { if (coach) Object.assign(settings, { coachFix: 0, coachTail: '', coachReview: o.review }); else settings.goal = addDays(ex, -o.review); }
+  if (o.goal && ex && o.goal < ex) { if (coach) Object.assign(settings, { coachReview: daysBetween(o.goal, ex), coachFix: 0, coachTail: '' }); else settings.goal = o.goal; }
+  const loads = { ...loadsNow() };
+  for (const d of o.days || []) loads[d.date] = LOAD_OF[d.load];
+  for (const [d, w] of Object.entries(extra)) loads[d] = w;
+  settings.loads = cleanLoads(loads);
+}
+// 날짜별 양: o가 없으면 지금 일정. 반환 { days: dayForecast 결과, exam, goal, today(오늘 새 단어를 따로 정했으면) }
+function forecastWith(o = null, extra = {}) {
+  const snap = JSON.stringify(settings);
+  try {
+    if (o) optionIntoSettings(o, extra);
+    const today = dateStr(), ex = settings.exam;
+    if (!ex || ex <= today) return { days: [], exam: ex, goal: '' };
+    const coach = coachActive();
+    if (coach) { const p = coachPlanNow(); if (p) settings.coachGoal = p.goal; }
+    const g = sweepGoal();
+    const sp = inSweep() ? sweepPick() : null;
+    const days = dayForecast({
+      today, exam: ex, goal: g, until: addDays(ex, 1), rest: restNow(), coach, learnLeft: leftNew() + newToday(),
+      fix: coach ? settings.coachFix || 0 : 0, perDay: settings.newPerDay, total: rangeWords().length,
+      lap1: cleanSweepKind(settings.sweepKind).lap1, sweepLeft: sp && sp.lap === 1 ? Math.max(0, sp.total - sp.done) : undefined, weak: weakCount().n,
+    });
+    // 오늘 새 단어: 직접 정한 개수(안의 today 또는 이미 정해 둔 것)가 있으면 그대로
+    const t0 = o && o.today != null ? o.today : newTargetMine() ? todayNewTarget() : null;
+    if (t0 != null && days[0] && days[0].kind === 'learn') Object.assign(days[0], { words: t0, problems: t0 * NEW_COST });
+    return { days, exam: ex, goal: g };
+  } finally {
+    for (const k of Object.keys(settings)) delete settings[k];
+    Object.assign(settings, JSON.parse(snap));
+  }
+}
+const dayCellText = x => (x.kind === 'exam' ? '시험' : x.kind === 'rest' ? '쉼' : x.kind === 'after' ? '' : String(x.kind === 'learn' ? x.words : x.problems));
+const dayCellUnit = x => (x.kind === 'learn' ? '새 단어' : x.kind === 'sweep' || x.kind === 'lap2' ? '문제' : '');
+const minutesOf = x => Math.max(0, Math.round(x.problems / MIN_PER));
+// '이번 주 · 다음 주 · 다다음 주' (월요일부터 한 주). AI가 '다음 주 수요일'을 날짜로 잘못 옮기지 않게 달력에 적어 줌
+function weekTag(today, d) {
+  const mon = x => addDays(x, -((weekdayIdx(x) + 6) % 7));
+  const k = Math.round(daysBetween(mon(today), mon(d)) / 7);
+  return k === 0 ? '이번 주 ' : k === 1 ? '다음 주 ' : k === 2 ? '다다음 주 ' : '';
+}
+const weekdayIdx = d => new Date(`${d}T00:00:00Z`).getUTCDay();
+// AI에게 넘기는 달력: 오늘부터 3주(또는 시험 다음 날까지), 날마다 무엇을 얼마나 · 정해 둔 공부량
+function calendarText() {
+  const today = dateStr();
+  const f = forecastWith();
+  const byDay = new Map(f.days.map(x => [x.day, x]));
+  // 시험 뒤 한 주도 보여 줌: 시험일을 주간 앞으로 잡아 둔 학생이 '시험 주간 화수목'이라고 하면 그 날짜가 여기 있어야 해서
+  const end = f.exam && f.exam >= today ? addDays(f.exam, 8) : addDays(today, 14);
+  const lines = [];
+  for (let d = today; d < end && lines.length < 32; d = addDays(d, 1)) {
+    const x = byDay.get(d), w = dayWeight(d, restNow());
+    const what = !x ? (f.exam && d > f.exam ? '앱 시험일 뒤 (앱 일정 없음)' : '') : x.kind === 'exam' ? '앱 시험일 (영어 단어 시험)' : x.kind === 'rest' ? '쉬는 날' : x.kind === 'learn' ? `새 단어 ${x.words}` : x.kind === 'sweep' ? `총정리 ${x.problems}문제` : x.kind === 'lap2' ? `총정리 2바퀴(약한 단어) ${x.problems}문제` : '';
+    lines.push(`${d} (${weekTag(today, d)}${weekday(d)})${d === today ? ' 오늘' : d === addDays(today, 1) ? ' 내일' : ''}: ${what || '-'}${x && x.kind !== 'exam' && x.kind !== 'after' && w !== 1 && w ? ` · 공부량 ${LOAD_NAME[w]}` : ''}`);
+  }
+  lines.push('(복습일이 된 단어는 날마다 따로 더해짐)');
+  return lines.join('\n');
+}
+// 안을 실제로 적용. 되돌리기용으로 전의 값을 돌려줌
+function applyOption(o, extra = {}) {
+  const day = loadDay();
+  const before = { exam: settings.exam, goal: settings.goal, coachRest: cleanRest(settings.coachRest), coachReview: settings.coachReview || 0, coachFix: settings.coachFix || 0, coachTail: settings.coachTail || '', newPerDay: settings.newPerDay, loads: loadsNow(), newTarget: day.newTarget ?? null };
+  const examWas = settings.exam;
+  optionIntoSettings(o, extra);
+  const now = Date.now();
+  if (settings.exam !== examWas) { settings.examAt = now; shareExam(settings.exam, now); }
+  if (o.rest) { const r = settings.coachRest; settings.coachRest = before.coachRest; setRest(r); }
+  settings.loadsAt = now; shareLoads(settings.loads, now);
+  if (o.today != null) { day.newTarget = o.today; save(KEY.day, day); }
+  settings.prefsAt = now;
+  saveSettings();
+  if (coachActive()) planCoach(true);
+  coachMoved = false;
+  sync.soon();
+  renderHome();
+  return before;
+}
+function undoOption(before) {
+  const now = Date.now();
+  if (settings.exam !== before.exam) { settings.exam = before.exam; settings.examAt = now; shareExam(before.exam, now); }
+  Object.assign(settings, { goal: before.goal, coachReview: before.coachReview, coachFix: before.coachFix, coachTail: before.coachTail, newPerDay: before.newPerDay, loads: cleanLoads(before.loads), loadsAt: now, prefsAt: now });
+  shareLoads(settings.loads, now);
+  if (String(cleanRest(settings.coachRest)) !== String(before.coachRest)) setRest(before.coachRest);
+  const day = loadDay();
+  if (before.newTarget == null) delete day.newTarget; else day.newTarget = before.newTarget;
+  save(KEY.day, day);
+  saveSettings();
+  if (coachActive()) planCoach(true);
+  sync.soon();
+  renderHome();
+}
+// 안이 바꾸는 것을 한 줄씩 (카드 아래 요약 · 적용 뒤 '이렇게 바꿨어요')
+function optionChanges(o, extra = {}) {
+  const out = [];
+  if (o.exam && o.exam !== settings.exam) out.push(['시험일', `${fmtDay(settings.exam)} → ${fmtDay(o.exam)} (${weekday(o.exam)})`]);
+  if (o.goal) out.push(['총정리 시작', `${fmtDay(o.goal)} (${weekday(o.goal)})`]);
+  const loads = {};
+  for (const d of o.days || []) loads[d.date] = LOAD_OF[d.load];
+  Object.assign(loads, extra);
+  const ds = Object.keys(loads).sort();
+  if (ds.length) out.push(['공부량', ds.map(d => `${+d.slice(5, 7)}/${+d.slice(8)}(${weekday(d)}) ${LOAD_NAME[loads[d]]}`).join(', ')]);
+  if (o.rest) out.push(['쉬는 요일', o.rest.length ? restLabel(o.rest) : '없음']);
+  if (o.perDay) out.push(['하루 새 단어', `${o.perDay}개`]);
+  if (o.review) out.push(['총정리', `시험 전 ${o.review}일`]);
+  if (o.today != null) out.push(['오늘 새 단어', `${o.today}개`]);
+  return out;
+}
+// 날짜 칸: 앞뒤로 보여 줄 범위. 바뀌는 날이 있으면 그 주변, 아니면 오늘부터. 시험 날까지(최대 14칸)
+function stripRange(fc, o, extra) {
+  const today = dateStr();
+  const marks = [...(o.days || []).map(d => d.date), ...Object.keys(extra), ...(o.exam ? [o.exam] : []), ...(o.goal ? [o.goal] : [])].filter(d => d >= today).sort();
+  const last = fc.exam && fc.exam >= today ? fc.exam : addDays(today, 13);
+  let from = marks.length ? addDays(marks[0], -1) : today;
+  if (from < today) from = today;
+  let to = last;
+  if (daysBetween(from, to) > 13) to = addDays(from, 13);
+  if (marks.length && marks[marks.length - 1] > to) { to = marks[marks.length - 1]; from = addDays(to, -13) < today ? today : addDays(to, -13); }
+  return fc.days.filter(x => x.day >= from && x.day <= to);
+}
+// 비교 카드. item = 이야기 속 카드 { opts, pick, extra, done }. live = 아직 누를 수 있는 카드(가장 최근)
+function optionsCard(item, live, onApply) {
+  const box = el('div', 'chat-plan opt-card' + (live ? '' : ' past'));
+  const opts = item.opts;
+  let pick = Math.min(item.pick || 0, opts.length - 1), extra = { ...(item.extra || {}) }, editing = null, tweak = false;
+  const render = () => {
+    box.innerHTML = '';
+    const o = opts[pick];
+    const head = el('div', 'opt-head');
+    head.append(el('b', 'cp-title', opts.length > 1 ? '코치가 짠 안' : o.label || '코치 안'), el('span', 'opt-note', '숫자는 앱이 계산'));
+    box.appendChild(head);
+    if (opts.length > 1) {
+      const tabs = el('div', 'opt-tabs');
+      tabs.setAttribute('role', 'tablist');
+      opts.forEach((x, i) => {
+        const b = el('button', 'opt-tab' + (i === pick ? ' on' : ''), `${String.fromCharCode(65 + i)} ${x.label}`);
+        b.type = 'button';
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', i === pick);
+        b.disabled = !live && i !== pick;
+        b.addEventListener('click', () => { pick = i; extra = {}; editing = null; item.pick = i; item.extra = {}; render(); });
+        tabs.appendChild(b);
+      });
+      box.appendChild(tabs);
+    }
+    const fc = forecastWith(o, extra);
+    const shown = stripRange(fc, o, extra);
+    const changed = new Set([...(o.days || []).map(d => d.date), ...Object.keys(extra)]);
+    const strip = el('div', 'opt-strip');
+    strip.style.setProperty('--n', shown.length);
+    const max = Math.max(1, ...shown.map(x => x.problems));
+    for (const x of shown) {
+      const c = el('button', `opt-day k-${x.kind}` + (changed.has(x.day) ? ' changed' : '') + (editing === x.day ? ' editing' : ''));
+      c.type = 'button';
+      const lvl = x.kind === 'exam' || x.kind === 'rest' || x.kind === 'after' ? 0 : Math.min(3, Math.ceil(3 * x.problems / max));
+      c.dataset.lvl = lvl;
+      c.append(el('small', 'od-wd', x.day === dateStr() ? '오늘' : weekday(x.day)), el('span', 'od-date', `${+x.day.slice(5, 7)}/${+x.day.slice(8)}`), el('b', 'od-n', dayCellText(x)), el('small', 'od-unit', dayCellUnit(x)));
+      c.setAttribute('aria-label', `${fmtDay(x.day)} ${weekday(x.day)}요일: ${x.kind === 'exam' ? '시험' : x.kind === 'rest' ? '쉼' : `${dayCellText(x)} ${dayCellUnit(x)}, 약 ${minutesOf(x)}분`}`);
+      c.disabled = !live || !tweak || x.kind === 'exam' || x.kind === 'after';
+      c.addEventListener('click', () => { editing = editing === x.day ? null : x.day; render(); });
+      strip.appendChild(c);
+    }
+    box.appendChild(strip);
+    if (live && tweak && editing) {
+      const row = el('div', 'opt-levels');
+      row.setAttribute('role', 'radiogroup');
+      row.setAttribute('aria-label', `${fmtDay(editing)} 공부량`);
+      const inOpt = (o.days || []).find(x => x.date === editing);
+      const cur = extra[editing] ?? (inOpt ? LOAD_OF[inOpt.load] : dayWeight(editing, restNow()));
+      for (const [name, w] of [['쉬기', LOADS.rest], ['가볍게', LOADS.light], ['보통', LOADS.normal], ['몰아서', LOADS.heavy]]) {
+        const b = el('button', 'opt-level' + (cur === w ? ' on' : ''), name);
+        b.type = 'button';
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', cur === w);
+        b.addEventListener('click', () => { extra[editing] = w; item.extra = { ...extra }; render(); });
+        row.appendChild(b);
+      }
+      box.appendChild(el('div', 'opt-hint', `${fmtDay(editing)}(${weekday(editing)}) 공부량`));
+      box.appendChild(row);
+    } else if (live && tweak) box.appendChild(el('div', 'opt-hint', '바꿀 날을 눌러요. 다른 날이 나머지를 나눠 맡아요.'));
+    // 요약: 보이는 날의 합 · 바뀌는 것
+    const sum = shown.reduce((n, x) => n + x.problems, 0);
+    // 적용한 카드는 그때 바뀐 것(적용 뒤엔 지금 설정과 같아서 다시 셀 수 없음)
+    const rows = [['모두', `${sum.toLocaleString('ko-KR')}문제 · 약 ${Math.round(sum / MIN_PER)}분 (+ 그날 복습)`], ...(item.done && item.changes ? item.changes : optionChanges(o, extra))];
+    const tbl = el('div', 'opt-rows');
+    for (const [k, v] of rows) { const r = el('div', 'opt-row'); r.append(el('span', null, k), el('b', null, v)); tbl.appendChild(r); }
+    box.appendChild(tbl);
+    if (o.why) box.appendChild(el('p', 'opt-why', o.why));
+    if (item.done) { box.appendChild(el('div', 'opt-done', item.done)); return; }
+    if (!live) return;
+    const btns = el('div', 'opt-btns');
+    const tw = el('button', 'btn small secondary', tweak ? '고치기 끝' : '조금 바꿀래요');
+    tw.type = 'button';
+    tw.addEventListener('click', () => { tweak = !tweak; editing = null; render(); });
+    const ok = el('button', 'btn small cp-ok', '이렇게 할게요');
+    ok.type = 'button';
+    ok.addEventListener('click', () => onApply(opts[pick], { ...extra }, render));
+    btns.append(tw, ok);
+    box.appendChild(btns);
+  };
+  render();
+  return box;
+}
+// 퀴즈 바로 시작 카드
+function quizWords(q) {
+  if (q.what === 'words') {
+    const want = new Set(q.words.map(w => w.toLowerCase()));
+    return [...myWords, ...words].filter(w => want.has(String(w.word).toLowerCase())).slice(0, q.n);
+  }
+  if (q.what === 'wrong') return rangeWords().filter(w => isWrongNote(stats[w.id])).slice(0, q.n);
+  // 약한 단어: 이 모드에서 단계가 낮고 많이 틀린 범위 단어부터 (안 배운 단어는 빼고)
+  const sc = w => { const s = normalizeStat(stats[w.id]); return s ? (s.st || 0) * 10 - (s.w || 0) * 3 + (s.c || 0) : 999; };
+  return rangeWords().filter(w => { const s = normalizeStat(stats[w.id]); return s && !s.g && (s.st || 0) < WEAK_STAGE; }).sort((a, b) => sc(a) - sc(b)).slice(0, q.n);
+}
+function quizCard(q) {
+  const box = el('div', 'chat-plan quiz-card');
+  const list = q.what === 'due' ? null : quizWords(q);
+  const title = q.what === 'due' ? '오늘의 복습' : q.what === 'wrong' ? '다시 볼 단어' : q.what === 'words' ? '코치가 고른 단어' : '약한 단어';
+  const text = el('div', 'qc-text');
+  text.append(el('b', null, list ? `${title} ${list.length}개` : title), el('span', null, list && list.length ? list.slice(0, 4).map(w => w.word).join(', ') + (list.length > 4 ? ' …' : '') : list ? '지금 풀 단어가 없어요' : `${MODE_NAME} 문제로 풀어요`));
+  const go = el('button', 'btn small cp-ok', '시작');
+  go.type = 'button';
+  go.disabled = !!list && !list.length;
+  go.addEventListener('click', () => {
+    if (q.what === 'due') startSession('review');
+    else startSession('mine', list, { label: `코치와 · ${title}` });
+  });
+  box.append(text, go);
+  return box;
+}
+
 function openCoachChat() {
   const d = $('#coach'), log = $('#cc-log'), inp = $('#cc-input'), send = $('#cc-send'), chips = $('#cc-chips'), mem = $('#cc-mem');
   const chat = loadChat();
@@ -1664,7 +1941,29 @@ function openCoachChat() {
       if (m.hide) continue;
       const dl = dayLabel(m.t);
       if (dl !== day) { day = dl; log.appendChild(el('div', 'chat-day', dl)); }
-      if (m.who === 'note') { log.appendChild(el('div', 'chat-note', m.text)); continue; }
+      if (m.who === 'note') {
+        const n = el('div', 'chat-note', m.text);
+        // 코치 안을 적용한 줄: 되돌리기 (한 번만)
+        if (m.undo && !m.undone) {
+          const u = el('button', 'note-undo', '되돌리기');
+          u.type = 'button';
+          u.addEventListener('click', () => {
+            if (busy) return;
+            undoOption(m.undo);
+            m.undone = true;
+            chat.items.push({ who: 'note', text: '일정을 원래대로 돌렸어요', t: Date.now() });
+            chat.items.push({ who: 'app', text: `학생이 방금 적용한 일정을 되돌림. 지금 달력:\n${calendarText()}`, t: Date.now(), hide: true });
+            saveChat(chat);
+            draw();
+            toast('원래대로 돌렸어요', 2500);
+          });
+          n.appendChild(u);
+        }
+        log.appendChild(n);
+        continue;
+      }
+      if (m.who === 'app' && m.kind === 'opts') { log.appendChild(optionsCard(m, m === lastOpts() && !m.done && dateStr(m.t) === today, (o, extra) => applyOpts(m, o, extra))); continue; }
+      if (m.who === 'app' && m.kind === 'quiz') { log.appendChild(quizCard(m.quiz)); continue; }
       if (m.who === 'app') { log.appendChild(card && card.item === m ? cardBox(card.data, true) : cardBox(m.card || { title: '코치 계산', lines: m.text.split('\n') }, false)); continue; }
       const b = el('div', `chat-msg ${m.who === 'me' ? 'me' : 'bot'}` + (m.err ? ' err' : ''), m.text);
       if (m.err && m.retry) {
@@ -1679,6 +1978,7 @@ function openCoachChat() {
       log.appendChild(b);
     }
     if (sweepEl) log.appendChild(sweepEl); // 총정리 상의 카드 (고르던 것은 그대로)
+    if (!chat.who) log.appendChild(nameCard()); // 처음 만남: 뭐라고 부를지
     live.el = null;
     if (busy && live.target) { live.el = el('div', 'chat-msg bot live', live.target.slice(0, live.n)); log.appendChild(live.el); }
     else if (busy) { const t = el('div', 'chat-msg bot typing'); t.setAttribute('aria-label', '코치가 생각하고 있어요'); t.append(el('i'), el('i'), el('i')); log.appendChild(t); }
@@ -1715,6 +2015,54 @@ function openCoachChat() {
     live.done = () => { Object.assign(live, { target: '', n: 0, el: null }); done(); };
     liveSet(t);
   });
+  // 처음 만났을 때: '뭐라고 부를까요?' (적거나 '괜찮아요'를 누를 때까지 이야기 맨 아래에)
+  const nameCard = () => {
+    const box = el('div', 'chat-plan name-card');
+    box.appendChild(el('div', 'cp-title', '처음 만났네요! 뭐라고 부를까요?'));
+    const row = el('div', 'nc-row');
+    const inp = el('input', 'type-input');
+    Object.assign(inp, { type: 'text', maxLength: 12, placeholder: '이름이나 별명', autocomplete: 'off', enterKeyHint: 'done' });
+    inp.setAttribute('aria-label', '코치가 부를 이름');
+    const ok = el('button', 'btn small cp-ok', '좋아요');
+    ok.type = 'button';
+    const done = name => {
+      chat.who = { name: name.slice(0, 12), at: Date.now(), ...(name ? {} : { skip: 1 }) };
+      if (name) chat.items.push({ who: 'coach', text: `반가워요, ${name}! 앞으로 이렇게 부를게요.`, t: Date.now(), mood: 'happy' });
+      saveChat(chat);
+      sync.soon();
+      mood = name ? 'happy' : 'normal';
+      draw();
+    };
+    ok.addEventListener('click', () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } done(v); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); ok.click(); } });
+    const skip = el('button', 'btn small secondary', '괜찮아요');
+    skip.type = 'button';
+    skip.addEventListener('click', () => done(''));
+    row.append(inp, ok);
+    box.append(row, skip);
+    return box;
+  };
+  // 코치 안 비교 카드: 가장 최근 것만 누를 수 있음
+  const lastOpts = () => [...chat.items].reverse().find(m => m.who === 'app' && m.kind === 'opts');
+  const applyOpts = (m, o, extra) => {
+    if (busy) return;
+    const rows = optionChanges(o, extra);
+    const changes = rows.map(([k, v]) => `${k} ${v}`).join(' · ');
+    const before = applyOption(o, extra);
+    Object.assign(m, { done: `'${o.label}'(으)로 했어요`, extra, pick: m.opts.indexOf(o), changes: rows });
+    chat.items.push({ who: 'note', text: `일정을 바꿨어요: ${changes}`, t: Date.now(), undo: before });
+    chat.items.push({ who: 'app', text: `학생이 안 '${o.label}'을 골라 '이렇게 할게요'를 누름 (${changes}). 바뀐 달력:\n${calendarText()}`, t: Date.now(), hide: true });
+    saveChat(chat);
+    mood = 'happy';
+    draw();
+    toast('일정을 바꿨어요', 2500);
+  };
+  // AI가 읽을 안 요약: 안마다 바뀌는 것과 앱이 계산한 날짜별 양
+  const optsText = opts => opts.map((o, i) => {
+    const fc = forecastWith(o);
+    const days = stripRange(fc, o, {}).filter(x => x.kind !== 'after').map(x => `${+x.day.slice(5, 7)}/${+x.day.slice(8)}(${weekday(x.day)}) ${x.kind === 'exam' ? '시험' : x.kind === 'rest' ? '쉼' : `${dayCellText(x)}${dayCellUnit(x) === '문제' ? '문제' : '개'}`}`).join(', ');
+    return `[앱 계산] 안 ${String.fromCharCode(65 + i)} '${o.label}': ${optionChanges(o).map(([k, v]) => `${k} ${v}`).join(' · ')} → ${days}`;
+  }).join('\n');
   // 앱이 계산한 카드를 이야기에 붙임 (가장 최근 카드만 누를 수 있음)
   const showCard = ch => {
     const data = modeProposal(ch);
@@ -1755,7 +2103,7 @@ function openCoachChat() {
     // 학생 말과 바로 앞 코치 말에 나온 단어를 찾아 그 자료를 같이 (퀴즈를 내고 학생이 답할 때도 그 단어를 알게)
     const prevCoach = [...history].reverse().find(h => h.who === 'coach');
     const prevMe = [...before].reverse().find(m => m.who === 'me');
-    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), recent: recentText(prevMe ? prevMe.t : 0), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: nowLabel(today), onText: liveSet });
+    const res = await aiCoachChat({ char: coachChar(), facts: coachFacts(true), calendar: settings.exam ? calendarText() : '', data: coachData(), lookup: coachLookup([msg, prevCoach ? prevCoach.text : '']), recent: recentText(prevMe ? prevMe.t : 0), weak: weakText(), notes: chat.notes.map(n => n.text), summary: chat.sum ? chat.sum.text : '', history, message: msg, day: nowLabel(today), onText: liveSet });
     // 받은 말을 끝까지 보여 준 뒤에 이야기에 넣음 (실패면 받다 만 말은 지움)
     await liveEnd(res ? res.text : '');
     busy = false;
@@ -1770,6 +2118,8 @@ function openCoachChat() {
         chat.items.push({ who: 'note', text: `기억해 둘게요: ${res.remember}`, t: Date.now() });
       }
       if (res.plan) { saveChat(chat); if (open) showCard(res.plan); else { const data = modeProposal(res.plan); if (data) chat.items.push({ who: 'app', text: [data.title, ...data.lines].join('\n'), t: Date.now() }); } }
+      if (res.options && res.options.length) chat.items.push({ who: 'app', kind: 'opts', opts: res.options, pick: 0, text: optsText(res.options), t: Date.now() });
+      if (res.quiz) chat.items.push({ who: 'app', kind: 'quiz', quiz: res.quiz, text: `[앱] 바로 풀기 카드: ${res.quiz.what}${res.quiz.words.length ? ` (${res.quiz.words.join(', ')})` : ''} ${res.quiz.n}개`, t: Date.now() });
     }
     saveChat(chat);
     sync.soon();
@@ -1911,6 +2261,8 @@ function coachFacts(both = false) {
   const today = dateStr(), ex = settings.exam, rw = rangeWords();
   const from = Math.min(settings.from, settings.to), to = Math.max(settings.from, settings.to);
   const lines = [`오늘: ${fmtDay(today)} ${weekday(today)}요일 (앱의 하루는 새벽 ${DAY_START_HOUR}시에 바뀜)`];
+  const nm = coachName();
+  if (nm) lines.push(`학생 이름: ${nm} (코치가 처음 만났을 때 물어서 학생이 알려 준 이름이에요. 가끔 '${nm}'라고 불러 줘요. 너무 자주는 말고)`);
   if (both) {
     lines.push(`지금 보는 화면: ${WORD ? '단어 모드(영단어를 보고 뜻 맞히기)' : '예문 모드(두 예문의 빈칸에 들어갈 영단어 맞히기)'}. 코치는 예문·단어 모드가 하나예요.`);
     lines.push(`두 모드는 진도·학습 범위·하루 새 단어 일정이 따로이고, 시험일·쉬는 요일은 같이 써요. 아래 진도와 일정은 ${MODE_NAME} 것이고, ${OTHER_NAME} 것은 맨 아래에 따로 있어요. 일정 카드로 바꾸는 하루 개수·복습 날 수는 지금 보는 ${MODE_NAME}에만, 쉬는 요일은 두 모드에 같이 적용돼요.`);
@@ -2212,6 +2564,11 @@ function renderPlan() {
   dd.hidden = left == null || left < 0 || stage === 'day';
   if (!dd.hidden) { dd.textContent = left === 0 ? (toGoal ? '목표 D-day' : 'D-day') : `${toGoal ? '목표' : '시험'} D-${left}`; dd.className = 'tag' + (left <= 3 ? ' dday' : ''); }
   if (sw) dd.hidden = true; // 총정리는 카드 안에 크게
+  // 코치와 정한 오늘 공부량 (보통이 아닐 때만): 오늘 몫이 그만큼 줄거나 늘어 있음
+  const lw = (loadsNow()[dateStr()]);
+  const lt = $('#load-tag');
+  lt.hidden = lw == null || lw === LOADS.normal || stage === 'day';
+  if (!lt.hidden) lt.textContent = lw === LOADS.rest ? '오늘은 쉬는 날' : `오늘은 ${LOAD_NAME[lw]}`;
   let note = '';
 
   if (stage === 'day') {

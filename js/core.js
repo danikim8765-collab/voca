@@ -420,12 +420,56 @@ export function daysBetween(from, to) {
 // 요일 (0 일요일 … 6 토요일)
 export const weekdayOf = day => { const [y, m, d] = day.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); };
 // 쉬는 요일 목록 정리: 0~6만, 겹치지 않게. 일주일 내내 쉬면 쉬는 날이 없는 걸로
-export const cleanRest = rest => { const r = [...new Set((rest || []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort(); return r.length >= 7 ? [] : r; };
-export const isRestDay = (day, rest) => !!(rest && rest.length) && rest.includes(weekdayOf(day));
+// 쉬는 요일 [0~6]. 날마다 정한 공부량(loads, 아래)이 붙어 있으면 그대로 넘김
+export const cleanRest = rest => {
+  const r = [...new Set((rest || []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n <= 6))].sort();
+  const out = r.length >= 7 ? [] : r;
+  if (rest && rest.loads) out.loads = rest.loads;
+  return out;
+};
+// ---------- 날마다 공부량 (코치와 정함: '화·수는 가볍게, 목요일은 몰아서') ----------
+// loads = { 'YYYY-MM-DD': 0 | 0.5 | 1 | 1.5 } 쉬기·가볍게·보통·몰아서. 정하지 않은 날은 보통(쉬는 요일이면 쉬기).
+// 쉬는 요일 배열에 .loads로 붙여 넘겨서, 쉬는 날을 세는 곳(studyDays 등)이 그날 하루 쉬기도 알아봄.
+// 몫을 나누는 곳(총정리 하루 몫, 코치의 하루 새 단어)은 이 무게대로 나눔: 가볍게 = 보통의 절반, 몰아서 = 1.5배
+export const LOADS = { rest: 0, light: 0.5, normal: 1, heavy: 1.5 };
+export const LOAD_NAME = { 0: '쉬기', 0.5: '가볍게', 1: '보통', 1.5: '몰아서' };
+const LOAD_VALUES = Object.values(LOADS);
+export function cleanLoads(v, from = '') {
+  const out = {};
+  for (const [d, w] of Object.entries(v || {})) {
+    if (/^\d{4}-\d\d-\d\d$/.test(d) && (!from || d >= from) && LOAD_VALUES.includes(+w)) out[d] = +w;
+  }
+  return out;
+}
+export const withLoads = (rest, loads) => {
+  const r = cleanRest(rest);
+  delete r.loads;
+  if (loads && Object.keys(loads).length) r.loads = loads;
+  return r;
+};
+export const isRestDay = (day, rest) => {
+  const L = rest && rest.loads;
+  if (L && L[day] != null) return L[day] <= 0;
+  return !!(rest && rest.length) && rest.includes(weekdayOf(day));
+};
+// 그날 공부량 (보통 1)
+export const dayWeight = (day, rest) => {
+  const L = rest && rest.loads;
+  if (L && L[day] != null) return L[day];
+  return isRestDay(day, rest) ? 0 : 1;
+};
+// from부터 to 전날까지 공부량 합 (정한 날이 없으면 studyDays와 같음)
+export function weightBetween(from, to, rest = []) {
+  const n = daysBetween(from, to);
+  let w = 0;
+  for (let i = 0; i < n; i++) w += dayWeight(addDays(from, i), rest);
+  return w;
+}
+const hasLoads = (rest, from, to) => !!(rest && rest.loads) && Object.keys(rest.loads).some(d => d >= from && d < to);
 // from부터 to 전날까지 공부하는 날 수 (쉬는 요일 빼고)
 export function studyDays(from, to, rest = []) {
   const n = daysBetween(from, to);
-  if (!rest || !rest.length) return Math.max(0, n);
+  if (!rest || (!rest.length && !rest.loads)) return Math.max(0, n);
   let c = 0;
   for (let i = 0; i < n; i++) if (!isRestDay(addDays(from, i), rest)) c++;
   return c;
@@ -777,6 +821,65 @@ export function coachPlan({ today = dateStr(), exam, total = 0, remaining = 0, r
   };
 }
 
+/**
+ * 앞으로 날마다 할 양 (코치 제안 카드의 날짜 칸). 앱이 실제로 쓰는 나누기와 같은 방식으로 셈:
+ *  배우는 날(오늘 ~ 목표일 전날): 코치면 남은 새 단어를 남은 공부량 무게로 나눔(coachDaily), 하루 개수 고정이면 그 개수, 코치가 아니면 하루 새 단어 수 × 무게
+ *  총정리(목표일 ~ 시험 전날): 1바퀴는 범위 단어를 무게대로 나눠 단어마다 두 문제, 2바퀴는 약한 단어를 무게대로 한 문제씩
+ *  복습일이 된 단어는 날마다 따로 더해짐(여기엔 안 셈)
+ * o: { today, until(이 날 전까지), exam, goal(총정리 첫날, 없으면 ''), rest(쉬는 요일 + loads), coach, learnLeft, fix, perDay,
+ *      total(범위 단어 수), lap1(1바퀴 날 수, 0 = 알아서), sweepLeft(오늘이 1바퀴면 오늘 몫 포함 남은 단어), weak(약한 단어 수) }
+ * 반환 [{ day, kind: 'learn'|'sweep'|'lap2'|'rest'|'exam'|'after', w, words, problems }]
+ */
+export function dayForecast(o) {
+  const { today, exam = '', goal = '', rest = [], coach = false, fix = 0, perDay = 0, total = 0, lap1 = 0, weak = 0 } = o;
+  const until = o.until || (exam ? addDays(exam, 1) : addDays(today, 14));
+  const out = [];
+  let left = Math.max(0, o.learnLeft || 0);
+  const learnEnd = goal || exam || until;
+  // 총정리 바퀴 나누기 (pickBothSweep와 같게)
+  let lap2Start = '', share = null;
+  if (goal && exam && goal < exam) {
+    const D = Math.max(1, studyDays(goal, exam, rest));
+    const L1 = lapOneDays(D, lap1);
+    lap2Start = L1 < D ? nthStudyDay(goal, L1, rest) : '';
+    // 구간 [a, b)에 T를 무게대로: 날마다 누적 몫의 차
+    share = (a, b, T) => {
+      const W = Math.max(0.01, weightBetween(a, b, rest)), m = new Map();
+      let cum = 0, prev = 0;
+      for (let d = a; d < b; d = addDays(d, 1)) {
+        cum += dayWeight(d, rest);
+        const upto = Math.min(T, Math.ceil(T * cum / W - 1e-9));
+        m.set(d, upto - prev);
+        prev = upto;
+      }
+      return m;
+    };
+  }
+  const lap1End = lap2Start || exam;
+  const lap1From = goal && today > goal ? today : goal;
+  const s1 = share && lap1From < lap1End ? share(lap1From, lap1End, today > goal ? Math.max(0, o.sweepLeft ?? total) : total) : new Map();
+  const s2 = share && lap2Start ? share(today > lap2Start ? today : lap2Start, exam, weak) : new Map();
+  for (let d = today; d < until; d = addDays(d, 1)) {
+    const w = dayWeight(d, rest);
+    if (exam && d === exam) { out.push({ day: d, kind: 'exam', w, words: 0, problems: 0 }); continue; }
+    if (exam && d > exam) { out.push({ day: d, kind: 'after', w, words: 0, problems: 0 }); continue; }
+    if (!w) { out.push({ day: d, kind: 'rest', w, words: 0, problems: 0 }); continue; }
+    if (d < learnEnd) {
+      let n = 0;
+      if (coach && fix) n = Math.min(fix, left);
+      else if (coach) n = Math.min(left, Math.ceil(left * w / Math.max(0.01, weightBetween(d, learnEnd, rest)) - 1e-9));
+      else n = Math.min(left, Math.round(perDay * w));
+      left -= n;
+      out.push({ day: d, kind: 'learn', w, words: n, problems: n * NEW_COST });
+      continue;
+    }
+    if (lap2Start && d >= lap2Start) { const n = s2.get(d) || 0; out.push({ day: d, kind: 'lap2', w, words: n, problems: n }); continue; }
+    const n = s1.get(d) || 0;
+    out.push({ day: d, kind: 'sweep', w, words: n, problems: n * 2 });
+  }
+  return out;
+}
+
 export const REVIEW_SIZE = 20; // 오늘의 복습 단어 수
 
 /**
@@ -889,7 +992,12 @@ export function pickBothSweep(allWords, rangeWords, stats, { today = dateStr(), 
   };
   if (isRestDay(today, rest)) return { ...out([]), rest: true };
   left.sort((a, b) => b.rank - a.rank || a.miss - b.miss || a.i - b.i);
-  const quota = Math.max(0, Math.min(total, size * (idx + 1)) - doneBefore);
+  // 오늘까지 해 둘 몫. 날마다 공부량을 정했으면(가볍게·몰아서) 그 무게대로: 이번 바퀴 무게 합 중 오늘까지의 무게만큼
+  const lapEnd = lap === 1 && lap2Start ? lap2Start : exam;
+  const upto = hasLoads(rest, start, lapEnd)
+    ? Math.ceil(total * weightBetween(start, addDays(today, 1), rest) / Math.max(0.01, weightBetween(start, lapEnd, rest)) - 1e-9)
+    : size * (idx + 1);
+  const quota = Math.max(0, Math.min(total, upto) - doneBefore);
   return out(left.slice(0, quota));
 }
 
@@ -1173,6 +1281,9 @@ export function mergeProgress(a, b, { pruneBefore = 0 } = {}) {
     // 총정리 문제 방식도 두 모드가 같이 써서 따로 (sweepKindAt)
     const k = (pa.sweepKindAt || 0) >= (pb.sweepKindAt || 0) ? pa : pb;
     if (k.sweepKind) prefs = { ...prefs, sweepKind: k.sweepKind, sweepKindAt: k.sweepKindAt || 0 };
+    // 날마다 공부량도 두 모드가 같이 써서 따로 (loadsAt)
+    const l = (pa.loadsAt || 0) >= (pb.loadsAt || 0) ? pa : pb;
+    if (l.loads) prefs = { ...prefs, loads: l.loads, loadsAt: l.loadsAt || 0 };
   }
   // 하던 학습(이어하기)도 기기끼리: 더 최근에 바꾼 쪽(at). data가 null이면 끝냈거나 지운 것
   const sa = a && a.sess, sb = b && b.sess;
@@ -1244,7 +1355,9 @@ export function mergeCoachChat(a, b, { keep = 200, notes = 30 } = {}) {
   const ns = m.notes.filter(n => (n.t || 0) >= wiped && !(gone[n.text] >= (n.t || 0))).slice(-notes);
   const at = s => (s ? s.at || s.upTo || 0 : -1);
   const sum = at(a.sum) >= at(b.sum) ? a.sum || null : b.sum;
-  return { items, notes: ns, ...(sum ? { sum } : {}), ...(wiped ? { wiped } : {}), ...(Object.keys(gone).length ? { gone } : {}) };
+  // 코치가 부를 이름 { name, at, skip }: 더 최근에 정한 쪽 ('모두 지우기'와 상관없이 남김)
+  const who = ((a.who && a.who.at) || 0) >= ((b.who && b.who.at) || 0) ? a.who : b.who;
+  return { items, notes: ns, ...(sum ? { sum } : {}), ...(wiped ? { wiped } : {}), ...(Object.keys(gone).length ? { gone } : {}), ...(who ? { who } : {}) };
 }
 // 동기화 파일(voca-coach.json) 하나: { chat, log }
 export function mergeCoachData(a, b, { now = Date.now() } = {}) {

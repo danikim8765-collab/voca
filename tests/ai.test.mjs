@@ -62,7 +62,7 @@ test('채점: 오타를 먼저 바로잡아 읽게(read) · 난이도는 철자�
   const user = body.messages[0].content;
   assert.match(user, /채점 기준: .*철자는 어느 난이도든 따지지 않아요/);
   assert.match(user, /'포귀하다'는 '포기하다'의 오타일 수 있어요/);
-  assert.match(body.system[0].text, /줄기가 그 자체로 흔히 쓰는 다른 뜻의 낱말이면 오타가 아니라/);
+  assert.match(body.system[0].text, /쓴 꼴 그대로 국어사전에 있는 다른 뜻의 말이면.*오타로 보지 않고/);
 });
 
 test('거절·오류·잘못된 응답·네트워크 실패는 null', async () => {
@@ -235,7 +235,7 @@ test('코치와 이야기: AI는 한 번만 부르고, 학생이 원하는 값(�
   store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
   const args = { char: 'slime', facts: '시험까지 23일', weak: '- fatal: 치명적인 (틀림 3번, 맞힘 1번)', notes: ['수요일은 학원'], message: '토요일날 빼고 40개씩 하면 복습 며칠' };
   reply = claudeText('{"mood":"normal","text":"토요일을 쉬고 40개씩으로 계산해 볼게요.","review":0,"perDay":40,"rest":"6","today":-1,"remember":""}');
-  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '토요일을 쉬고 40개씩으로 계산해 볼게요.', plan: { perDay: 40, rest: [6] }, remember: '' });
+  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '토요일을 쉬고 40개씩으로 계산해 볼게요.', plan: { perDay: 40, rest: [6] }, options: [], quiz: null, remember: '' });
   assert.equal(calls.length, 1);
   const body = JSON.parse(calls[0].opts.body);
   assert.match(sysText(body), /슬라임/);
@@ -250,6 +250,36 @@ test('코치와 이야기: AI는 한 번만 부르고, 학생이 원하는 값(�
   assert.deepEqual((await aiCoachChat(args)).plan, { review: 7, rest: [0, 6], today: 50 });
   reply = claudeText('{"mood":"cheer","text":"좋아요!","review":7,"perDay":30,"rest":"-","today":-1,"remember":""}');
   assert.deepEqual((await aiCoachChat(args)).plan, { perDay: 30, rest: [] });
+});
+
+test('코치와 이야기: 일정 안 여러 개(날짜별 공부량·시험일·총정리 시작) · 퀴즈 바로 시작', async () => {
+  store.set('voca.ai.v1', JSON.stringify({ key: 'k' }));
+  const args = { char: 'owl', facts: '시험까지 3일', calendar: '11/28(토) 학습', message: '화수목은 가볍게', day: '2026-11-28' };
+  const opts = [
+    { label: '가볍게 유지', why: '화·수는 짧게, 목요일에 몰아서 봐요.', days: [{ date: '2026-12-01', load: 'light' }, { date: '2026-12-02', load: 'light' }, { date: '2026-12-03', load: 'heavy' }, { date: '2026-11-01', load: 'rest' }, { date: '2026-12-04', load: 'zzz' }], exam: '2026-12-04', goal: '', rest: '', perDay: 0, review: 0, today: -1 },
+    { label: '전날만', why: '', days: [{ date: '2026-12-01', load: 'rest' }], exam: '', goal: '', rest: '', perDay: 0, review: 0, today: -1 },
+    { label: '빈 안', why: '', days: [], exam: '', goal: '', rest: '', perDay: 0, review: 0, today: -1 },
+  ];
+  reply = claudeText(JSON.stringify({ mood: 'normal', text: '세 가지로 짜 봤어요.', options: opts, quiz: { what: 'words', n: 0, words: ['fatal', 'fatal', 'relish'] }, remember: '' }));
+  const r = await aiCoachChat(args);
+  assert.equal(r.plan, null);
+  assert.equal(r.options.length, 2); // 바꾸는 게 없는 안은 버림
+  // 지난 날·잘못된 공부량은 버림, 날짜 순
+  assert.deepEqual(r.options[0].days, [{ date: '2026-12-01', load: 'light' }, { date: '2026-12-02', load: 'light' }, { date: '2026-12-03', load: 'heavy' }]);
+  assert.equal(r.options[0].exam, '2026-12-04');
+  assert.deepEqual(r.quiz, { what: 'words', n: 2, words: ['fatal', 'relish'] });
+  const body = JSON.parse(calls[0].opts.body);
+  assert.match(userText(body), /<calendar>\n11\/28\(토\) 학습\n<\/calendar>/);
+  assert.match(sysText(body), /실제 영어 시험날로 옮기고/);
+  // 예전 값만 있는 안 하나는 예전 카드(plan)로
+  reply = claudeText(JSON.stringify({ mood: 'normal', text: '계산해 볼게요.', options: [{ label: '', why: '', days: [], exam: '', goal: '', rest: '6', perDay: 40, review: 0, today: -1 }], quiz: { what: '', n: 0, words: [] }, remember: '' }));
+  const r2 = await aiCoachChat(args);
+  assert.deepEqual(r2.plan, { perDay: 40, rest: [6] });
+  assert.deepEqual(r2.options, []);
+  assert.equal(r2.quiz, null);
+  // 안을 냈으면 카드와 어긋나는 짐작 숫자 문장은 뺌
+  reply = claudeText(JSON.stringify({ mood: 'normal', text: '좋아요. 모두 137문제가 돼요.', options: [opts[1]], quiz: { what: '', n: 0, words: [] }, remember: '' }));
+  assert.equal((await aiCoachChat(args)).text, '좋아요.');
 });
 
 test('코치와 이야기: 앱 자료(<data>)와 학생 말에 나온 단어 자료(<lookup>)를 넘기고, 목표일·시험일 설명도 지시에 있음', async () => {
@@ -285,7 +315,7 @@ test('코치와 이야기: 숫자·길이·형식으로 말을 버리지 않고,
   assert.equal(r.remember, '소리 내어 외우는 걸 좋아함');
   // JSON이 깨져 와도 말은 살림: 글만 온 경우, 중간에 끊긴 JSON
   reply = claudeText('그냥 글로 답했어요.');
-  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '그냥 글로 답했어요.', plan: null, remember: '' });
+  assert.deepEqual(await aiCoachChat(args), { mood: 'normal', text: '그냥 글로 답했어요.', plan: null, options: [], quiz: null, remember: '' });
   reply = claudeText('{"mood":"happy","text":"여기까지는 왔는데');
   assert.equal((await aiCoachChat(args)).text, '여기까지는 왔는데');
   // 홈 말풍선의 하루 한도(30번)를 다 써도 대화는 됨
@@ -330,7 +360,7 @@ test('코치: 고른 모델이 막히면(503·429·시간 초과) 다른 모델�
   // 요청 모양: 생각은 짧게, 답은 JSON 스키마로
   const body = JSON.parse(calls[1].opts.body);
   assert.deepEqual(body.generationConfig.thinkingConfig, { thinkingBudget: 512 });
-  assert.ok(body.generationConfig.responseSchema.properties.perDay);
+  assert.ok(body.generationConfig.responseSchema.properties.options.items.properties.perDay);
   // 방금 막혔던 모델은 뒤로 미루고 바로 다른 모델부터
   calls = [];
   assert.equal((await aiCoachChat({ char: 'cat', facts: '', message: '안녕' })).text, '좋아요.');
@@ -704,7 +734,7 @@ test('받는 중인 답에서 지금까지 온 코치 말(text)만', () => {
 
 test('코치와 이야기: onText를 주면 세 회사 모두 받는 대로 넘기고, 다 받은 답은 전과 같음', async () => {
   const args = { char: 'owl', facts: '시험까지 9일', message: '안녕' };
-  const want = { mood: 'happy', text: '좋아요.\n- "fatal"은 치명적인!', plan: null, remember: '' };
+  const want = { mood: 'happy', text: '좋아요.\n- "fatal"은 치명적인!', plan: null, options: [], quiz: null, remember: '' };
   const run = async () => { const seen = []; const r = await aiCoachChat({ ...args, onText: t => seen.push(t) }); return { r, seen }; };
   const check = ({ r, seen }) => {
     assert.deepEqual(r, want);
