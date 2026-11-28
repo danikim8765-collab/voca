@@ -632,6 +632,12 @@
     <!-- 화면 꾸미기: js/look.js (이 기기에만. 강조 색·카드·퀴즈 바탕은 예문·단어 모드마다 따로) -->
     <div class="card" id="set-screen" data-tab="look">
       <div class="label">화면</div>
+      <!-- 테마: 오리지널 · 네온(늘 어둡게). 색은 테마가 정함 (js/look.js skin) -->
+      <div class="skin-pick" id="seg-skin" role="radiogroup" aria-label="테마">
+        <button type="button" data-v="orig" role="radio"><span class="skin-thumb orig" aria-hidden="true"><i></i><i></i><i></i></span>오리지널</button>
+        <button type="button" data-v="neon" role="radio"><span class="skin-thumb neon" aria-hidden="true"><i></i><i></i><i></i></span>네온</button>
+      </div>
+      <p class="skin-note" id="skin-note" hidden>네온은 늘 어두운 화면이에요</p>
       <div class="opt-row"><span>밝기</span>
         <div class="seg" id="seg-theme"><button data-v="auto">폰 설정</button><button data-v="light">밝게</button><button data-v="dark">어둡게</button></div></div>
       <div class="opt-row"><span>글자 크기</span>
@@ -645,15 +651,8 @@
     </div>
     <div class="card" id="set-look" data-tab="look">
       <div class="label">꾸미기</div>
-      <div class="opt-row"><span>강조 색</span><div class="swatches" id="sw-accent" role="radiogroup" aria-label="강조 색"></div></div>
       <div class="opt-row"><span>예문 글꼴</span>
         <div class="seg" id="seg-font"><button data-v="sans">고딕</button><button data-v="serif">명조</button></div></div>
-      <div class="opt-row"><span>모서리</span>
-        <div class="seg" id="seg-radius"><button data-v="round">둥글게</button><button data-v="soft">조금</button><button data-v="square">각지게</button></div></div>
-      <div class="opt-row"><span>카드</span>
-        <div class="seg" id="seg-edge"><button data-v="flat">평평하게</button><button data-v="shadow">그림자</button><button data-v="line">테두리</button></div></div>
-      <div class="opt-row"><span>퀴즈 바탕</span>
-        <div class="seg" id="seg-glow"><button data-v="none">단색</button><button data-v="warm">피치</button><button data-v="sky">하늘</button><button data-v="mint">민트</button></div></div>
       <div class="label mt">정답 반응</div>
       <div class="seg" id="seg-react">
         <button data-v="calm">차분하게</button>

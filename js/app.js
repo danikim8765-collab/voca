@@ -78,7 +78,7 @@ const setLabel = (b, t) => { const s = b.querySelector('.lbl'); if (s) s.textCon
 document.querySelectorAll('[data-icon]').forEach(b => b.insertAdjacentHTML('afterbegin', ICON[b.dataset.icon] || ''));
 
 // 꾸미기 설정 (js/look.js가 <head>에서 먼저 불러 둠: 밝기·색·글자 크기·홈에 보일 것 …)
-const LOOK = window.VocaLook || { get: () => ({ days: 'grid', hide: [], ex: {}, word: {} }), set() {}, reset() {}, CHOICES: { accent: [] }, HIDE: [] };
+const LOOK = window.VocaLook || { get: () => ({ skin: 'orig', days: 'grid', hide: [] }), set() {}, reset() {}, CHOICES: {}, HIDE: [] };
 
 const load = (k, def) => {
   try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; }
@@ -5602,8 +5602,6 @@ function renderSrsGraph(iv) {
 }
 
 // ---------- 꾸미기 (js/look.js가 <head>에서 먼저 불러 둠) ----------
-const ACCENT_NAME = { navy: '인디고', forest: '숲', grape: '포도', coral: '코랄', ink: '먹색' };
-const ACCENT_SW = { navy: '#4f5bd5', forest: '#1e9e6a', grape: '#7a5af8', coral: '#f0614f', ink: '#1a1a17' };
 const HOME_PART = { plan: '학습 계획 · 암기 진도', practice: '다시 볼 단어 · 범위 연습' }; // 코치·단어장·DAY별 진도는 아래 탭으로 옮김
 // 짧은 소리 (파일 없이 Web Audio로): tone([[주파수, 길이초], …], 크기, 파형)
 // 소리 낼 때 처음 켜면 스피커·이어폰이 깨어나는 동안 늦게 들려서, 화면을 처음 누를 때 미리 켜 둠 (warmAudio)
@@ -5651,21 +5649,17 @@ function previewReact() {
   t.hidden = true; void t.offsetWidth; t.hidden = false;
 }
 function renderLook() {
-  const lk = LOOK.get(), m = WORD ? 'word' : 'ex';
-  setSeg('#seg-theme', lk.theme); setSeg('#seg-size', lk.size); setSeg('#seg-font', lk.font); setSeg('#seg-radius', lk.radius);
-  setSeg('#seg-edge', lk[m].edge); setSeg('#seg-glow', lk[m].glow); setSeg('#seg-react', lk.react); setSeg('#seg-kb', lk.kb);
+  const lk = LOOK.get(), neon = lk.skin === 'neon';
+  setSeg('#seg-skin', lk.skin);
+  for (const b of $('#seg-skin').querySelectorAll('button')) b.setAttribute('aria-checked', b.dataset.v === lk.skin);
+  // 네온은 늘 어두워서 밝기는 오리지널에서만
+  const themeRow = $('#seg-theme').closest('.set-row, .opt-row');
+  if (themeRow) themeRow.hidden = neon;
+  $('#skin-note').hidden = !neon;
+  setSeg('#seg-theme', lk.theme); setSeg('#seg-size', lk.size); setSeg('#seg-font', lk.font); setSeg('#seg-react', lk.react); setSeg('#seg-kb', lk.kb);
   $('#opt-look-share').checked = lk.share;
   $('#opt-fx-sound').checked = lk.sound; $('#opt-fx-buzz').checked = lk.buzz; $('#opt-kb-sound').checked = lk.kbSound;
   $('#row-fx-buzz').hidden = !navigator.vibrate; // 아이폰 사파리는 웹 진동이 안 됨
-  const sw = $('#sw-accent');
-  sw.innerHTML = '';
-  for (const a of LOOK.CHOICES.accent) {
-    const b = el('button', 'swatch' + (lk[m].accent === a ? ' on' : ''));
-    b.style.setProperty('--sw', ACCENT_SW[a]);
-    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', lk[m].accent === a); b.setAttribute('aria-label', ACCENT_NAME[a]); b.title = ACCENT_NAME[a];
-    b.addEventListener('click', () => { LOOK.set({ accent: a }); renderLook(); });
-    sw.appendChild(b);
-  }
   const parts = $('#home-parts');
   parts.innerHTML = '';
   for (const k of LOOK.HIDE.filter(x => HOME_PART[x])) {
@@ -6295,7 +6289,7 @@ function bind() {
   $('#opt-appkb').addEventListener('change', e => { settings.appKeyboard = e.target.checked; saveSettings(); });
   $('#opt-simplehome').addEventListener('change', e => { ui.simpleHome = e.target.checked; save(UI_KEY, ui); applyHomeLayout(); });
   // 꾸미기 (js/look.js): 누르면 바로 앱 전체에 보임
-  for (const [sel, k] of [['#seg-theme', 'theme'], ['#seg-size', 'size'], ['#seg-font', 'font'], ['#seg-radius', 'radius'], ['#seg-edge', 'edge'], ['#seg-glow', 'glow'], ['#seg-react', 'react'], ['#seg-kb', 'kb']]) {
+  for (const [sel, k] of [['#seg-skin', 'skin'], ['#seg-theme', 'theme'], ['#seg-size', 'size'], ['#seg-font', 'font'], ['#seg-react', 'react'], ['#seg-kb', 'kb']]) {
     onSeg(sel, v => { LOOK.set({ [k]: v }); renderLook(); if (k === 'react') previewReact(); });
   }
   for (const [id, k] of [['#opt-fx-sound', 'sound'], ['#opt-fx-buzz', 'buzz'], ['#opt-kb-sound', 'kbSound']]) {
@@ -6312,7 +6306,7 @@ function bind() {
     else toast('꾸미기는 이제 이 기기에만 저장돼요');
   });
   $('#btn-look-reset').addEventListener('click', async () => {
-    if (!(await ask({ title: '꾸미기를 처음대로 돌릴까요?', body: '밝기·색·글자 크기·홈에 보일 것 등 화면 꾸미기만 처음 모습으로 돌아가요. 학습 기록과 설정은 그대로예요.', ok: '처음대로' }))) return;
+    if (!(await ask({ title: '꾸미기를 처음대로 돌릴까요?', body: '테마·밝기·글자 크기·홈에 보일 것 등 화면 꾸미기만 처음 모습으로 돌아가요. 학습 기록과 설정은 그대로예요.', ok: '처음대로' }))) return;
     LOOK.reset(); renderLook(); toast('꾸미기를 처음대로 돌렸어요');
   });
   onSeg('#seg-base', v => { settings.baseAccept = v; saveSettings(); });

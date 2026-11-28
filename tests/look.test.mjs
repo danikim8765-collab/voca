@@ -3,41 +3,36 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { clean, DEFAULT, MODE_DEFAULT } = require('../js/look.js');
+const { clean, DEFAULT } = require('../js/look.js');
 
-test('꾸미기: 비었거나 고장 난 값이면 기본값', () => {
+test('꾸미기: 비었거나 고장 난 값이면 기본값 (테마는 오리지널)', () => {
   for (const bad of [null, undefined, 'x', 3, []]) {
     const o = clean(bad);
+    assert.equal(o.skin, 'orig');
     assert.equal(o.theme, DEFAULT.theme);
-    assert.deepEqual(o.ex, MODE_DEFAULT.ex);
-    assert.deepEqual(o.word, MODE_DEFAULT.word);
     assert.deepEqual(o.hide, []);
     assert.equal(o.sound, false);
   }
 });
 
-test('꾸미기: 고를 수 있는 값만 남김, 모드마다 색·카드·바탕은 따로', () => {
-  const o = clean({ theme: 'dark', size: 'huge', font: 'serif', hide: ['days', 'today', 'coach', 'days'], sound: 'yes', buzz: true,
-    ex: { accent: 'grape', edge: 'line', glow: 'rainbow' }, word: { accent: 'pink' } });
+test('꾸미기: 고를 수 있는 값만 남김', () => {
+  const o = clean({ skin: 'neon', theme: 'dark', size: 'huge', font: 'serif', hide: ['days', 'today', 'coach', 'days'], sound: 'yes', buzz: true });
+  assert.equal(o.skin, 'neon');
   assert.equal(o.theme, 'dark');
   assert.equal(o.size, 'm');           // 없는 크기 → 보통
   assert.equal(o.font, 'serif');
   assert.deepEqual(o.hide, ['coach', 'days']); // '오늘' 카드는 못 숨김, 겹친 건 하나로
   assert.equal(o.sound, false);        // true만 켬
   assert.equal(o.buzz, true);
-  assert.deepEqual(o.ex, { accent: 'grape', edge: 'line', glow: MODE_DEFAULT.ex.glow }); // 없는 바탕 → 기본
-  assert.deepEqual(o.word, MODE_DEFAULT.word);
+  assert.equal(clean({ skin: 'pink' }).skin, 'orig'); // 없는 테마 → 오리지널
 });
 
-test('꾸미기: 예전 판에 저장된 기본값(그림자·피치 바탕·테두리)은 새 기본(평평하게·단색)으로, 일부러 고른 건 그대로', () => {
-  const old = clean({ ex: { accent: 'navy', edge: 'shadow', glow: 'warm' }, word: { edge: 'line', glow: 'sky' } });
-  assert.deepEqual(old.ex, MODE_DEFAULT.ex);
-  assert.equal(old.word.edge, MODE_DEFAULT.word.edge);
-  assert.equal(old.word.glow, 'sky');
-  const now = clean({ v: 2, ex: { edge: 'shadow', glow: 'warm' } }); // 새 판에서 고른 그림자·피치는 그대로
-  assert.equal(now.ex.edge, 'shadow');
-  assert.equal(now.ex.glow, 'warm');
-  assert.equal(clean(now).ex.edge, 'shadow'); // 다시 정리해도 그대로
+test('꾸미기: 없앤 강조 색·모서리·카드·퀴즈 바탕은 예전에 저장돼 있어도 버림', () => {
+  const o = clean({ radius: 'square', ex: { accent: 'grape', edge: 'line', glow: 'warm' }, word: { accent: 'coral' }, size: 'l', v: 2 });
+  for (const k of ['radius', 'ex', 'word', 'accent', 'edge', 'glow']) assert.ok(!(k in o), k);
+  assert.equal(o.size, 'l'); // 남은 건 그대로
+  assert.equal(o.skin, 'orig');
+  assert.equal(o.v, 3);
 });
 
 test('꾸미기 합치기: 바꾼 시각이 더 최근인 쪽, 기기마다인 share는 빼고', () => {
