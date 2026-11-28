@@ -483,6 +483,8 @@
       <span></span>
     </header>
     <div class="acct-welcome" id="acct-welcome" hidden>
+      <!-- 앱 아이콘의 V_ (빈칸) 표시. 테마 색을 따라감 -->
+      <svg class="aw-mark" viewBox="0 0 64 64" aria-hidden="true"><path class="v" d="M15 17 L29 45 L43 17"/><rect class="u" x="42" y="42" width="13" height="6" rx="3"/></svg>
       <div class="aw-logo" aria-hidden="true">VOCA</div>
       <p class="aw-lead">로그인하면 폰·패드·컴퓨터 어디서든<br>같은 진도로 이어서 공부해요</p>
     </div>
@@ -828,6 +830,8 @@
   <!-- 계정: 로그인 · 회원가입 · 비밀번호 찾기(복구 코드) · 비밀번호 바꾸기 · 계정 지우기 · 복구 코드 보여 주기 (app.js openAccount) -->
   <div class="dialog" id="acct" role="dialog" aria-modal="true" aria-labelledby="ac-title" hidden>
     <form class="dialog-card acct-card" id="ac-form" novalidate>
+      <!-- 폰: 화면 전체를 쓰는 페이지 (뒤로 · 큰 제목 · 아래에 확인). 넓은 화면은 가운데 카드 -->
+      <div class="ac-head"><button class="icon-btn" id="ac-back" type="button" aria-label="뒤로" data-icon="back"></button></div>
       <div class="dlg-title" id="ac-title"></div>
       <div class="dlg-body" id="ac-sub" hidden></div>
       <label class="ac-field" data-f="id"><span>아이디</span><input id="ac-id" class="type-input" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="20" placeholder="영어 소문자·숫자·_ 3~20자"></label>
@@ -846,9 +850,9 @@
         <button class="btn dlg-ok" id="ac-ok" type="submit">확인</button>
       </div>
       <div class="ac-links">
-        <button class="link-btn" id="ac-to-recover" type="button">비밀번호를 잊었어요</button>
-        <button class="link-btn" id="ac-to-signup" type="button">계정이 없어요 · 회원가입</button>
-        <button class="link-btn" id="ac-to-login" type="button">계정이 있어요 · 로그인</button>
+        <button class="link-btn" id="ac-to-recover" type="button">비밀번호 찾기</button>
+        <button class="link-btn" id="ac-to-signup" type="button">회원가입</button>
+        <button class="link-btn" id="ac-to-login" type="button">이미 계정이 있어요 · 로그인</button>
       </div>
     </form>
   </div>

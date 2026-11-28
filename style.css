@@ -1658,6 +1658,59 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 #account #set-sync #acct-ready .btn { min-height: 52px; font-size: 16px; }
 .acct-skip { text-align: center; margin: 18px 0 0; font-size: 14px; }
 .acct-skip .link-btn { color: var(--muted); font-weight: 600; }
+/* ---------- 계정: 로그인 안 했을 때 환영 화면 (가운데 로고, 아래에 버튼 세로로) ---------- */
+#account.welcome.active { display: flex; flex-direction: column; }
+#account.welcome .top h1 { visibility: hidden; } /* 뒤로 단추 자리는 그대로 */
+#account.welcome .acct-welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 8px 32px; }
+.aw-mark { width: 76px; height: 76px; margin-bottom: 14px; }
+.aw-mark .v { fill: none; stroke: var(--primary); stroke-width: 10.5; stroke-linecap: round; stroke-linejoin: round; }
+.aw-mark .u { fill: #f5a623; }
+#account.welcome .aw-logo { font-size: 44px; letter-spacing: -1.5px; line-height: 1; }
+#account.welcome .aw-lead { margin: 14px 0 0; }
+#account.welcome #set-sync { background: none; box-shadow: none; border: 0; padding: 0; margin: 0; }
+#account.welcome #acct-ready { flex-direction: column; align-items: stretch; gap: 10px; }
+#account.welcome #acct-ready .btn { min-height: 56px; margin: 0; font-size: 17px; border-radius: 16px; }
+#account.welcome .set-more { margin-top: 14px; text-align: center; }
+#account.gate .set-more { display: none; } /* 처음 화면엔 예전 방식(GitHub)을 안 보임. 설정 > 연결 > 계정에서는 보임 */
+#account.welcome .acct-skip { margin: 16px 0 4px; }
+/* 넓은 화면: 로고와 버튼을 가운데 좁은 한 덩어리로 */
+@media (min-width: 700px) {
+  #account.welcome.active { justify-content: center; }
+  #account.welcome .acct-welcome { flex: none; padding-bottom: 36px; }
+  #account.welcome #set-sync, #account.welcome .acct-skip { width: 100%; max-width: 380px; margin-left: auto; margin-right: auto; }
+  #account.welcome .top { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 16px; right: 16px; }
+}
+
+/* ---------- 계정 창(로그인·회원가입·비밀번호 찾기…): 폰은 화면 전체 페이지, 넓은 화면은 가운데 카드 ---------- */
+.ac-head { display: none; }
+.acct-card .dlg-title { text-align: left; font-size: 24px; letter-spacing: -.5px; }
+.acct-card .dlg-body { text-align: left; margin-top: -4px; }
+.acct-card { gap: 14px; }
+.ac-field span { font-size: 14px; }
+.ac-field .type-input { padding: 14px 16px; font-size: 17px; border-radius: 14px; }
+/* 다른 길(비밀번호 찾기 · 회원가입 · 로그인)은 확인 버튼 아래 회색 한 줄 */
+.acct-card .dlg-actions { order: 1; }
+.acct-card .ac-links { order: 2; flex-direction: row; justify-content: center; flex-wrap: wrap; gap: 0; margin-top: 2px; }
+.acct-card .ac-links .link-btn { color: var(--muted); font-size: 14px; font-weight: 600; text-decoration: none; padding: 4px 12px; }
+.acct-card .ac-links .link-btn:not([hidden]) ~ .link-btn:not([hidden]) { border-left: 1px solid var(--line); }
+@media (max-width: 699px) {
+  #acct.dialog { padding: 0; align-items: stretch; background: var(--card); }
+  #acct .acct-card {
+    max-width: none; min-height: 100%; max-height: 100dvh; border-radius: 0; box-shadow: none; animation: ac-in .22s ease-out;
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 20px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  }
+  #acct .ac-head { display: flex; margin: 0 -8px 2px; }
+  #acct .acct-card .dlg-title { font-size: 26px; margin-top: 6px; }
+  #acct .dlg-actions { margin-top: auto; padding-top: 10px; }
+  #acct .ac-links { position: sticky; bottom: 0; }
+  #acct .dlg-cancel { display: none; } /* 왼쪽 위 뒤로 단추로 */
+  #acct .dlg-ok { min-height: 56px; font-size: 17px; border-radius: 16px; }
+}
+@keyframes ac-in { from { opacity: 0; transform: translateX(24px); } }
+@media (prefers-reduced-motion: reduce) { #acct .acct-card { animation: none; } }
+:root[data-skin="neon"] .aw-mark .v { stroke: var(--primary); filter: drop-shadow(0 0 6px rgba(var(--halo), .8)); }
+:root[data-skin="neon"] .aw-mark .u { fill: var(--neon2); filter: drop-shadow(0 0 6px rgba(var(--halo2), .8)); }
+
 .ac-keep { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text2); cursor: pointer; }
 .ac-keep input { width: 18px; height: 18px; accent-color: var(--primary); margin: 0; }
 .ac-keep small { color: var(--muted); font-size: 12px; }

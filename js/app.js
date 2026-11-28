@@ -5289,6 +5289,9 @@ function openAccountScreen({ gate = false, from = null } = {}) {
   accountFrom = from;
   const off = !sync.enabled;
   $('#acct-welcome').hidden = !off;
+  // 로그인 안 했으면 환영 화면 모양(가운데 로고 · 아래에 버튼). 처음 화면(gate)엔 예전 GitHub 연결을 안 보임
+  $('#account').classList.toggle('welcome', off);
+  $('#account').classList.toggle('gate', gate && off);
   $('#acct-skip-wrap').hidden = !(gate && off);
   $('#btn-account-back').hidden = gate; // 처음 화면은 '로그인 없이 쓰기'로만 나감
   renderSyncStatus();
@@ -5338,7 +5341,7 @@ function openAccount(mode, extra = {}) {
   code.textContent = extra.code || '';
   $('#ac-copy').hidden = mode !== 'code';
   $('#ac-copy').onclick = async () => { try { await navigator.clipboard.writeText(extra.code || ''); toast('복사했어요. 메모 앱 같은 데 붙여 두세요'); } catch { toast('길게 눌러 복사해 주세요'); } };
-  $('#ac-cancel').hidden = mode === 'code';
+  $('#ac-cancel').hidden = $('#ac-back').hidden = mode === 'code';
   $('#ac-keep-row').hidden = !['login', 'signup', 'recover'].includes(mode);
   $('#ac-keep').checked = true;
   if (mode === 'login' && !$('#ac-id').value) $('#ac-id').value = load(OWNER_KEY, '') || ''; // 이 기기에서 마지막으로 쓴 아이디
@@ -5355,7 +5358,7 @@ function openAccount(mode, extra = {}) {
   const close = () => {
     d.hidden = true;
     f.onsubmit = null;
-    $('#ac-cancel').onclick = $('#ac-to-recover').onclick = $('#ac-to-signup').onclick = $('#ac-to-login').onclick = d.onclick = null;
+    $('#ac-cancel').onclick = $('#ac-back').onclick = $('#ac-to-recover').onclick = $('#ac-to-signup').onclick = $('#ac-to-login').onclick = d.onclick = null;
     document.removeEventListener('keydown', key, true);
     if (prevFocus && prevFocus.focus) prevFocus.focus();
   };
@@ -5363,7 +5366,7 @@ function openAccount(mode, extra = {}) {
   // 뒤로 가기로 닫아도: 복구 코드 창이면 다음 일(로그인 연결)은 마저 함
   modalOpen(() => { close(); if (mode === 'code' && extra.then) extra.then(); });
   document.addEventListener('keydown', key, true);
-  $('#ac-cancel').onclick = () => { close(); modalDone(() => {}); };
+  $('#ac-cancel').onclick = $('#ac-back').onclick = () => { close(); modalDone(() => {}); };
   const go = m => { close(); modalDone(() => openAccount(m)); };
   $('#ac-to-recover').onclick = () => go('recover');
   $('#ac-to-signup').onclick = () => go('signup');
