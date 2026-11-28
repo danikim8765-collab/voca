@@ -1,0 +1,16 @@
+# VOCA 계정 서버 (Cloudflare Workers). server/README.md 참고
+name = "voca-account"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+# 앱 주소 (쉼표로 여러 개). 비우면 어디서든 부를 수 있음
+[vars]
+ORIGINS = ""
+MAX_USERS = "30"
+
+# 초대 코드는 비밀 값이라 여기 적지 않음: 대시보드 > Settings > Variables and Secrets 에서 INVITE (Secret)
+
+[[d1_databases]]
+binding = "DB"
+database_name = "voca"
+database_id = "여기에-D1-데이터베이스-ID"

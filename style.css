@@ -1668,3 +1668,19 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 .name-card .nc-row .type-input { flex: 1; min-width: 0; margin: 0; }
 .name-card .nc-row .btn { margin: 0; flex: none; min-height: 44px; }
 .name-card > .btn.secondary { align-self: flex-start; }
+
+/* ---------- 계정 창 (app.js openAccount) ---------- */
+.acct-card { max-width: 360px; text-align: left; display: flex; flex-direction: column; gap: 10px; max-height: calc(100dvh - 40px); overflow-y: auto; }
+.acct-card .dlg-title { text-align: center; }
+.acct-card .dlg-body { text-align: center; margin: 0; }
+.ac-field { display: flex; flex-direction: column; gap: 4px; }
+.ac-field span { font-size: 13px; font-weight: 700; color: var(--text2); }
+.ac-field .type-input { margin: 0; background: var(--fill); border-color: transparent; }
+.ac-field .type-input:focus { background: var(--card); border-color: var(--primary); }
+.ac-code { font-size: 26px; font-weight: 800; letter-spacing: 2px; text-align: center; padding: 14px 8px; border-radius: var(--r-md); background: var(--fill); font-variant-numeric: tabular-nums; user-select: all; -webkit-user-select: all; }
+.ac-err { margin: 0; font-size: 13px; color: var(--bad); font-weight: 600; }
+.acct-card .dlg-actions { margin-top: 4px; }
+.ac-links { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 4px; font-size: 13px; }
+.ac-links .link-btn { min-height: 32px; }
+#set-sync .acct-end { justify-content: space-between; margin-top: 4px; }
+#btn-acct-move { width: 100%; margin-top: 8px; }

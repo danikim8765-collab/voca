@@ -8,6 +8,7 @@ import {
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, aiAddPrompt, aiNote, queueOrder, perLimit, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
+import { accountApi, accountReady, signup as acctSignup, login as acctLogin, recover as acctRecover, changePassword as acctChangePw, deleteAccount as acctDelete, logout as acctLogout, passwordProblem, cleanId as acctId, ID_RE as ACCT_ID_RE } from './account.js';
 import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
 import { aiGradeMeaning, aiExplainWrong, aiAskWord, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey, aiMakeWords, aiWordsReady } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
@@ -5245,6 +5246,153 @@ function renderList(scrollToSel) {
 }
 
 // ---------- 설정 ----------
+// ---------- 계정 (아이디·비밀번호로 로그인해서 진도 맞추기, js/account.js · server/worker.js) ----------
+// 이 기기에 마지막으로 로그인했던 계정. 다른 계정으로 로그인하면 이 기기 진도를 그 계정에 합칠지 물어봄(친구 폰에서 로그인했을 때 섞이지 않게)
+const OWNER_KEY = 'voca.account.owner';
+// 계정을 바꿀 때 지우지 않는 것: AI 키·화면 꾸미기·키보드·단어 캐시·오류 기록·서버 주소
+const KEEP_LOCAL = /^voca\.(ai\.|look\.|ui\.|keys\.|csvcache\.|highlights\.|errlog\.|reports\.|account\.)/;
+function hasLocalProgress() {
+  const n = k => { try { return Object.keys(JSON.parse(localStorage.getItem(k) || '{}')).length; } catch { return 0; } };
+  return n('voca.stats.v1') + n('voca.word.stats.v1') > 0;
+}
+function clearLocalProgress() {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith('voca.') && !KEEP_LOCAL.test(k)) keys.push(k); }
+  keys.forEach(k => localStorage.removeItem(k));
+}
+// 로그인·가입·복구가 끝나서 토큰을 받았을 때: 다른 계정 진도가 이 기기에 있으면 물어보고 연결
+async function useAccount(r) {
+  const prev = load(OWNER_KEY, '');
+  if (prev && prev !== r.user.id && hasLocalProgress()) {
+    const wipe = await ask({ title: '이 기기의 진도를 어떻게 할까요?', body: `이 기기에는 다른 계정(${prev})의 진도가 있어요.\n지우면 ${r.user.id} 계정의 진도를 받아 와요. 합치면 이 기기 진도가 ${r.user.id} 계정에 더해져요.`, ok: '지우고 받아 오기', cancel: '합치기' });
+    if (wipe) {
+      clearLocalProgress();
+      save(OWNER_KEY, r.user.id);
+      localStorage.setItem('voca.sync.v1', JSON.stringify({ kind: 'account', token: r.token, login: r.user.id, name: r.user.name || '', server: accountApi(), last: 0 }));
+      location.reload();
+      return;
+    }
+  }
+  save(OWNER_KEY, r.user.id);
+  await sync.connectAccount({ token: r.token, user: r.user, server: accountApi() });
+  renderSyncStatus();
+  if (current === 'home') renderHome();
+}
+// 계정 창. mode: login | signup | recover | password | delete | code(복구 코드 보여 주기)
+function openAccount(mode, extra = {}) {
+  const d = $('#acct'), f = $('#ac-form'), err = $('#ac-err'), ok = $('#ac-ok');
+  const T = {
+    login: ['로그인', '로그인'], signup: ['회원가입', '가입하기'], recover: ['비밀번호 찾기', '새 비밀번호로'],
+    password: ['비밀번호 바꾸기', '바꾸기'], delete: ['계정 지우기', '지우기'], code: ['복구 코드', '적어 뒀어요'],
+  }[mode];
+  const fields = { login: ['id', 'pw'], signup: ['id', 'name', 'pw', 'pw2', 'invite'], recover: ['id', 'rec', 'pw', 'pw2'], password: ['old', 'pw', 'pw2'], delete: ['pw'], code: [] }[mode];
+  $('#ac-title').textContent = T[0];
+  ok.textContent = T[1];
+  ok.classList.toggle('danger', mode === 'delete');
+  const sub = {
+    signup: '친구에게 받은 초대 코드가 있어야 가입돼요. 이름은 코치와 친구들이 보는 이름이에요.',
+    recover: '가입할 때 받은 복구 코드로 새 비밀번호를 만들어요.',
+    password: '다른 기기는 로그아웃돼요. 새 복구 코드도 받아요.',
+    delete: '이 계정과 서버에 저장된 진도를 모두 지워요. 이 기기의 진도는 남아요. 되돌릴 수 없어요.',
+    code: '비밀번호를 잊으면 이 코드로 새 비밀번호를 만들어요. 화면을 캡처하거나 적어 두세요. 다시 보여 줄 수 없어요.',
+  }[mode] || '';
+  $('#ac-sub').textContent = sub;
+  $('#ac-sub').hidden = !sub;
+  d.querySelectorAll('.ac-field').forEach(x => { x.hidden = !fields.includes(x.dataset.f); });
+  $('#ac-pw-label').textContent = mode === 'login' || mode === 'delete' ? '비밀번호' : '새 비밀번호';
+  $('#ac-pw').autocomplete = mode === 'login' || mode === 'delete' ? 'current-password' : 'new-password';
+  $('#ac-pw').placeholder = mode === 'login' || mode === 'delete' ? '' : '6자 이상';
+  ['#ac-name', '#ac-old', '#ac-rec', '#ac-pw', '#ac-pw2', '#ac-invite'].forEach(q => { $(q).value = ''; });
+  if (mode !== 'login' && mode !== 'signup' && mode !== 'recover') $('#ac-id').value = '';
+  const code = $('#ac-code');
+  code.hidden = mode !== 'code';
+  code.textContent = extra.code || '';
+  $('#ac-copy').hidden = mode !== 'code';
+  $('#ac-copy').onclick = async () => { try { await navigator.clipboard.writeText(extra.code || ''); toast('복사했어요. 메모 앱 같은 데 붙여 두세요'); } catch { toast('길게 눌러 복사해 주세요'); } };
+  $('#ac-cancel').hidden = mode === 'code';
+  $('#ac-to-recover').hidden = mode !== 'login';
+  $('#ac-to-signup').hidden = mode !== 'login';
+  $('#ac-to-login').hidden = mode !== 'signup' && mode !== 'recover';
+  err.hidden = true;
+  const showErr = m => { err.textContent = m; err.hidden = false; };
+  const prevFocus = document.activeElement;
+  d.hidden = false;
+  const first = d.querySelector('.ac-field:not([hidden]) input');
+  setTimeout(() => (first || ok).focus(), 30);
+  let busy = false;
+  const close = () => {
+    d.hidden = true;
+    f.onsubmit = null;
+    $('#ac-cancel').onclick = $('#ac-to-recover').onclick = $('#ac-to-signup').onclick = $('#ac-to-login').onclick = d.onclick = null;
+    document.removeEventListener('keydown', key, true);
+    if (prevFocus && prevFocus.focus) prevFocus.focus();
+  };
+  const key = e => { if (e.key === 'Escape' && mode !== 'code') { e.preventDefault(); e.stopPropagation(); close(); modalDone(() => {}); } };
+  // 뒤로 가기로 닫아도: 복구 코드 창이면 다음 일(로그인 연결)은 마저 함
+  modalOpen(() => { close(); if (mode === 'code' && extra.then) extra.then(); });
+  document.addEventListener('keydown', key, true);
+  $('#ac-cancel').onclick = () => { close(); modalDone(() => {}); };
+  const go = m => { close(); modalDone(() => openAccount(m)); };
+  $('#ac-to-recover').onclick = () => go('recover');
+  $('#ac-to-signup').onclick = () => go('signup');
+  $('#ac-to-login').onclick = () => go('login');
+  f.onsubmit = async e => {
+    e.preventDefault();
+    if (busy) return;
+    if (mode === 'code') { close(); modalDone(() => extra.then && extra.then()); return; }
+    const id = acctId($('#ac-id').value), pw = $('#ac-pw').value, pw2 = $('#ac-pw2').value;
+    // 앱에서 먼저 확인 (서버는 비밀번호 원문을 모름)
+    if (fields.includes('id') && !ACCT_ID_RE.test(id)) return showErr('아이디는 영어 소문자·숫자·_로 3~20자예요');
+    if (mode === 'signup' && !$('#ac-name').value.trim()) return showErr('이름을 적어 주세요');
+    if (mode === 'recover' && !$('#ac-rec').value.trim()) return showErr('복구 코드를 적어 주세요');
+    if (mode === 'password' && !$('#ac-old').value) return showErr('지금 비밀번호를 적어 주세요');
+    if (!pw) return showErr('비밀번호를 적어 주세요');
+    if (fields.includes('pw2')) {
+      const p = passwordProblem(mode === 'password' ? sync.login : id, pw);
+      if (p) return showErr(p);
+      if (pw !== pw2) return showErr('비밀번호 확인이 달라요');
+    }
+    if (mode === 'signup' && !$('#ac-invite').value.trim()) return showErr('초대 코드를 적어 주세요');
+    busy = true;
+    ok.disabled = true;
+    const label = ok.textContent;
+    ok.textContent = '잠깐만요…';
+    err.hidden = true;
+    try {
+      if (mode === 'login') {
+        const r = await acctLogin({ id, password: pw });
+        close(); modalDone(() => {});
+        await useAccount(r);
+        toast(`${r.user.name || r.user.id}님, 반가워요. 진도를 맞췄어요`, 3000);
+      } else if (mode === 'signup' || mode === 'recover') {
+        const r = mode === 'signup'
+          ? await acctSignup({ id, name: $('#ac-name').value, password: pw, invite: $('#ac-invite').value })
+          : await acctRecover({ id, recovery: $('#ac-rec').value, password: pw });
+        close();
+        // 복구 코드를 먼저 보여 주고(꼭 적어 두게), 확인하면 연결
+        modalDone(() => openAccount('code', { code: r.recovery, then: async () => { await useAccount(r); toast(mode === 'signup' ? '가입했어요. 이제 다른 기기에서도 로그인하면 진도가 맞춰져요' : '새 비밀번호로 바꿨어요', 3500); } }));
+      } else if (mode === 'password') {
+        const r = await acctChangePw({ token: sync.token, id: sync.login, old: $('#ac-old').value, password: pw });
+        close();
+        modalDone(() => openAccount('code', { code: r.recovery, then: () => toast('비밀번호를 바꿨어요') }));
+      } else if (mode === 'delete') {
+        await acctDelete({ token: sync.token, id: sync.login, password: pw });
+        close(); modalDone(() => {});
+        sync.disconnect();
+        localStorage.removeItem(OWNER_KEY);
+        renderSyncStatus();
+        toast('계정을 지웠어요. 이 기기의 진도는 그대로예요', 3500);
+      }
+    } catch (x) {
+      showErr(x.message || '잘 안 됐어요. 잠시 뒤에 다시 해 주세요');
+    } finally {
+      busy = false;
+      ok.disabled = false;
+      ok.textContent = label;
+    }
+  };
+}
+
 function renderSyncStatus() {
   const badge = $('#sync-badge');
   badge.hidden = !sync.enabled;
@@ -5257,9 +5405,16 @@ function renderSyncStatus() {
   badge.setAttribute('aria-label', said);
   $('#sync-off').hidden = sync.enabled;
   $('#sync-on').hidden = !sync.enabled;
+  $('#acct-ready').hidden = !accountReady();
+  $('#acct-wait').hidden = accountReady();
+  const kind = sync.kind;
+  document.querySelectorAll('#set-sync [data-only-kind]').forEach(x => { x.hidden = x.dataset.onlyKind !== kind; });
+  $('#btn-acct-move').hidden = kind !== 'gist' || !accountReady();
+  $('#btn-sync-off').textContent = kind === 'account' ? '로그아웃' : '연결 끊기';
   if (sync.enabled) {
     const t = sync.last ? new Date(sync.last).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '아직 없음';
-    $('#sync-info').textContent = `GitHub 계정 ${sync.login}에 연결됨\n마지막 동기화: ${t}` + (sync.status === 'error' || sync.status === 'wait' ? `\n⚠︎ ${sync.error}` : sync.status === 'syncing' ? '\n동기화 중…' : '');
+    const who = kind === 'account' ? `${sync.name ? `${sync.name}(${sync.login})` : sync.login} 계정으로 로그인됨` : `GitHub 계정 ${sync.login}에 연결됨`;
+    $('#sync-info').textContent = `${who}\n마지막 동기화: ${t}` + (sync.status === 'error' || sync.status === 'wait' ? `\n⚠︎ ${sync.error}` : sync.status === 'syncing' ? '\n동기화 중…' : '');
   }
 }
 
@@ -6228,9 +6383,20 @@ function bind() {
     catch { prompt('이 토큰을 복사하세요', sync.token); }
   });
   $('#btn-sync-off').addEventListener('click', async () => {
-    if (!(await ask({ title: '동기화 연결을 끊을까요?', body: '진도는 이 기기에 그대로 남아요.', ok: '연결 끊기' }))) return;
+    const acct = sync.kind === 'account';
+    if (!(await ask(acct ? { title: '로그아웃할까요?', body: '진도는 이 기기에 그대로 남아요. 다시 로그인하면 이어서 맞춰져요.', ok: '로그아웃' } : { title: '동기화 연결을 끊을까요?', body: '진도는 이 기기에 그대로 남아요.', ok: '연결 끊기' }))) return;
+    if (acct) { await sync.now(); acctLogout(sync.token); } // 마지막으로 한 번 올리고
     sync.disconnect();
     renderSyncStatus();
+  });
+  $('#btn-acct-login').addEventListener('click', () => openAccount('login'));
+  $('#btn-acct-signup').addEventListener('click', () => openAccount('signup'));
+  $('#btn-acct-pw').addEventListener('click', () => openAccount('password'));
+  $('#btn-acct-delete').addEventListener('click', () => openAccount('delete'));
+  // GitHub로 맞추던 기기: 한 번 더 GitHub와 맞춘 뒤 계정으로 (이 기기 진도가 계정에 올라감)
+  $('#btn-acct-move').addEventListener('click', async () => {
+    await sync.now();
+    openAccount(hasLocalProgress() ? 'signup' : 'login');
   });
   $('#btn-import').addEventListener('click', () => $('#import-file').click());
   $('#import-file').addEventListener('change', e => { if (e.target.files[0]) importProgress(e.target.files[0]); e.target.value = ''; });

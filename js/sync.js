@@ -1,5 +1,8 @@
-// 기기 간 진도 동기화: 내 GitHub 계정의 비밀 Gist 하나(voca-progress.json)에 진도를 저장하고 합친다.
+// 기기 간 진도 동기화: 파일 몇 개(voca-progress.json 등)에 진도를 저장하고 합친다.
+// 저장하는 곳은 둘 중 하나(conf.kind): 'account' = VOCA 계정 서버(server/worker.js, 아이디로 로그인) · 'gist' = 내 GitHub 계정의 비밀 Gist(예전 방식, 토큰)
+// 합치는 방법은 어느 쪽이든 같음: 받아 와서 이 기기 것과 합치고(core.js), 달라진 파일만 올림
 import { mergeProgress, sameStats, samePrefs, mergeMarks, sameMarks, mergeCoach, sameCoach, TOMB_KEEP } from './core.js';
+import { api as accountCall } from './account.js';
 
 const API = 'https://api.github.com';
 // 예문 모드 진도는 voca-progress.json, 단어 모드는 같은 Gist의 voca-word-progress.json
@@ -90,11 +93,19 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     }
   }
 
+  const isAccount = () => conf.kind === 'account';
+  // 받아 오기: 어느 쪽이든 { files: { 이름: { content } } } 모양으로
+  const getRemote = () => (isAccount() ? accountCall('/api/files', { token: conf.token, server: conf.server }) : getGist());
+  // 올리기: files = { 이름: { content } }
+  const putRemote = files => (isAccount()
+    ? accountCall('/api/files', { method: 'PUT', token: conf.token, server: conf.server, body: { files: Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.content])) } })
+    : gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) }));
+
   async function run() {
     setStatus('syncing');
     lastRun = Date.now();
     try {
-      const g = await getGist();
+      const g = await getRemote();
       const remote = await readFile(g, FILE);
       const local = getLocal();
       const prune = { pruneBefore: Date.now() - TOMB_KEEP };
@@ -153,13 +164,19 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
         // 이 기기에서 다른 모드 기록을 지웠으면(DAY 기록 지우기 · 독해에서 막혀 처음부터 · 단어책 새로 시작) 그 파일에도 바로 올림
         if (!sameStats(mo.stats, ro.stats || {}) || (mo.bookResetAt || 0) !== (ro.bookResetAt || 0)) files[OTHER] = { content: JSON.stringify(mo) };
       }
-      if (Object.keys(files).length) await gh(`/gists/${conf.gistId}`, { method: 'PATCH', body: JSON.stringify({ files }) });
+      if (Object.keys(files).length) await putRemote(files);
       conf.last = Date.now();
       delete conf.pauseUntil; delete conf.tries;
       save();
       setStatus('ok');
     } catch (e) {
       if (e.limited) { pause(limitWait(e, conf.tries || 0)); return; }
+      if (isAccount()) {
+        setStatus('error', e.status === 401 ? '로그인이 풀렸어요. 다시 로그인해 주세요. 진도는 이 기기에 그대로 있어요.'
+          : e.status === 413 ? '저장할 수 있는 크기를 넘었어요.'
+            : e.status ? `서버에 문제가 있어요 (${e.status}). 잠시 뒤에 다시 해요.` : e.message || '인터넷 연결을 확인해 주세요. 연결되면 다시 시도해요.');
+        return;
+      }
       if (e.status === 404) { conf.gistId = null; save(); } // Gist를 못 찾으면 다음에 다시 찾거나 새로 만듦
       setStatus('error', e.status === 401 ? '토큰이 만료됐거나 잘못됐어요. 새 토큰으로 다시 연결해 주세요.'
         : e.status === 403 || e.status === 404 ? '토큰에 gist 권한이 있는지 확인해 주세요.'
@@ -178,7 +195,7 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     const left = (conf.pauseUntil || 0) - Date.now();
     if (left <= 0) return false;
     const min = Math.ceil(left / 60000);
-    setStatus('wait', `GitHub가 잠깐 막았어요. ${min}분 뒤에 알아서 다시 할게요. 진도는 이 기기에 그대로 있어요.`);
+    setStatus('wait', `${isAccount() ? '서버가' : 'GitHub가'} 잠깐 막았어요. ${min}분 뒤에 알아서 다시 할게요. 진도는 이 기기에 그대로 있어요.`);
     clearTimeout(pauseTimer);
     pauseTimer = setTimeout(() => { pauseTimer = null; now(); }, left + 1000);
     return true;
@@ -196,6 +213,8 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
 
   return {
     get enabled() { return !!conf.token; },
+    get kind() { return conf.token ? conf.kind || 'gist' : ''; }, // 'account' | 'gist' | ''
+    get name() { return conf.name || ''; },                       // 계정 이름 (가입할 때 적은 것)
     get status() { return status; },
     get error() { return error; },
     get login() { return conf.login || ''; },
@@ -212,10 +231,19 @@ export function createSync({ getLocal, applyMerged, onStatus, file = FILES[0], m
     async connect(token) {
       token = token.trim();
       const user = await gh('/user', {}, token);
-      conf = { token, login: user.login, gistId: null, last: 0 };
+      conf = { kind: 'gist', token, login: user.login, gistId: null, last: 0 };
       save();
       await now();
       return user.login;
+    },
+    // 계정 서버로 로그인했을 때 (가입·로그인·복구가 준 토큰과 사용자). 바로 한 번 합침
+    async connectAccount({ token, user, server }) {
+      clearTimeout(pauseTimer); clearTimeout(timer); timer = null;
+      conf = { kind: 'account', token, login: user.id, name: user.name || '', server, last: 0 };
+      save();
+      setStatus('idle');
+      await now();
+      return user.id;
     },
     disconnect() {
       clearTimeout(pauseTimer); clearTimeout(timer); timer = null;
