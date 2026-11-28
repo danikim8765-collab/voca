@@ -771,7 +771,7 @@ ${APP_GUIDE}
 - 안마다 바꿀 것만 넣고 나머지는 빈 값이에요:
   label: 안 이름, 6자 안팎(예 "가볍게 유지", "전날 몰아서")
   why: 이 안의 까닭이나 주의점 한두 문장. 날짜별 개수·합계 같은 숫자는 짐작해서 쓰지 마요(카드가 보여 줘요)
-  days: 특정 날의 공부량 [{"date": "YYYY-MM-DD", "load": "rest"|"light"|"normal"|"heavy"}]. rest 쉬기, light 가볍게(보통의 절반), normal 보통, heavy 몰아서(1.5배). 그날의 새 단어·총정리 몫이 이 무게로 나뉘고, 정하지 않은 날이 나머지를 나눠 맡아요. 날짜는 <calendar>를 보고 정확히. 없으면 []
+  days: 특정 날의 공부량 [{"date": "다음 주 목", "load": "rest"|"light"|"normal"|"heavy"}]. date는 날짜를 셈하지 말고 <calendar>에 적힌 주·요일 표시를 그대로 써요("이번 주 화", "다음 주 목", "다다음 주 월"). 앱이 날짜로 바꿔요. rest 쉬기, light 가볍게(보통의 절반), normal 보통, heavy 몰아서(1.5배). 그날의 새 단어·총정리 몫이 이 무게로 나뉘고, 정하지 않은 날이 나머지를 나눠 맡아요. 날짜는 <calendar>를 보고 정확히. 없으면 []
   exam: 앱의 시험일을 옮길 때 "YYYY-MM-DD", 아니면 ""
   goal: 새 단어를 끝내고 총정리를 시작할 날을 옮길 때 "YYYY-MM-DD"(시험 전전날까지), 아니면 ""
   rest: 쉬는 요일(매주). 0 일, 1 월, 2 화, 3 수, 4 목, 5 금, 6 토를 쉼표로(예 "6", "0,6"). 쉬는 요일을 없애면 "-". 안 바꾸면 ""
@@ -781,9 +781,10 @@ ${APP_GUIDE}
 - 앱의 시험일은 영어(이 단어장) 시험날이에요. 학생이 시험 주간 내내 단어에 시간을 뺏기기 싫어서 시험일을 주간 앞으로 잡아 뒀는데 실제 영어 시험이 주간 중후반이면, 그사이 감이 떨어지지 않게: exam을 실제 영어 시험날로 옮기고, 다른 과목 시험 날은 light(또는 rest), 영어 전날은 heavy로 하는 식의 안을 내요.
   학생이 시험 주간의 요일("화수목금월 시험")을 말하면 그 요일들은 보통 앱 시험일 바로 뒤에 오는 시험 주간의 날짜예요. 이번 주 요일로 잡지 마요.
   예) 앱 시험일이 12월 7일(월)이고 학생이 "화~월이 시험 주간인데 영어는 금요일, 화수목은 가볍게"라고 하면:
-  안 A "가볍게 유지": exam 2026-12-11, days 12-08·12-09 light, 12-10 heavy / 안 B "사흘 다 가볍게": exam 2026-12-11, days 12-08·12-09·12-10 light / 안 C "주간엔 쉬기": exam 그대로, 아무것도 안 바꾸는 대신 12-10 하루만 따로 보자고 why에 씀(이 안은 바꾸는 게 없으면 내지 마요)
+  안 A "가볍게 유지": exam 2026-12-11, days "다음 주 화"·"다음 주 수" light, "다음 주 목" heavy / 안 B "사흘 다 가볍게": exam 2026-12-11, days "다음 주 화"·"다음 주 수"·"다음 주 목" light
+  (이 예는 오늘이 12월 1일(화)인 주에 말했을 때예요. 실제 주·요일은 <calendar>를 보고 써요)
 - 학생 말을 공부량으로: "못 해", "아예 안 할래", 여행·아픔 → rest / "조금만", "라이트하게", "가볍게" → light / "많이", "몰아서" → heavy.
-- days에는 공부량을 바꾸는 날만 넣어요. 보통 그대로인 날을 일부러 normal로 늘어놓지 마요. 학생이 말한 요일은 <calendar>에서 그 요일의 날짜를 찾아 정확히 써요(오늘이 무슨 요일인지 먼저 봐요).
+- days에는 공부량을 바꾸는 날만 넣어요. 보통 그대로인 날을 일부러 normal로 늘어놓지 마요. 학생이 말한 요일은 <calendar>에서 그 요일 줄을 찾아 주·요일 표시를 그대로 써요(오늘이 무슨 요일인지 먼저 봐요).
 - goal·rest·perDay·review·today는 학생이 그걸 바꾸고 싶어 할 때만 넣어요. 안 바꾸면 rest는 반드시 "", perDay·review는 0, today는 -1.
 - text에는 학생 사정을 어떻게 이해했는지와 코치로서의 생각만 짧게 써요. 날짜별 개수·합계·끝나는 날 같은 계산 결과는 쓰지 마요. 계산 결과는 다음부터 앞선 이야기의 [앱 계산]에서 볼 수 있으니 그때 의견을 말해요.
 - 학생이 자기 사정이나 바라는 것(예: 그날은 가볍게, 며칠 못 함)을 말했으면 되묻기보다 먼저 안을 내요. 몇 개씩 할지 같은 숫자는 앱이 계산하니 학생에게 묻지 마요. 어느 날 얘기인지조차 알 수 없을 때만 options를 비우고 되물어요. 일정 얘기가 아니면 options는 [].
@@ -804,7 +805,7 @@ const OPTION_SCHEMA = {
     why: { type: 'string', description: '이 안의 까닭·주의점 한두 문장 (계산 숫자 없이)' },
     days: {
       type: 'array', description: '특정 날의 공부량',
-      items: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, load: { type: 'string', enum: ['rest', 'light', 'normal', 'heavy'] } }, required: ['date', 'load'], additionalProperties: false },
+      items: { type: 'object', properties: { date: { type: 'string', description: "<calendar>의 주·요일 표시 (예: '다음 주 목') 또는 YYYY-MM-DD" }, load: { type: 'string', enum: ['rest', 'light', 'normal', 'heavy'] } }, required: ['date', 'load'], additionalProperties: false },
     },
     exam: { type: 'string', description: '옮길 시험일 YYYY-MM-DD, 아니면 빈 글자' },
     goal: { type: 'string', description: '옮길 총정리 시작일 YYYY-MM-DD, 아니면 빈 글자' },
@@ -1032,6 +1033,21 @@ ${summary ? `<summary>\n${summary}\n</summary>\n` : ''}${lines.length ? '앞선 
     remember: clean(out.remember).slice(0, 120),
   };
 }
+// '다음 주 목', '이번 주 화요일', '목' 같은 말을 날짜로 (주는 월요일부터). 주를 안 말하면 오늘부터 다가오는 그 요일.
+// AI가 날짜를 셈하다 틀리는 일이 많아서(무료 모델은 '목요일'을 화요일 날짜로 쓰기도 함) 요일은 앱이 날짜로 바꿈. 이미 날짜면 그대로
+export function dayFromLabel(v, today) {
+  if (YMD.test(v) || !today) return v;
+  const m = /^(이번 ?주|다음 ?주|다다음 ?주)?\s*([월화수목금토일])(?:요일)?$/.exec(v.replace(/\s+/g, ' ').trim());
+  if (!m) return v;
+  const [y, mo, d] = today.split('-').map(Number);
+  const base = new Date(Date.UTC(y, mo - 1, d));
+  const wd = base.getUTCDay(), want = WEEK.indexOf(m[2]);
+  const add = n => new Date(base.getTime() + n * 864e5).toISOString().slice(0, 10);
+  if (!m[1]) return add((want - wd + 7) % 7);
+  const k = /다다음/.test(m[1]) ? 2 : /다음/.test(m[1]) ? 1 : 0;
+  const toMon = (wd + 6) % 7; // 이번 주 월요일까지 며칠 전
+  return add(-toMon + k * 7 + (want + 6) % 7);
+}
 // 안 하나 정리: 잘못된 값은 버리고, 바꾸는 게 하나도 없으면 null. day = 오늘(YYYY-MM-DD, 지난 날짜는 버림)
 const YMD = /^\d{4}-\d\d-\d\d$/;
 export function cleanOption(o, day = '') {
@@ -1039,14 +1055,14 @@ export function cleanOption(o, day = '') {
   const out = { label: clean(o.label).slice(0, 14), why: tidyChat(clean(o.why)).slice(0, 240), days: [], exam: '', goal: '', rest: null, perDay: 0, review: 0, today: null };
   const seen = new Set();
   for (const d of Array.isArray(o.days) ? o.days : []) {
-    const date = String((d && d.date) || '').trim(), load = String((d && d.load) || '');
+    const date = dayFromLabel(String((d && d.date) || '').trim(), day), load = String((d && d.load) || '');
     if (!YMD.test(date) || (day && date < day) || seen.has(date) || !['rest', 'light', 'normal', 'heavy'].includes(load)) continue;
     seen.add(date);
     out.days.push({ date, load });
   }
   out.days.sort((a, b) => (a.date < b.date ? -1 : 1));
   out.days = out.days.slice(0, 60);
-  for (const k of ['exam', 'goal']) { const v = String(o[k] || '').trim(); if (YMD.test(v) && (!day || v > day)) out[k] = v; }
+  for (const k of ['exam', 'goal']) { const v = dayFromLabel(String(o[k] || '').trim(), day); if (YMD.test(v) && (!day || v > day)) out[k] = v; }
   const pd = Math.round(Number(o.perDay));
   if (pd >= 1 && pd <= 500) out.perDay = pd;
   const r = Math.round(Number(o.review));

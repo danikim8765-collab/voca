@@ -806,3 +806,19 @@ test('내 단어 사진 올리기: Claude는 사진 블록 + 글, 사진이면 S
   store.set('voca.ai.on.v1', '0');
   assert.deepEqual(await aiMakeWords({ system: 's', user: 'u' }), { error: 'off' });
 });
+
+test('코치 안의 날짜: "다음 주 목" 같은 주·요일 표시를 앱이 날짜로 바꿈 (주는 월요일부터)', async () => {
+  const { dayFromLabel, cleanOption } = await import('../js/ai.js');
+  const sat = '2026-11-28'; // 토요일
+  assert.equal(dayFromLabel('목', sat), '2026-12-03');          // 다가오는 목요일
+  assert.equal(dayFromLabel('토요일', sat), '2026-11-28');      // 오늘
+  assert.equal(dayFromLabel('이번 주 일', sat), '2026-11-29');
+  assert.equal(dayFromLabel('다음 주 화', sat), '2026-12-01');
+  assert.equal(dayFromLabel('다음주 목요일', sat), '2026-12-03');
+  assert.equal(dayFromLabel('다다음 주 월', sat), '2026-12-07');
+  assert.equal(dayFromLabel('다음 주 화', '2026-11-30'), '2026-12-08'); // 월요일에 말하면 다음 주는 12/7부터
+  assert.equal(dayFromLabel('2026-12-05', sat), '2026-12-05');
+  assert.equal(dayFromLabel('언젠가', sat), '언젠가');
+  const o = cleanOption({ label: 'x', days: [{ date: '다음 주 목', load: 'light' }, { date: '이번 주 목', load: 'rest' }], exam: '', goal: '', rest: '', perDay: 0, review: 0, today: -1 }, sat);
+  assert.deepEqual(o.days, [{ date: '2026-12-03', load: 'light' }]); // 이번 주 목(11/26)은 지난 날이라 버림
+});
