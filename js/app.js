@@ -8,7 +8,7 @@ import {
 } from './core.js';
 import { MY_KEY, CLAUDE_PROMPT, aiAddPrompt, aiNote, queueOrder, perLimit, emptyMy, myCfg, myId, keyOfId, parseMyText, matchRows, applyImport, myWordObjects, overlayHit, mergeMy, sameMy, slimMy, exportMyCSV, deleteMy, editMy, MY_PRUNE } from './mywords.js';
 import { createSync } from './sync.js';
-import { accountApi, accountReady, signup as acctSignup, login as acctLogin, recover as acctRecover, changePassword as acctChangePw, deleteAccount as acctDelete, logout as acctLogout, passwordProblem, cleanId as acctId, ID_RE as ACCT_ID_RE } from './account.js';
+import { accountApi, accountReady, adminUsers as acctAdminUsers, adminReset as acctAdminReset, signup as acctSignup, login as acctLogin, recover as acctRecover, changePassword as acctChangePw, deleteAccount as acctDelete, logout as acctLogout, passwordProblem, cleanId as acctId, ID_RE as ACCT_ID_RE } from './account.js';
 import { KEYS_KEY, KEY_ACTIONS, WHILE_ANSWERING, cleanKeys, assignKey, actionFor, keyOf, isModKey, modBase, kbTypes, isTypingKey, keyLabel } from './keys.js';
 import { aiGradeMeaning, aiExplainWrong, aiAskWord, aiHint, aiCoachSay, aiCoachResult, aiCoachChat, aiCoachSummary, chatStart, aiCoachError, aiConnect, aiDisconnect, aiEnabled, aiOnline, aiCoachOnline, aiCoachName, aiName, aiSwitch, setAiSwitch, aiHasKey, aiMakeWords, aiWordsReady } from './ai.js';
 import { DATA_FILES, CSV_CACHE_KEY, loadCSVTexts, cachedCSVTexts, sameTexts } from './files.js';
@@ -5291,6 +5291,7 @@ async function useAccount(r, keep = true) {
   try { localStorage.removeItem(SKIP_KEY); } catch {}
   await sync.connectAccount({ token: r.token, user: r.user, server: accountApi(), temp: !keep });
   renderSyncStatus();
+  if (current === 'account') renderAdmin();
   if (current === 'account' && accountGate) { accountGate = false; goHome(false); } // 처음 화면에서 로그인했으면 바로 홈으로
   else if (current === 'home') renderHome();
 }
@@ -5305,6 +5306,36 @@ function paintAccountLook() {
   $('#account').classList.toggle('welcome', off);
   $('#account').classList.toggle('gate', accountGate && off);
 }
+// 관리자 카드: 계정 화면을 열 때 서버에 가입한 사람 목록을 물어봄. 관리자가 아니면(403) 이번 로그인 동안 다시 안 물음
+let adminNo = '';
+async function renderAdmin() {
+  const card = $('#admin-card');
+  if (sync.kind !== 'account' || !sync.enabled || adminNo === sync.token) { card.hidden = true; return; }
+  let r;
+  try { r = await acctAdminUsers(sync.token); } catch (e) { if (e.status === 403) adminNo = sync.token; card.hidden = true; return; }
+  const list = $('#admin-list');
+  list.innerHTML = '';
+  const ago = t => { if (!t) return '아직 안 씀'; const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? '오늘 씀' : `${d}일 전에 씀`; };
+  for (const u of r.users || []) {
+    const row = el('div', 'admin-row');
+    const who = el('div', 'admin-who');
+    who.append(el('b', null, u.name || u.id), el('span', 'muted', `${u.id} · ${u.admin ? '관리자 · ' : ''}${ago(u.seen)}`));
+    const b = el('button', 'btn secondary small', '초기화 코드');
+    b.type = 'button';
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        const x = await acctAdminReset(sync.token, u.id);
+        openAccount('code', { code: x.code, who: `${x.name}(${x.id})` });
+      } catch (e) { toast(e.message || '잘 안 됐어요. 잠시 뒤에 다시 해 주세요'); }
+      b.disabled = false;
+    });
+    row.append(who, b);
+    list.appendChild(row);
+  }
+  $('#admin-sum').textContent = `가입한 사람 ${(r.users || []).length}명 / 최대 ${r.max}명 · 비밀번호를 잊은 친구에게 초기화 코드를 만들어 보내 주세요`;
+  card.hidden = false;
+}
 function openAccountScreen({ gate = false, from = null } = {}) {
   accountGate = gate;
   accountFrom = from;
@@ -5312,6 +5343,7 @@ function openAccountScreen({ gate = false, from = null } = {}) {
   paintAccountLook();
   renderSyncStatus();
   show('account', !gate);
+  renderAdmin();
 }
 // 처음 열 때: 계정 서버가 있고, 로그인도 GitHub 연결도 안 했고, '로그인 없이 쓰기'를 고른 적이 없으면 로그인 화면부터
 // '로그인 상태 유지'를 끄고 로그인했으면, 앱(창)을 새로 열 때 로그아웃하고 다시 물어봄
@@ -5326,12 +5358,12 @@ function accountOnStart() {
   }
   if (!sync.enabled && accountReady() && !load(SKIP_KEY, false)) openAccountScreen({ gate: true });
 }
-// 계정 창. mode: login | signup | recover | password | delete | code(복구 코드 보여 주기)
+// 계정 창. mode: login | signup | recover(초기화 코드로 새 비밀번호) | password | delete | code(관리자가 만든 초기화 코드 보여 주기)
 function openAccount(mode, extra = {}) {
   const d = $('#acct'), f = $('#ac-form'), err = $('#ac-err'), ok = $('#ac-ok');
   const T = {
     login: ['로그인', '로그인'], signup: ['회원가입', '가입하기'], recover: ['비밀번호 찾기', '새 비밀번호로'],
-    password: ['비밀번호 바꾸기', '바꾸기'], delete: ['계정 지우기', '지우기'], code: ['복구 코드', '적어 뒀어요'],
+    password: ['비밀번호 바꾸기', '바꾸기'], delete: ['계정 지우기', '지우기'], code: ['초기화 코드', '닫기'],
   }[mode];
   const fields = { login: ['id', 'pw'], signup: ['id', 'name', 'pw', 'pw2', 'invite'], recover: ['id', 'rec', 'pw', 'pw2'], password: ['old', 'pw', 'pw2'], delete: ['pw'], code: [] }[mode];
   $('#ac-title').textContent = T[0];
@@ -5339,10 +5371,11 @@ function openAccount(mode, extra = {}) {
   ok.classList.toggle('danger', mode === 'delete');
   const sub = {
     signup: '친구에게 받은 초대 코드가 있어야 가입돼요. 이름은 코치와 친구들이 보는 이름이에요.',
-    recover: '가입할 때 받은 복구 코드로 새 비밀번호를 만들어요.',
-    password: '다른 기기는 로그아웃돼요. 새 복구 코드도 받아요.',
+    recover: '비밀번호를 잊었으면 관리자에게 초기화 코드를 받아서 새 비밀번호를 만들어요.',
+    password: '바꾸면 다른 기기는 로그아웃돼요.',
     delete: '이 계정과 서버에 저장된 진도를 모두 지워요. 이 기기의 진도는 남아요. 되돌릴 수 없어요.',
-    code: '비밀번호를 잊으면 이 코드로 새 비밀번호를 만들어요. 화면을 캡처하거나 적어 두세요. 다시 보여 줄 수 없어요.',
+    // 관리자가 친구의 초기화 코드를 만들었을 때
+    code: `${extra.who || '친구'}에게 이 코드를 보내 주세요. 앱의 '비밀번호 찾기'에 아이디와 이 코드를 넣으면 새 비밀번호를 만들 수 있어요. 새로 만들기 전까진 원래 비밀번호도 그대로 돼요.`,
   }[mode] || '';
   $('#ac-sub').textContent = sub;
   $('#ac-sub').hidden = !sub;
@@ -5356,8 +5389,8 @@ function openAccount(mode, extra = {}) {
   code.hidden = mode !== 'code';
   code.textContent = extra.code || '';
   $('#ac-copy').hidden = mode !== 'code';
-  $('#ac-copy').onclick = async () => { try { await navigator.clipboard.writeText(extra.code || ''); toast('복사했어요. 메모 앱 같은 데 붙여 두세요'); } catch { toast('길게 눌러 복사해 주세요'); } };
-  $('#ac-cancel').hidden = $('#ac-back').hidden = mode === 'code';
+  $('#ac-copy').onclick = async () => { try { await navigator.clipboard.writeText(extra.code || ''); toast('복사했어요. 친구에게 보내 주세요'); } catch { toast('길게 눌러 복사해 주세요'); } };
+  $('#ac-cancel').hidden = mode === 'code'; // 코드 창은 '닫기' 하나 (뒤로도 닫힘)
   $('#ac-keep-row').hidden = !['login', 'signup', 'recover'].includes(mode);
   $('#ac-keep').checked = true;
   if (mode === 'login' && !$('#ac-id').value) $('#ac-id').value = load(OWNER_KEY, '') || ''; // 이 기기에서 마지막으로 쓴 아이디
@@ -5378,8 +5411,8 @@ function openAccount(mode, extra = {}) {
     document.removeEventListener('keydown', key, true);
     if (prevFocus && prevFocus.focus) prevFocus.focus();
   };
-  const key = e => { if (e.key === 'Escape' && mode !== 'code') { e.preventDefault(); e.stopPropagation(); close(); modalDone(() => {}); } };
-  // 뒤로 가기로 닫아도: 복구 코드 창이면 다음 일(로그인 연결)은 마저 함
+  const key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); modalDone(() => {}); } };
+  // 뒤로 가기로 닫아도: 코드 창에 다음 일이 있으면 마저 함
   modalOpen(() => { close(); if (mode === 'code' && extra.then) extra.then(); });
   document.addEventListener('keydown', key, true);
   $('#ac-cancel').onclick = $('#ac-back').onclick = () => { close(); modalDone(() => {}); };
@@ -5395,7 +5428,7 @@ function openAccount(mode, extra = {}) {
     // 앱에서 먼저 확인 (서버는 비밀번호 원문을 모름)
     if (fields.includes('id') && !ACCT_ID_RE.test(id)) return showErr('아이디는 영어 소문자·숫자·_로 3~20자예요');
     if (mode === 'signup' && !$('#ac-name').value.trim()) return showErr('이름을 적어 주세요');
-    if (mode === 'recover' && !$('#ac-rec').value.trim()) return showErr('복구 코드를 적어 주세요');
+    if (mode === 'recover' && !$('#ac-rec').value.trim()) return showErr('관리자에게 받은 초기화 코드를 적어 주세요');
     if (mode === 'password' && !$('#ac-old').value) return showErr('지금 비밀번호를 적어 주세요');
     if (!pw) return showErr('비밀번호를 적어 주세요');
     if (fields.includes('pw2')) {
@@ -5422,12 +5455,12 @@ function openAccount(mode, extra = {}) {
           : await acctRecover({ id, recovery: $('#ac-rec').value, password: pw });
         const keep = $('#ac-keep').checked;
         close();
-        // 복구 코드를 먼저 보여 주고(꼭 적어 두게), 확인하면 연결
-        modalDone(() => openAccount('code', { code: r.recovery, then: async () => { await useAccount(r, keep); toast(mode === 'signup' ? '가입했어요. 이제 다른 기기에서도 로그인하면 진도가 맞춰져요' : '새 비밀번호로 바꿨어요', 3500); } }));
+        // 예전엔 복구 코드를 보여 줬음. 이제 비밀번호를 잊으면 관리자가 초기화 코드를 만들어 줌 (서버는 예전 앱을 위해 recovery를 그대로 돌려줌)
+        modalDone(async () => { await useAccount(r, keep); toast(mode === 'signup' ? '가입했어요. 이제 다른 기기에서도 로그인하면 진도가 맞춰져요' : '새 비밀번호로 바꿨어요', 3500); });
       } else if (mode === 'password') {
         const r = await acctChangePw({ token: sync.token, id: sync.login, old: $('#ac-old').value, password: pw });
         close();
-        modalDone(() => openAccount('code', { code: r.recovery, then: () => toast('비밀번호를 바꿨어요') }));
+        modalDone(() => toast('비밀번호를 바꿨어요. 다른 기기에선 새 비밀번호로 다시 로그인해 주세요', 3500));
       } else if (mode === 'delete') {
         await acctDelete({ token: sync.token, id: sync.login, password: pw });
         close(); modalDone(() => {});

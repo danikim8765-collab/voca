@@ -39,6 +39,7 @@
    - `INVITE`: 종류 **Secret**. 친구들에게 줄 초대 코드예요(예: `voca-친구들-2026`). 여러 개면 쉼표로 이어요.
    - `ORIGINS`: 종류 Text. 앱 주소예요(GitHub Pages 주소, 예: `https://아이디.github.io`). 비우면 어디서든 부를 수 있어요.
    - `MAX_USERS`: 종류 Text. 가입할 수 있는 사람 수예요(안 넣으면 30).
+   - `ADMINS`: 종류 Text. 관리자 아이디예요(여러 명이면 쉼표로). 이 아이디로 로그인하면 앱의 계정 화면에 '관리자' 카드가 보이고, 비밀번호를 잊은 친구의 초기화 코드를 만들 수 있어요.
 7. **주소 알려 주기**
    - Worker 화면 위쪽의 주소(`https://voca-account.○○○.workers.dev`)를 Claude에게 알려 주세요.
    - Claude가 앱의 `js/account.js` `ACCOUNT_API_DEFAULT`에 넣으면, 앱 설정 > 연결에 **로그인 / 회원가입**이 생겨요.

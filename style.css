@@ -1687,6 +1687,15 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
 #account #set-sync #acct-ready .btn { min-height: 52px; font-size: 16px; }
 .acct-skip { text-align: center; margin: 18px 0 0; font-size: 14px; }
 .acct-skip .link-btn { color: var(--muted); font-weight: 600; }
+/* 관리자 카드: 가입한 사람 줄마다 초기화 코드 버튼 */
+.admin-sum { font-size: 13px; margin: 0 0 6px; }
+.admin-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+.admin-row + .admin-row { border-top: 1px solid var(--line); }
+.admin-who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.admin-who b { font-size: 15px; }
+.admin-who span { font-size: 12.5px; }
+.admin-row .btn { flex: none; margin: 0; }
+
 /* ---------- 계정: 로그인 안 했을 때 환영 화면 (가운데 로고, 아래에 버튼 세로로) ---------- */
 #account.welcome.active { display: flex; flex-direction: column; }
 #account.welcome .top h1 { visibility: hidden; } /* 뒤로 단추 자리는 그대로 */
