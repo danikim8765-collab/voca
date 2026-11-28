@@ -1704,7 +1704,6 @@ body[data-screen="list"] .list { margin-bottom: 70px; }
   #acct .ac-head { display: flex; margin: 0 -8px 2px; }
   #acct .acct-card .dlg-title { font-size: 26px; margin-top: 6px; }
   #acct .dlg-actions { margin-top: auto; padding-top: 10px; }
-  #acct .ac-links { position: sticky; bottom: 0; }
   #acct .dlg-cancel { display: none; } /* 왼쪽 위 뒤로 단추로 */
   #acct .dlg-ok { min-height: 56px; font-size: 17px; border-radius: 16px; }
 }

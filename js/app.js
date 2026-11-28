@@ -5284,16 +5284,20 @@ async function useAccount(r, keep = true) {
 }
 // ---------- 계정 화면 (홈 위 사람 단추 · 설정 > 연결 · 처음 열 때) ----------
 let accountGate = false, accountFrom = null;
+// 계정 화면 모양: 로그인 안 했으면 환영 화면(가운데 로고 · 아래에 버튼), 처음 화면(gate)엔 예전 GitHub 연결을 안 보임.
+// 계정 화면에서 로그인·로그아웃·GitHub 연결을 하면 renderSyncStatus가 다시 불러서 바로 바뀜
+function paintAccountLook() {
+  const off = !sync.enabled;
+  $('#acct-welcome').hidden = !off;
+  $('#acct-skip-wrap').hidden = !(accountGate && off);
+  $('#account').classList.toggle('welcome', off);
+  $('#account').classList.toggle('gate', accountGate && off);
+}
 function openAccountScreen({ gate = false, from = null } = {}) {
   accountGate = gate;
   accountFrom = from;
-  const off = !sync.enabled;
-  $('#acct-welcome').hidden = !off;
-  // 로그인 안 했으면 환영 화면 모양(가운데 로고 · 아래에 버튼). 처음 화면(gate)엔 예전 GitHub 연결을 안 보임
-  $('#account').classList.toggle('welcome', off);
-  $('#account').classList.toggle('gate', gate && off);
-  $('#acct-skip-wrap').hidden = !(gate && off);
   $('#btn-account-back').hidden = gate; // 처음 화면은 '로그인 없이 쓰기'로만 나감
+  paintAccountLook();
   renderSyncStatus();
   show('account', !gate);
 }
@@ -5449,7 +5453,7 @@ function renderSyncStatus() {
   $('#btn-account').classList.toggle('on', !!nm);
   $('#btn-account').setAttribute('aria-label', nm ? `계정: ${nm}` : '계정');
   $('#set-acct-sum').textContent = sync.kind === 'account' ? `${nm}(${sync.login})로 로그인됨` : sync.kind === 'gist' ? `GitHub ${sync.login}에 연결됨` : '로그인하면 기기끼리 진도가 맞춰져요';
-  if (current === 'account') { $('#acct-welcome').hidden = sync.enabled; $('#acct-skip-wrap').hidden = !(accountGate && !sync.enabled); }
+  if (current === 'account') paintAccountLook();
   $('#acct-ready').hidden = !accountReady();
   $('#acct-wait').hidden = accountReady();
   const kind = sync.kind;
